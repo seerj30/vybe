@@ -12,6 +12,7 @@ using Microsoft.IdentityModel.Tokens;
 using Vybe.Api.Content;
 using Vybe.Api.Features;
 using Vybe.Api.Infrastructure;
+using Vybe.Api.Jobs;
 using Vybe.Data;
 
 namespace Vybe.Api;
@@ -36,6 +37,9 @@ public static class ServiceSetup
         services.AddHttpContextAccessor();
         services.AddScoped<CurrentPlayer>();
         services.AddScoped<Idempotency>();
+        services.AddSingleton(configuration.GetSection(ChallengeOptions.Section).Get<ChallengeOptions>() ?? new ChallengeOptions());
+        services.AddSingleton<ChallengeInvites>();
+        services.AddVybeJobs(configuration);
 
         // Spec §11 payload caps: every request body, not only the endpoints that read it manually.
         services.Configure<KestrelServerOptions>(options => options.Limits.MaxRequestBodySize = RequestBody.MaxBytes);
@@ -52,6 +56,7 @@ public static class ServiceSetup
     public static WebApplication UseVybeApi(this WebApplication app)
     {
         ArgumentNullException.ThrowIfNull(app);
+        _ = app.Services.GetRequiredService<ChallengeInvites>(); // fail at start-up without an invite secret
         app.UseExceptionHandler();
         app.Use(LimitRequestBodyAsync);
         app.UseMiddleware<CsrfMiddleware>();
@@ -63,6 +68,7 @@ public static class ServiceSetup
         IdentityEndpoints.Map(api);
         GameplayEndpoints.Map(api);
         EconomyEndpoints.Map(api);
+        ChallengeEndpoints.Map(api);
         return app;
     }
 
