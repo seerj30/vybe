@@ -31,16 +31,22 @@ test("keyboard: hold and release Space records a shot; a quick second release is
 });
 
 test("the result shows when the ball reaches the rim, not at release", async ({ page }) => {
-  await page.clock.install();
+  // Fake time starts at T0 and runs with real time until pauseAt. T0 + 1 h is always still in the future,
+  // so pauseAt cannot fail on a slow runner (a target read from Date.now() + 50 ms could already be past).
+  const t0 = new Date("2026-01-01T00:00:00Z").getTime();
+  await page.clock.install({ time: t0 });
   await openStreetHoops(page);
   await expect(page.getByRole("checkbox", { name: "Reduce motion" })).not.toBeChecked();
-  await startRun(page);
+
+  // From here, page time runs only when the test moves it, so slow CI frames cannot reach the 700 ms flight time.
+  await page.clock.pauseAt(t0 + 60 * 60 * 1000);
+  await startButton(page).click();
+  await page.clock.runFor(100);
+  await expect(powerMeter(page)).toBeVisible();
 
   await page.keyboard.down("Space");
+  await page.clock.runFor(300);
   await expectCharging(page);
-  // Page time runs only when the test moves it, so slow CI frames cannot reach the 700 ms flight time.
-  const now = await page.evaluate(() => Date.now());
-  await page.clock.pauseAt(now + 50);
   await page.keyboard.up("Space");
   await page.clock.runFor(100);
   // The meter reset proves the view updated after the release; the label still waits for the ball.
