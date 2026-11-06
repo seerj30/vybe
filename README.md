@@ -10,10 +10,21 @@ Browser-based social arcade with customizable 3D cartoon avatars.
 apps/web/              Street Hoops playable prototype (Angular + Three.js, client-only)
 packages/contracts/    OpenAPI 3.1 contract (source of truth for the API) and generated TS types
 packages/game-rules/   Street Hoops simulator (TypeScript reference) and golden fixtures
-services/api/          ASP.NET Core solution; Vybe.GameRules is the C# simulator
+services/api/          ASP.NET Core solution: Vybe.Api (HTTP API), Vybe.Data (EF Core), Vybe.GameRules (C# simulator)
+assets/manifests/      Versioned content: avatar presets and catalog
 tests/e2e/             Playwright browser tests for apps/web (Chromium, desktop and mobile touch)
 docs/spec/             Product, game and technical specification
 docs/adr/              Architecture decision records
+```
+
+API (P0 vertical slice: guests, avatar, Street Hoops sessions, catalog, purchases, equipment, wallet):
+
+```bash
+export ConnectionStrings__Vybe="Host=localhost;Database=vybe;Username=vybe;Password=<local password>"
+cd services/api
+VYBE_DB_CONNECTION="$ConnectionStrings__Vybe" dotnet ef database update --project src/Vybe.Data
+dotnet run --project src/Vybe.Api            # Development seeds the ruleset and catalog
+dotnet test tests/Vybe.Api.Tests             # needs Docker; checks every response against the contract
 ```
 
 Database (PostgreSQL, EF Core migrations in `services/api/src/Vybe.Data`):

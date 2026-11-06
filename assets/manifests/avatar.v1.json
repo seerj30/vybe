@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "description": "Avatar presets (spec §9). Placeholder ids until the art pipeline publishes the real manifest (spec §17 item 3).",
+  "bodyPresets": ["body_a", "body_b"],
+  "skinTones": ["skin_01", "skin_02", "skin_03", "skin_04", "skin_05", "skin_06"],
+  "faces": ["face_01", "face_02", "face_03", "face_04"],
+  "hairs": ["hair_short", "hair_long", "hair_curly", "hair_buzz"],
+  "hairColors": ["black", "brown", "blond", "red", "blue"],
+  "defaults": {
+    "bodyPresetId": "body_a",
+    "skinToneId": "skin_03",
+    "facePresetId": "face_01",
+    "hairPresetId": "hair_short",
+    "hairColorId": "brown"
+  }
+}

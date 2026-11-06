@@ -69,7 +69,7 @@ paths:
           description: Guest created.
           headers:
             Set-Cookie:
-              description: "`vybe_guest` session cookie (Secure, HttpOnly, SameSite=Lax)."
+              description: "`__Host-vybe_guest` session cookie (Secure, HttpOnly, SameSite=Lax, Path=/)."
               schema:
                 type: string
           content:
@@ -115,7 +115,7 @@ paths:
           description: Account linked. The guest session is revoked.
           headers:
             Set-Cookie:
-              description: Clears `vybe_guest` (expired cookie).
+              description: Clears `__Host-vybe_guest` (expired cookie).
               schema:
                 type: string
           content:
@@ -1420,7 +1420,7 @@ components:
     guestCookie:
       type: apiKey
       in: cookie
-      name: vybe_guest
+      name: __Host-vybe_guest
       description: |
         Guest session cookie (Secure, HttpOnly, SameSite=Lax). Every cookie-authenticated
         request with an unsafe method (POST, PUT, PATCH, DELETE) must also send the header
@@ -2395,6 +2395,10 @@ components:
           type: integer
           minimum: 0
         levelAfter:
+          description: |
+            Level right after this run in the live response and its idempotent replay. On
+            `getGameSession` and on a duplicate submit with a new key it is the player's current
+            level (the level at verification time is not stored).
           $ref: "#/components/schemas/Level"
     SubmitAccepted:
       type: object

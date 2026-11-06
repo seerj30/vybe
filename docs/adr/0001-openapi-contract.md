@@ -47,6 +47,7 @@ need one machine-readable contract that both are built against, and that CI can 
 | 16 | `requestAccountDeletion` takes `Idempotency-Key`, which becomes `requestId`; 409 `export_in_progress` carries `exportId` | A lost 202 must not lose the only status capability after sessions are revoked (J4). |
 | 17 | 404 `player_not_found` for a Supabase identity without a player | "Login" with a new Supabase account must be distinguishable from an expired token. |
 | 18 | `Cache-Control: private, no-store` on `getProfile`, `listCatalogItems`, `getChallengePreview` | Caller-dependent bodies (`owned`, block rules) must never be served from a shared cache. |
+| 19 | Guest cookie renamed `__Host-vybe_guest` | The `__Host-` prefix forces Secure, Path=/ and no Domain, so a sibling subdomain cannot overwrite the cookie (security review of ADR 0003). |
 
 ### Accepted risk
 
@@ -66,7 +67,7 @@ costs more than the benefit for the beta. Revisit if moderation reports show blo
 - **`Idempotency-Key` and `X-Requested-With`** are validated by the server itself (428 / 422 /
   403 codes of spec §5), not by generic schema validation, so the listed `code` values hold.
 - **Linking** accepts only non-anonymous Supabase identities with a confirmed email; the 200
-  response clears the `vybe_guest` cookie.
+  response clears the `__Host-vybe_guest` cookie.
 - **Avatar reference data** (body, skin, face, hair, hair-colour presets; item id → sku, asset
   URL, thumbnail) comes from the versioned static asset manifest of spec §9 on the CDN, not
   from an API operation. The manifest version and `catalog_version` must match; the server

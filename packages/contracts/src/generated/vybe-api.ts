@@ -1158,6 +1158,11 @@ export interface components {
         Rewards: {
             coins: components["schemas"]["Coins"];
             xp: number;
+            /**
+             * @description Level right after this run in the live response and its idempotent replay. On
+             *     `getGameSession` and on a duplicate submit with a new key it is the player's current
+             *     level (the level at verification time is not stored).
+             */
             levelAfter: components["schemas"]["Level"];
         };
         SubmitAccepted: {
@@ -1563,7 +1568,7 @@ export interface operations {
             /** @description Guest created. */
             201: {
                 headers: {
-                    /** @description `vybe_guest` session cookie (Secure, HttpOnly, SameSite=Lax). */
+                    /** @description `__Host-vybe_guest` session cookie (Secure, HttpOnly, SameSite=Lax, Path=/). */
                     "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
@@ -1600,7 +1605,7 @@ export interface operations {
             /** @description Account linked. The guest session is revoked. */
             200: {
                 headers: {
-                    /** @description Clears `vybe_guest` (expired cookie). */
+                    /** @description Clears `__Host-vybe_guest` (expired cookie). */
                     "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
