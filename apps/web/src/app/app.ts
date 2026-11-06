@@ -13,6 +13,9 @@ interface NavItem {
 const NAV: readonly NavItem[] = [
   { path: "/hub", label: "Hub" },
   { path: "/arcade", label: "Arcade" },
+  { path: "/shop", label: "Shop" },
+  { path: "/wardrobe", label: "Wardrobe" },
+  { path: "/wallet", label: "Wallet" },
 ];
 
 function layoutOf(snapshot: ActivatedRouteSnapshot): Layout {

@@ -1,11 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
+// PostgreSQL with `services/api/db/schema.sql` applied (`pnpm --filter @vybe/e2e db:up` locally).
+import { DATABASE_URL } from "./specs/db.ts";
 
 const PORT = 4321;
 const API_PORT = 5246;
 const isCI = process.env["CI"] !== undefined;
 
-/** PostgreSQL with `services/api/db/schema.sql` applied (`pnpm --filter @vybe/e2e db:up` locally). */
-const DATABASE_URL = process.env["E2E_DATABASE_URL"] ?? "postgres://vybe:vybe@localhost:55432/vybe";
 
 function npgsql(url: string): string {
   const u = new URL(url);

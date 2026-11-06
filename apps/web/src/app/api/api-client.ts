@@ -69,6 +69,26 @@ export class ApiClient {
     return this.data("PUT", "/me/avatar", { body });
   }
 
+  listCatalog(query: { slot?: Schemas["ItemSlot"]; cursor?: string; limit?: number } = {}): Promise<Schemas["CatalogPage"]> {
+    return this.data("GET", "/catalog/items", { query });
+  }
+
+  purchase(body: Schemas["PurchaseRequest"], idempotencyKey: string): Promise<Schemas["Purchase"]> {
+    return this.data("POST", "/purchases", { body, idempotencyKey });
+  }
+
+  getInventory(): Promise<Schemas["Inventory"]> {
+    return this.data("GET", "/me/inventory");
+  }
+
+  equip(body: Schemas["EquipRequest"]): Promise<Schemas["EquipmentUpdated"]> {
+    return this.data("POST", "/me/equipment", { body });
+  }
+
+  listWalletTransactions(query: { cursor?: string; limit?: number } = {}): Promise<Schemas["LedgerPage"]> {
+    return this.data("GET", "/me/wallet/transactions", { query });
+  }
+
   getRuleset(rulesetId: string): Promise<Schemas["Ruleset"]> {
     return this.data("GET", `/games/rulesets/${segment(rulesetId)}`);
   }
@@ -128,6 +148,29 @@ export class ApiClient {
 /** Fresh key for one user action; reuse it for every retry of that action. */
 export function newIdempotencyKey(): string {
   return crypto.randomUUID();
+}
+
+/**
+ * Idempotency keys per pending user action (for example one purchase per item). A key lives until the
+ * action has a known outcome, so a retry after a network failure sends the same key (spec §2 J1, §4).
+ */
+export class ActionKeys<K> {
+  private readonly keys = new Map<K, string>();
+
+  keyFor(action: K): string {
+    let key = this.keys.get(action);
+    if (key === undefined) {
+      key = newIdempotencyKey();
+      this.keys.set(action, key);
+    }
+    return key;
+  }
+
+  /** Forgets the key when the outcome is known: success, or an error that is not retryable. */
+  settle(action: K, error?: unknown): void {
+    if (error instanceof ApiError && error.retryable) return;
+    this.keys.delete(action);
+  }
 }
 
 /** Encodes a path segment taken from data (ids, handles). */

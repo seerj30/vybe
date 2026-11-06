@@ -77,12 +77,13 @@ main:focus {
   }
 
   .nav a {
-    padding: 10px 8px;
-    font-size: 14px;
+    padding: 10px 6px;
+    font-size: 13px;
   }
 
+  /* Five items fill a phone width; the hub and the wallet show the balance. */
   .coins {
-    font-size: 13px;
+    display: none;
   }
 
   [data-layout="app"] main {

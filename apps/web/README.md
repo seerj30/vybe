@@ -12,6 +12,9 @@ change.
 | `/hub` | Avatar, level, XP, wallet |
 | `/arcade` | Game list |
 | `/arcade/street-hoops` | Street Hoops on an API session: server-verified score and rewards |
+| `/shop` | Catalog with slot filter; purchase with confirmation |
+| `/wardrobe` | Owned items per slot; wear and take off (two accessory points) |
+| `/wallet` | Balance and V-Coin ledger |
 | `/practice` | Client-only Street Hoops prototype (no API, no rewards, dev tuning panel) |
 
 ## API client
@@ -39,6 +42,15 @@ change.
 
 The tuning panel and seed field exist only in practice mode, so an online run always uses the
 server's ruleset.
+
+## Shop and wardrobe
+
+- Buy buttons only hint (owned, level, funds); the server decides. Each purchase has one
+  `Idempotency-Key` (`ActionKeys`) until its outcome is known.
+- A lost purchase answer shows "Check and retry": the client reads inventory and wallet first and
+  sends the same key again only when the item is not owned yet (spec §2 J1, E09).
+- Item pictures that do not load show a placeholder and a notice; equipment does not change (spec §9).
+- Equip sends the avatar revision; a `revision_conflict` reloads the wardrobe.
 
 ## Run
 
@@ -150,6 +162,7 @@ README). Do not edit `street-hoops-v1.json` in place.
 | `src/app/avatar/presets.ts` | Avatar presets from `assets/manifests/avatar.v1.json`, labels, 2D colors |
 | `src/app/avatar/avatar-portrait.ts` | 2D fallback avatar portrait (SVG) |
 | `src/app/pages/*.ts` | Screens of spec §3 |
+| `src/app/ui/item-thumb.ts` | Item picture with a placeholder when it does not load |
 | `src/app/street-hoops/online-session.ts` | API session flow: create, verify ruleset, start, submit, reconcile |
 | `src/app/street-hoops/input.ts` | Quantizes pointer, touch and keyboard input to integer `aimX` and `power` |
 | `src/app/street-hoops/trace.ts` | Shot gate (range, count, cadence), trace → `evaluate()`, session stats |

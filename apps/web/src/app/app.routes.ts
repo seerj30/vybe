@@ -4,6 +4,9 @@ import { Arcade } from "./pages/arcade";
 import { Hub } from "./pages/hub";
 import { Landing } from "./pages/landing";
 import { Onboarding } from "./pages/onboarding";
+import { Shop } from "./pages/shop";
+import { Wallet } from "./pages/wallet";
+import { Wardrobe } from "./pages/wardrobe";
 import { requirePlayer } from "./player/guards";
 
 /** Shell layout per route: `bare` (no nav), `app` (nav), `fullscreen` (game canvas). */
@@ -35,6 +38,9 @@ export const routes: Routes = [
       { path: "avatar/create", component: AvatarCreator, title: "Avatar · VYBE" },
       { path: "hub", component: Hub, title: "Hub · VYBE" },
       { path: "arcade", component: Arcade, title: "Arcade · VYBE" },
+      { path: "shop", component: Shop, title: "Shop · VYBE" },
+      { path: "wardrobe", component: Wardrobe, title: "Wardrobe · VYBE" },
+      { path: "wallet", component: Wallet, title: "Wallet · VYBE" },
     ],
   },
   { path: "**", redirectTo: "" },

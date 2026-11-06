@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ApiClient, ApiError, isApiError, newIdempotencyKey } from "./api-client";
+import { ActionKeys, ApiClient, ApiError, isApiError, newIdempotencyKey } from "./api-client";
 
 interface Call {
   url: string;
@@ -95,5 +95,27 @@ describe("newIdempotencyKey", () => {
     const a = newIdempotencyKey();
     expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(newIdempotencyKey()).not.toBe(a);
+  });
+});
+
+describe("ActionKeys", () => {
+  it("keeps one key per action until the outcome is known", () => {
+    const keys = new ActionKeys<string>();
+    const first = keys.keyFor("item-a");
+    expect(keys.keyFor("item-a")).toBe(first);
+    expect(keys.keyFor("item-b")).not.toBe(first);
+
+    keys.settle("item-a", new ApiError(0, "network_error"));
+    expect(keys.keyFor("item-a")).toBe(first);
+
+    keys.settle("item-a", new ApiError(409, "insufficient_funds"));
+    expect(keys.keyFor("item-a")).not.toBe(first);
+  });
+
+  it("forgets the key after success", () => {
+    const keys = new ActionKeys<string>();
+    const first = keys.keyFor("item-a");
+    keys.settle("item-a");
+    expect(keys.keyFor("item-a")).not.toBe(first);
   });
 });
