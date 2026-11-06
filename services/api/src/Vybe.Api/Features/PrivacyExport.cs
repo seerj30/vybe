@@ -32,8 +32,7 @@ public static class PlayerDataExport
                 player.Status,
                 player.Level,
                 player.XpTotal,
-                player.SuspendedUntil,
-                player.SuspensionReason,
+                player.SuspendedUntil, // the free-text reason stays out: it can name reporters
                 player.CreatedAt,
             },
             avatar = new

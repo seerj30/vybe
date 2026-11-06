@@ -33,6 +33,8 @@ public sealed class PrivacyTests(ApiFactory api)
         await RunPrivacyJobsAsync();
         var ready = await GetExportAsync(player, exportId);
         Assert.Equal("ready", ready.GetProperty("status").GetString());
+        // Each URL lives at most 10 minutes, well before the export's own 24-hour expiry.
+        Assert.Equal(api.Clock.GetUtcNow().UtcDateTime.AddMinutes(10), ready.GetProperty("downloadExpiresAt").GetDateTime().ToUniversalTime(), TimeSpan.FromSeconds(1));
         var file = new Uri(ready.GetProperty("downloadUrl").GetString()!).LocalPath;
         using (var document = JsonDocument.Parse(await File.ReadAllBytesAsync(file)))
         {
@@ -41,6 +43,7 @@ public sealed class PrivacyTests(ApiFactory api)
             Assert.Equal((await player.MeAsync()).GetProperty("handle").GetString(), root.GetProperty("player").GetProperty("handle").GetString());
             Assert.Equal("game_reward", root.GetProperty("ledger")[0].GetProperty("reason").GetString());
             Assert.Single(root.GetProperty("gameSessions").EnumerateArray());
+            Assert.False(root.GetProperty("player").TryGetProperty("suspensionReason", out _)); // free text can name reporters
         }
 
         // One ready export per 24 hours; after that the link stops and a new export is possible.
@@ -94,7 +97,8 @@ public sealed class PrivacyTests(ApiFactory api)
         Assert.Equal(ChallengeStatus.Cancelled, (await db.Challenges.SingleAsync(c => c.Id == challengeId)).Status);
         Assert.True(await db.WalletTransactions.AnyAsync(t => t.PlayerId == player.Id)); // the ledger stays, pseudonymous
         var export = await db.DataExportRequests.SingleAsync(x => x.PlayerId == player.Id);
-        Assert.False(File.Exists(Path.Combine(api.Services.GetRequiredService<PrivacyOptions>().ExportDirectory, export.StorageKey!)));
+        Assert.Equal((ExportStatus.Failed, PrivacyProcessor.PlayerDeletedCode, null), (export.Status, export.FailureCode, export.StorageKey));
+        Assert.False(api.ExportStorage.Exists(export.Id));
         await Contract.AssertProblemAsync(await anonymous.GetAsync($"/api/v1/profiles/{handle}"), HttpStatusCode.NotFound, "not_found");
     }
 
@@ -143,6 +147,104 @@ public sealed class PrivacyTests(ApiFactory api)
         await Contract.AssertAsync(await RequestDeletionAsync(first.Http, key), HttpStatusCode.Accepted, "DeletionRequested");
         await Contract.AssertProblemAsync(await RequestDeletionAsync(second.Http, key), HttpStatusCode.UnprocessableEntity, "idempotency_key_mismatch");
         Assert.Equal("active", (await second.MeAsync()).GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task StorageFailureDuringDeletion_KeepsTheKey_AndTheNextPassDeletesTheFile()
+    {
+        var player = await Player.CreateGuestAsync(api);
+        var exportId = await ReadyExportAsync(player);
+        Assert.True(api.ExportStorage.Exists(exportId));
+        try
+        {
+            api.ExportStorage.FailDeletes = true;
+            await Contract.AssertAsync(await RequestDeletionAsync(player.Http, Guid.NewGuid()), HttpStatusCode.Accepted, "DeletionRequested");
+            await RunPrivacyJobsAsync();
+            await using (var db = api.CreateDbContext())
+            {
+                Assert.Equal(PlayerStatus.Deleted, (await db.Players.SingleAsync(p => p.Id == player.Id)).Status); // never waits for storage
+                var export = await db.DataExportRequests.SingleAsync(x => x.Id == exportId);
+                Assert.Equal((ExportStatus.Failed, PrivacyProcessor.PlayerDeletedCode), (export.Status, export.FailureCode));
+                Assert.NotNull(export.StorageKey); // the pending file deletion is recorded
+            }
+
+            Assert.True(api.ExportStorage.Exists(exportId));
+        }
+        finally
+        {
+            api.ExportStorage.FailDeletes = false;
+        }
+
+        await RunPrivacyJobsAsync();
+        Assert.False(api.ExportStorage.Exists(exportId));
+        await using var after = api.CreateDbContext();
+        Assert.Null((await after.DataExportRequests.SingleAsync(x => x.Id == exportId)).StorageKey);
+    }
+
+    [Fact]
+    public async Task OrphanSweep_DeletesFilesWithoutAReadyExport_AndKeepsReadyOnes()
+    {
+        var player = await Player.CreateGuestAsync(api);
+        var ready = await ReadyExportAsync(player);
+        var orphan = Guid.NewGuid();
+        await api.ExportStorage.WriteAsync(orphan, [1, 2, 3], CancellationToken.None);
+
+        api.Clock.Advance(TimeSpan.FromHours(1)); // the sweep runs at most once per hour
+        await RunPrivacyJobsAsync();
+        Assert.False(api.ExportStorage.Exists(orphan));
+        Assert.True(api.ExportStorage.Exists(ready));
+    }
+
+    [Fact]
+    public async Task ExportAndDeletionOfOnePlayer_InParallelWorkers_FinishWithoutAFile()
+    {
+        for (var i = 0; i < 3; i++)
+        {
+            var player = await Player.CreateGuestAsync(api);
+            await player.PlayPerfectRunAsync();
+            var exportId = (await Contract.AssertAsync(await player.Http.PostAsync("/api/v1/me/data-export", null), HttpStatusCode.Accepted, "ExportRequested"))
+                .GetProperty("exportId").GetGuid();
+            await Contract.AssertAsync(await RequestDeletionAsync(player.Http, Guid.NewGuid()), HttpStatusCode.Accepted, "DeletionRequested");
+
+            var processor = api.Services.GetRequiredService<PrivacyProcessor>();
+            await Task.WhenAll(processor.RunOnceAsync(100, CancellationToken.None), processor.RunOnceAsync(100, CancellationToken.None))
+                .WaitAsync(TimeSpan.FromSeconds(30));
+            await RunPrivacyJobsAsync();
+
+            await using var db = api.CreateDbContext();
+            Assert.Equal(PlayerStatus.Deleted, (await db.Players.SingleAsync(p => p.Id == player.Id)).Status);
+            var export = await db.DataExportRequests.SingleAsync(x => x.Id == exportId);
+            Assert.Equal((ExportStatus.Failed, PrivacyProcessor.PlayerDeletedCode, null), (export.Status, export.FailureCode, export.StorageKey));
+            Assert.False(api.ExportStorage.Exists(exportId));
+        }
+    }
+
+    [Fact]
+    public async Task DeletionReplay_NeedsNoNewSignIn_AndTheKeyMustBeARandomUuid()
+    {
+        var guest = await Player.CreateGuestAsync(api);
+        var subject = Guid.NewGuid().ToString();
+        Assert.Equal(HttpStatusCode.OK, (await guest.Http.PostAsJsonAsync("/api/v1/accounts/link", new { linkProof = ApiFactory.RegisteredToken(subject) })).StatusCode);
+        using var registered = Bearer(ApiFactory.RegisteredToken(subject, authenticatedAt: api.Clock.GetUtcNow()));
+
+        await Contract.AssertProblemAsync(await RequestDeletionAsync(registered, Guid.Empty), HttpStatusCode.UnprocessableEntity, "invalid_idempotency_key");
+        await Contract.AssertProblemAsync(await RequestDeletionAsync(registered, Guid.CreateVersion7()), HttpStatusCode.UnprocessableEntity, "invalid_idempotency_key");
+
+        var key = Guid.NewGuid();
+        await Contract.AssertAsync(await RequestDeletionAsync(registered, key), HttpStatusCode.Accepted, "DeletionRequested");
+        api.Clock.Advance(TimeSpan.FromMinutes(10)); // the sign-in is now too old for a new request
+        var replay = await Contract.AssertAsync(await RequestDeletionAsync(registered, key), HttpStatusCode.Accepted, "DeletionRequested");
+        Assert.Equal(key, replay.GetProperty("requestId").GetGuid());
+        await Contract.AssertProblemAsync(await RequestDeletionAsync(registered, Guid.NewGuid()), HttpStatusCode.Forbidden, "reauthentication_required");
+    }
+
+    private async Task<Guid> ReadyExportAsync(Player player)
+    {
+        var exportId = (await Contract.AssertAsync(await player.Http.PostAsync("/api/v1/me/data-export", null), HttpStatusCode.Accepted, "ExportRequested"))
+            .GetProperty("exportId").GetGuid();
+        await RunPrivacyJobsAsync();
+        Assert.Equal("ready", (await GetExportAsync(player, exportId)).GetProperty("status").GetString());
+        return exportId;
     }
 
     private async Task RunPrivacyJobsAsync() =>

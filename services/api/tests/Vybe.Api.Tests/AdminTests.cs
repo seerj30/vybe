@@ -199,6 +199,66 @@ public sealed class AdminTests(ApiFactory api)
         Assert.Empty(none.GetProperty("items").EnumerateArray());
     }
 
+    [Fact]
+    public async Task WalletAdjustment_IsCapped_AndAFailedWriteLeavesNoAuditRow()
+    {
+        var player = await Player.CreateGuestAsync(api);
+        using var administrator = Admin("administrator");
+        await Contract.AssertProblemAsync(
+            await AdjustAsync(administrator, player.Id, 1_000_001, "too much"), HttpStatusCode.UnprocessableEntity, "validation_failed");
+        await Contract.AssertProblemAsync(
+            await AdjustAsync(administrator, player.Id, long.MinValue, "overflow"), HttpStatusCode.UnprocessableEntity, "validation_failed");
+        await Contract.AssertProblemAsync(
+            await AdjustAsync(administrator, player.Id, -1, "chargeback"), HttpStatusCode.Conflict, "insufficient_funds");
+        await Contract.AssertAsync(await AdjustAsync(administrator, player.Id, 1_000_000, "jackpot"), HttpStatusCode.OK, "WalletAdjustment");
+
+        await using var db = api.CreateDbContext();
+        var audits = await db.AdminAuditLogs.Where(a => a.EntityType == "player" && a.EntityId == player.Id.ToString()).Select(a => a.Reason).ToListAsync();
+        Assert.Equal(["jackpot"], audits); // the rejected writes rolled back without an audit row
+    }
+
+    [Fact]
+    public async Task SameAdjustmentKey_FromTwoAdministrators_AdjustsOnce()
+    {
+        var player = await Player.CreateGuestAsync(api);
+        using var first = Admin("administrator");
+        using var second = Admin("administrator");
+        var key = Guid.NewGuid();
+
+        var responses = await Task.WhenAll(AdjustAsync(first, player.Id, 40, "event prize", key), AdjustAsync(second, player.Id, 40, "event prize", key));
+        Assert.Single(responses, r => r.StatusCode == HttpStatusCode.OK);
+        await Contract.AssertProblemAsync(
+            responses.Single(r => r.StatusCode != HttpStatusCode.OK), HttpStatusCode.UnprocessableEntity, "idempotency_key_mismatch");
+        Assert.Equal(40, (await player.MeAsync()).GetProperty("walletBalance").GetInt64());
+        await using var db = api.CreateDbContext();
+        Assert.Equal(1, await db.WalletTransactions.CountAsync(t => t.PlayerId == player.Id && t.LedgerKey == $"admin:{key}"));
+    }
+
+    [Fact]
+    public async Task ConcurrentIdenticalAdjustments_AdjustOnce()
+    {
+        var player = await Player.CreateGuestAsync(api);
+        using var administrator = Admin("administrator");
+        var key = Guid.NewGuid();
+
+        var responses = await Task.WhenAll(Enumerable.Range(0, 5).Select(_ => AdjustAsync(administrator, player.Id, 25, "event prize", key)));
+        var ok = responses.Where(r => r.StatusCode == HttpStatusCode.OK).ToList();
+        Assert.NotEmpty(ok);
+        foreach (var busy in responses.Except(ok))
+        {
+            await Contract.AssertProblemAsync(busy, HttpStatusCode.Conflict, "request_in_progress");
+        }
+
+        var ids = new HashSet<Guid>();
+        foreach (var response in ok)
+        {
+            ids.Add((await Contract.AssertAsync(response, HttpStatusCode.OK, "WalletAdjustment")).GetProperty("transactionId").GetGuid());
+        }
+
+        Assert.Single(ids);
+        Assert.Equal(25, (await player.MeAsync()).GetProperty("walletBalance").GetInt64());
+    }
+
     private static async Task<string> HandleAsync(Player player) => (await player.MeAsync()).GetProperty("handle").GetString()!;
 
     private static async Task<JsonElement> FindReportAsync(HttpClient moderator, string query, Guid reportId)

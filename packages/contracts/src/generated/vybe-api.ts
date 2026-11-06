@@ -42,7 +42,9 @@ export interface paths {
          *     (a Supabase access token). The guest credentials are revoked. If the identity
          *     already belongs to another player, nothing is merged (409). 401 means the guest
          *     session itself is missing or expired; 422 `invalid_link_proof` means only the proof
-         *     was rejected, and the guest session is still valid.
+         *     was rejected, and the guest session is still valid. Attempts are rate limited per
+         *     client address and per guest player (429). 503 `auth_unavailable` means Supabase Auth
+         *     could not confirm the identity; the guest session is still valid, retry after `Retry-After`.
          */
         post: operations["linkAccount"];
         delete?: never;
@@ -630,6 +632,7 @@ export interface paths {
         /**
          * Request a data export
          * @description While an export is `queued` or `running`, 409 `export_in_progress` carries its `exportId`.
+         *     One ready export per rolling 24 hours (provisional); a new request before that is 429.
          */
         post: operations["requestDataExport"];
         delete?: never;
@@ -882,7 +885,7 @@ export interface components {
             message?: string;
         };
         /** @enum {string} */
-        ProblemCode: "malformed_request" | "invalid_idempotency_key" | "unauthenticated" | "forbidden" | "account_suspended" | "csrf_check_failed" | "not_found" | "revision_conflict" | "request_in_progress" | "payload_too_large" | "validation_failed" | "idempotency_key_mismatch" | "idempotency_key_required" | "rate_limited" | "internal_error" | "player_not_found" | "already_authenticated" | "invalid_link_proof" | "identity_already_linked" | "invalid_preset" | "incompatible_equipment" | "self_block" | "self_report" | "insufficient_funds" | "already_owned" | "level_too_low" | "item_unavailable" | "item_not_purchasable" | "item_not_owned" | "incompatible_item" | "item_inactive" | "item_already_equipped" | "outfit_limit_reached" | "outfit_items_invalid" | "session_expired" | "challenge_unavailable" | "challenge_session_exists" | "challenge_expired" | "session_not_eligible" | "session_already_used" | "self_challenge" | "recipient_blocked" | "self_accept" | "challenge_already_accepted" | "challenge_not_completed" | "rematch_already_created" | "quest_not_completed" | "quest_already_claimed" | "quest_claim_expired" | "export_in_progress" | "reauthentication_required";
+        ProblemCode: "malformed_request" | "invalid_idempotency_key" | "unauthenticated" | "forbidden" | "account_suspended" | "csrf_check_failed" | "not_found" | "revision_conflict" | "request_in_progress" | "payload_too_large" | "validation_failed" | "idempotency_key_mismatch" | "idempotency_key_required" | "rate_limited" | "internal_error" | "player_not_found" | "already_authenticated" | "invalid_link_proof" | "identity_already_linked" | "auth_unavailable" | "invalid_preset" | "incompatible_equipment" | "self_block" | "self_report" | "insufficient_funds" | "already_owned" | "level_too_low" | "item_unavailable" | "item_not_purchasable" | "item_not_owned" | "incompatible_item" | "item_inactive" | "item_already_equipped" | "outfit_limit_reached" | "outfit_items_invalid" | "session_expired" | "challenge_unavailable" | "challenge_session_exists" | "challenge_expired" | "session_not_eligible" | "session_already_used" | "self_challenge" | "recipient_blocked" | "self_accept" | "challenge_already_accepted" | "challenge_not_completed" | "rematch_already_created" | "quest_not_completed" | "quest_already_claimed" | "quest_claim_expired" | "export_in_progress" | "reauthentication_required";
         /** @description Cursor for the next page; null on the last page. */
         NextCursor: string | null;
         /** @enum {string} */
@@ -1312,8 +1315,12 @@ export interface components {
             exportId: components["schemas"]["Uuid"];
             status: components["schemas"]["ExportStatus"];
             createdAt: components["schemas"]["Timestamp"];
-            /** Format: uri */
+            /**
+             * Format: uri
+             * @description Short-lived URL (at most 10 minutes); get the export again for a new one.
+             */
             downloadUrl: string | null;
+            /** @description When `downloadUrl` stops working; the export's own expiry when there is no URL. */
             downloadExpiresAt: components["schemas"]["NullableTimestamp"];
         };
         /** @enum {string} */
@@ -1377,7 +1384,10 @@ export interface components {
         };
         WalletAdjustmentRequest: {
             playerId: components["schemas"]["Uuid"];
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Non-zero V-Coin change, at most 1,000,000 in either direction (provisional, ADR 0005).
+             */
             delta: number;
             reason: components["schemas"]["AdminReason"];
         };
@@ -1488,6 +1498,17 @@ export interface components {
         /** @description Request is well-formed but not valid for this operation. */
         UnprocessableContent: {
             headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description A dependency is unavailable; retry later. */
+        ServiceUnavailable: {
+            headers: {
+                /** @description Seconds until the next attempt. */
+                "Retry-After"?: number;
                 [name: string]: unknown;
             };
             content: {
@@ -1616,6 +1637,8 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["UnprocessableContent"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
             default: components["responses"]["Problem"];
         };
     };
@@ -2645,6 +2668,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
             default: components["responses"]["Problem"];
         };
     };

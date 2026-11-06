@@ -40,6 +40,7 @@ public static class ServiceSetup
         services.AddSingleton(configuration.GetSection(ChallengeOptions.Section).Get<ChallengeOptions>() ?? new ChallengeOptions());
         services.AddSingleton<ChallengeInvites>();
         services.AddSingleton<ILinkProofVerifier, SupabaseLinkProofVerifier>();
+        services.AddSingleton<LinkRateLimiter>();
         services.AddHttpClient(SupabaseLinkProofVerifier.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(10));
         var supabaseAuth = services.AddOptions<SupabaseAuthOptions>().Bind(configuration.GetSection(SupabaseAuthOptions.Section));
         if (!environment.IsDevelopment())
@@ -47,7 +48,7 @@ public static class ServiceSetup
             supabaseAuth.Validate(o => !string.IsNullOrEmpty(o.ApiKey), "Auth:Supabase:ApiKey must be configured").ValidateOnStart();
         }
         services.AddSingleton(configuration.GetSection(PrivacyOptions.Section).Get<PrivacyOptions>() ?? new PrivacyOptions());
-        services.AddSingleton<IExportStorage, LocalExportStorage>();
+        services.AddExportStorage(environment);
         services.AddSingleton<PrivacyProcessor>();
         if (configuration.GetValue("Jobs:Enabled", true))
         {
@@ -72,6 +73,7 @@ public static class ServiceSetup
     {
         ArgumentNullException.ThrowIfNull(app);
         _ = app.Services.GetRequiredService<ChallengeInvites>(); // fail at start-up without an invite secret
+        _ = app.Services.GetRequiredService<IExportStorage>(); // fail at start-up without export storage outside Development
         app.UseExceptionHandler();
         app.Use(LimitRequestBodyAsync);
         app.UseMiddleware<CsrfMiddleware>();

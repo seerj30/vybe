@@ -39,6 +39,9 @@ public sealed record AuditLogEntry(
 /// </summary>
 public static class AdminEndpoints
 {
+    /// <summary>Largest V-Coin amount of one wallet adjustment (ADR 0005, provisional).</summary>
+    public const long MaxAdjustment = 1_000_000;
+
     public static void Map(RouteGroupBuilder api)
     {
         ArgumentNullException.ThrowIfNull(api);
@@ -193,7 +196,9 @@ public static class AdminEndpoints
         var body = await RequestBody.ReadAsync(context, cancellationToken);
         var request = RequestBody.Deserialize<WalletAdjustmentRequest>(body);
         var playerId = request.PlayerId ?? throw Problem.ValidationFailed("/playerId", "required", "playerId is required");
-        var delta = request.Delta is { } d and not 0 ? d : throw Problem.ValidationFailed("/delta", "invalid", "delta must be a non-zero integer");
+        var delta = request.Delta is { } d and not 0 and >= -MaxAdjustment and <= MaxAdjustment
+            ? d
+            : throw Problem.ValidationFailed("/delta", "invalid", $"delta must be a non-zero integer between -{MaxAdjustment} and {MaxAdjustment}");
         var reason = AdminAccess.ValidReason(request.Reason);
         var hash = Idempotency.Hash("admin.wallet_adjustment", string.Empty, body);
 
@@ -205,26 +210,33 @@ public static class AdminEndpoints
                 throw Problem.Of(404, "not_found");
             }
 
+            // Wallet lock first: a concurrent adjustment with the same key commits before this one reads the ledger.
+            var balance = (await db.Wallets.FromSql($"SELECT * FROM vybe.wallets WHERE player_id = {playerId} FOR UPDATE")
+                .SingleAsync(ct)).Balance;
             var ledgerKey = $"admin:{key}";
             var previous = await db.WalletTransactions.AsNoTracking()
                 .SingleOrDefaultAsync(t => t.PlayerId == playerId && t.LedgerKey == ledgerKey, ct);
             if (previous is not null)
             {
-                // The idempotency record expired, the ledger key did not: return the stored outcome (spec §4).
-                return new OperationResult(200,
-                    new WalletAdjustment(previous.Id, playerId, previous.Delta, previous.BalanceAfter, previous.ReferenceId!.Value));
+                // The ledger key is per player, the idempotency record per admin. Replay only the same admin's same
+                // adjustment (e.g. after the idempotency record expired); anything else reused the key.
+                var previousActor = await db.AdminAuditLogs.Where(a => a.Id == previous.ReferenceId)
+                    .Select(a => a.ActorSubject).SingleAsync(ct);
+                return previousActor == actor.Subject && previous.Delta == delta
+                    ? new OperationResult(200,
+                        new WalletAdjustment(previous.Id, playerId, previous.Delta, previous.BalanceAfter, previous.ReferenceId!.Value))
+                    : throw Problem.Of(422, "idempotency_key_mismatch");
             }
 
-            var balance = (await db.Wallets.FromSql($"SELECT * FROM vybe.wallets WHERE player_id = {playerId} FOR UPDATE")
-                .SingleAsync(ct)).Balance;
-            if (balance + delta < 0)
+            var balanceAfter = checked(balance + delta);
+            if (balanceAfter < 0)
             {
                 throw Problem.Of(409, "insufficient_funds");
             }
 
             var now = clock.UtcNowForDb();
             var audit = AdminAccess.Audit(db, actor, "wallet.adjust", "player", playerId.ToString(),
-                new { balance }, new { balance = balance + delta, delta }, reason, now);
+                new { balance }, new { balance = balanceAfter, delta }, reason, now);
             var entry = await RewardService.CreditAsync(db, playerId, delta, LedgerReason.AdminAdjustment, "admin_audit_log", audit.Id, ledgerKey, ct);
             await db.SaveChangesAsync(ct);
             return new OperationResult(200, new WalletAdjustment(entry.Id, playerId, delta, entry.BalanceAfter, audit.Id));

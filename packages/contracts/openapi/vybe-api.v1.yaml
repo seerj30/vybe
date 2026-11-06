@@ -97,13 +97,17 @@ paths:
         (a Supabase access token). The guest credentials are revoked. If the identity
         already belongs to another player, nothing is merged (409). 401 means the guest
         session itself is missing or expired; 422 `invalid_link_proof` means only the proof
-        was rejected, and the guest session is still valid.
+        was rejected, and the guest session is still valid. Attempts are rate limited per
+        client address and per guest player (429). 503 `auth_unavailable` means Supabase Auth
+        could not confirm the identity; the guest session is still valid, retry after `Retry-After`.
       security:
         - guestCookie: []
       x-problem-codes:
         "401": [unauthenticated]
         "409": [identity_already_linked]
         "422": [invalid_link_proof]
+        "429": [rate_limited]
+        "503": [auth_unavailable]
       requestBody:
         required: true
         content:
@@ -128,6 +132,10 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableContent"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         default:
           $ref: "#/components/responses/Problem"
 
@@ -1072,9 +1080,12 @@ paths:
       parameters:
         - $ref: "#/components/parameters/CsrfHeader"
       summary: Request a data export
-      description: While an export is `queued` or `running`, 409 `export_in_progress` carries its `exportId`.
+      description: |
+        While an export is `queued` or `running`, 409 `export_in_progress` carries its `exportId`.
+        One ready export per rolling 24 hours (provisional); a new request before that is 429.
       x-problem-codes:
         "409": [export_in_progress]
+        "429": [rate_limited]
       responses:
         "202":
           description: Export queued.
@@ -1086,6 +1097,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "409":
           $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
         default:
           $ref: "#/components/responses/Problem"
 
@@ -1611,6 +1624,18 @@ components:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
+    ServiceUnavailable:
+      description: A dependency is unavailable; retry later.
+      headers:
+        Retry-After:
+          description: Seconds until the next attempt.
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
     TooManyRequests:
       description: Rate limit reached.
       headers:
@@ -1745,6 +1770,7 @@ components:
         - already_authenticated
         - invalid_link_proof
         - identity_already_linked
+        - auth_unavailable
         - invalid_preset
         - incompatible_equipment
         # safety
@@ -2716,9 +2742,11 @@ components:
         createdAt:
           $ref: "#/components/schemas/Timestamp"
         downloadUrl:
+          description: Short-lived URL (at most 10 minutes); get the export again for a new one.
           type: [string, "null"]
           format: uri
         downloadExpiresAt:
+          description: When `downloadUrl` stops working; the export's own expiry when there is no URL.
           $ref: "#/components/schemas/NullableTimestamp"
     DeletionStatus:
       type: string
@@ -2851,8 +2879,11 @@ components:
         playerId:
           $ref: "#/components/schemas/Uuid"
         delta:
+          description: Non-zero V-Coin change, at most 1,000,000 in either direction (provisional, ADR 0005).
           type: integer
           format: int64
+          minimum: -1000000
+          maximum: 1000000
           not:
             const: 0
         reason:

@@ -9,57 +9,81 @@ using Vybe.Data.Entities;
 namespace Vybe.Api.Features;
 
 /// <summary>
-/// Runs queued data exports and deletion requests (spec §2 J4). Each request is claimed with
-/// <c>FOR UPDATE SKIP LOCKED</c> and finished in one transaction, so two workers never run the same request.
+/// Runs queued data exports and deletion requests (spec §2 J4), then removes export files that no longer
+/// belong to a ready export. Each request is claimed with <c>FOR UPDATE SKIP LOCKED</c> and finished in one
+/// transaction, so two workers never run the same request. Lock order in every path: player row first, then
+/// export rows (ADR 0005), so an export and a deletion of one player cannot deadlock.
 /// </summary>
 public sealed partial class PrivacyProcessor(
     IServiceScopeFactory scopes, IExportStorage storage, ContentCatalog content, PrivacyOptions options, TimeProvider clock,
     ILogger<PrivacyProcessor> logger)
 {
+    public const string PlayerDeletedCode = "player_deleted";
     private const string PseudonymAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+    private static readonly TimeSpan OrphanSweepInterval = TimeSpan.FromHours(1);
+    private readonly Lock _sweepGate = new();
+    private DateTime _nextOrphanSweep = DateTime.MinValue;
 
     public async Task RunOnceAsync(int max, CancellationToken cancellationToken)
     {
-        for (var i = 0; i < max && await ExportNextAsync(cancellationToken); i++)
+        var busy = new HashSet<Guid>();
+        for (var i = 0; i < max && await ExportNextAsync(busy, cancellationToken); i++)
         {
         }
 
         for (var i = 0; i < max && await DeleteNextAsync(cancellationToken); i++)
         {
         }
+
+        var failed = new HashSet<Guid>();
+        for (var i = 0; i < max && await DeleteFileNextAsync(failed, cancellationToken); i++)
+        {
+        }
+
+        await SweepOrphansAsync(cancellationToken);
     }
 
-    private async Task<bool> ExportNextAsync(CancellationToken cancellationToken)
+    private async Task<bool> ExportNextAsync(HashSet<Guid> busy, CancellationToken cancellationToken)
     {
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<VybeDbContext>();
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        var export = await db.DataExportRequests
-            .FromSql($"""
-                SELECT * FROM vybe.data_export_requests WHERE status = 'queued'
-                ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED
-                """)
-            .SingleOrDefaultAsync(cancellationToken);
-        if (export is null)
+        var candidate = await db.DataExportRequests.AsNoTracking()
+            .Where(x => x.Status == ExportStatus.Queued && !busy.Contains(x.Id))
+            .OrderBy(x => x.CreatedAt).ThenBy(x => x.Id)
+            .Select(x => new { x.Id, x.PlayerId })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (candidate is null)
         {
             return false;
         }
 
-        var now = clock.UtcNowForDb();
-        // FOR SHARE waits for a running anonymization (FOR NO KEY UPDATE), so no export file outlives a deletion.
-        var status = (await db.Players.FromSql($"SELECT * FROM vybe.players WHERE id = {export.PlayerId} FOR SHARE")
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        // Player row first: FOR SHARE waits for a running anonymization (FOR NO KEY UPDATE).
+        var status = (await db.Players.FromSql($"SELECT * FROM vybe.players WHERE id = {candidate.PlayerId} FOR SHARE")
             .AsNoTracking().SingleAsync(cancellationToken)).Status;
+        var export = await db.DataExportRequests
+            .FromSql($"SELECT * FROM vybe.data_export_requests WHERE id = {candidate.Id} AND status = 'queued' FOR UPDATE SKIP LOCKED")
+            .SingleOrDefaultAsync(cancellationToken);
+        if (export is null)
+        {
+            busy.Add(candidate.Id); // another worker has it, or it is already done
+            return true;
+        }
+
+        var now = clock.UtcNowForDb();
         if (status is PlayerStatus.Deleting or PlayerStatus.Deleted)
         {
-            // Queued in the moment of a deletion: never export anonymized data or keep a file of it.
+            // Never export anonymized data or keep a file of it.
             export.Status = ExportStatus.Failed;
-            export.FailureCode = "player_deleted";
+            export.FailureCode = PlayerDeletedCode;
         }
         else
         {
             try
             {
                 var document = await PlayerDataExport.BuildAsync(db, export.PlayerId, now, cancellationToken);
+                // The key is derived from the export id: if the commit fails, the retry replaces the file, and the
+                // orphan sweep removes it if the export never becomes ready.
                 export.StorageKey = await storage.WriteAsync(
                     export.Id, JsonSerializer.SerializeToUtf8Bytes(document, ApiJson.Options), cancellationToken);
                 export.Status = ExportStatus.Ready;
@@ -135,24 +159,93 @@ public sealed partial class PrivacyProcessor(
             .Where(c => (c.CreatorPlayerId == playerId || c.RecipientPlayerId == playerId)
                 && (c.Status == ChallengeStatus.Open || c.Status == ChallengeStatus.Accepted))
             .ExecuteUpdateAsync(u => u.SetProperty(c => c.Status, ChallengeStatus.Cancelled), cancellationToken);
+        // Every export of the player fails; a stored file keeps its key, so DeleteFileNextAsync removes it
+        // and retries until the storage confirms. The deletion never depends on the storage being up.
         await db.DataExportRequests
-            .Where(x => x.PlayerId == playerId && (x.Status == ExportStatus.Queued || x.Status == ExportStatus.Running))
+            .Where(x => x.PlayerId == playerId && x.Status != ExportStatus.Failed)
             .ExecuteUpdateAsync(u => u
                 .SetProperty(x => x.Status, ExportStatus.Failed)
-                .SetProperty(x => x.FailureCode, "player_deleted")
-                .SetProperty(x => x.CompletedAt, now), cancellationToken);
-        var files = await db.DataExportRequests.Where(x => x.PlayerId == playerId && x.StorageKey != null)
-            .Select(x => x.StorageKey!).ToListAsync(cancellationToken);
+                .SetProperty(x => x.FailureCode, PlayerDeletedCode)
+                .SetProperty(x => x.CompletedAt, x => x.CompletedAt ?? now), cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-
-        // After the commit: a failed transaction must not lose the export of a player who still exists.
-        foreach (var file in files)
-        {
-            await storage.DeleteAsync(file, cancellationToken);
-        }
-
         return true;
     }
+
+    /// <summary>Deletes the file of one failed export (for example of a deleted player) and clears its key.</summary>
+    private async Task<bool> DeleteFileNextAsync(HashSet<Guid> failed, CancellationToken cancellationToken)
+    {
+        await using var scope = scopes.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<VybeDbContext>();
+        var ids = failed.ToArray();
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var export = await db.DataExportRequests
+            .FromSql($"""
+                SELECT * FROM vybe.data_export_requests
+                WHERE status = 'failed' AND storage_key IS NOT NULL AND id <> ALL({ids})
+                ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED
+                """)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (export is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            await storage.DeleteAsync(export.StorageKey!, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            LogFileDeleteFailed(logger, exception, export.Id);
+            failed.Add(export.Id); // the key stays, so the next pass retries
+            return true;
+        }
+
+        export.StorageKey = null;
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
+    /// <summary>
+    /// At most once per hour: deletes stored files whose export is unknown or failed without a key (a file
+    /// written by an export whose transaction never committed). Files of queued, running and ready exports stay.
+    /// </summary>
+    private async Task SweepOrphansAsync(CancellationToken cancellationToken)
+    {
+        var now = clock.UtcNowForDb();
+        lock (_sweepGate)
+        {
+            if (now < _nextOrphanSweep)
+            {
+                return;
+            }
+
+            _nextOrphanSweep = now + OrphanSweepInterval;
+        }
+
+        await using var scope = scopes.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<VybeDbContext>();
+        await foreach (var (exportId, key) in storage.ListAsync(cancellationToken))
+        {
+            var row = await db.DataExportRequests.AsNoTracking().Where(x => x.Id == exportId)
+                .Select(x => new { x.Status, x.StorageKey }).SingleOrDefaultAsync(cancellationToken);
+            if (row is null || (row.Status == ExportStatus.Failed && row.StorageKey is null))
+            {
+                try
+                {
+                    await storage.DeleteAsync(key, cancellationToken);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    LogFileDeleteFailed(logger, exception, exportId);
+                }
+            }
+        }
+    }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Deleting the file of data export {ExportId} failed; retrying later")]
+    private static partial void LogFileDeleteFailed(ILogger logger, Exception exception, Guid exportId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Data export {ExportId} failed")]
     private static partial void LogExportFailed(ILogger logger, Exception exception, Guid exportId);
