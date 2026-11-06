@@ -10,7 +10,7 @@ Browser-based social arcade with customizable 3D cartoon avatars.
 apps/web/              Street Hoops playable prototype (Angular + Three.js, client-only)
 packages/contracts/    OpenAPI 3.1 contract (source of truth for the API) and generated TS types
 packages/game-rules/   Street Hoops simulator (TypeScript reference) and golden fixtures
-services/api/          ASP.NET Core solution; Vybe.GameRules is the C# simulator
+services/api/          ASP.NET Core solution: Vybe.Api (HTTP host), Vybe.Data (EF Core), Vybe.GameRules (C# simulator)
 tests/e2e/             Playwright browser tests for apps/web (Chromium, desktop and mobile touch)
 docs/spec/             Product, game and technical specification
 docs/adr/              Architecture decision records
@@ -22,6 +22,18 @@ Database (PostgreSQL, EF Core migrations in `services/api/src/Vybe.Data`):
 dotnet tool restore --tool-manifest services/api/dotnet-tools.json
 dotnet test services/api/tests/Vybe.Data.Tests      # needs Docker
 ```
+
+Run the API locally (apply the migrations first; the connection string is a secret, so pass it
+through the environment, never `appsettings.json`):
+
+```bash
+cd services/api
+export ConnectionStrings__Vybe="Host=localhost;Database=vybe;Username=vybe"   # add the password from your secret store
+VYBE_DB_CONNECTION="$ConnectionStrings__Vybe" dotnet ef database update --project src/Vybe.Data
+dotnet run --project src/Vybe.Api
+```
+
+API integration tests (`services/api/tests/Vybe.Api.Tests`) also need Docker.
 
 After a model change, add a migration and regenerate the review script:
 

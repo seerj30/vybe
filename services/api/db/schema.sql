@@ -721,3 +721,22 @@ VALUES ('20261106122824_DatabaseGuards', '10.0.13');
 
 COMMIT;
 
+START TRANSACTION;
+INSERT INTO vybe.game_rulesets (id, game_id, version, config, checksum, active_from)
+VALUES (
+    'street-hoops-v1',
+    'street-hoops',
+    1,
+    '{"streamId": 54, "durationMs": 60000, "graceMs": 5000, "earlyToleranceMs": 2000,
+      "segmentMs": 4000, "xMin": -700, "xMax": 700, "pMin": 300, "pMax": 900,
+      "hitDx": 160, "hitDp": 120, "perfectDx": 50, "perfectDp": 50,
+      "hitPoints": 100, "perfectPoints": 150, "streakStart": 3, "streakStep": 25,
+      "streakMax": 100, "minGapMs": 650, "maxEvents": 93, "minShotsForRewards": 5}',
+    '9b3bd19baa803520ab49a48f96f415f477fdfedbfc5a842dbacf00cfc8f2948d',
+    TIMESTAMPTZ '2026-11-06 00:00:00+00');
+
+INSERT INTO vybe.__ef_migrations_history (migration_id, product_version)
+VALUES ('20261106134720_SeedStreetHoopsV1', '10.0.13');
+
+COMMIT;
+
