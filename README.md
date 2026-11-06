@@ -11,6 +11,7 @@ apps/web/              Street Hoops playable prototype (Angular + Three.js, clie
 packages/contracts/    OpenAPI 3.1 contract (source of truth for the API) and generated TS types
 packages/game-rules/   Street Hoops simulator (TypeScript reference) and golden fixtures
 services/api/          ASP.NET Core solution; Vybe.GameRules is the C# simulator
+tests/e2e/             Playwright browser tests for apps/web (Chromium, desktop and mobile touch)
 docs/spec/             Product, game and technical specification
 docs/adr/              Architecture decision records
 ```
@@ -53,6 +54,13 @@ pnpm install
 pnpm test                    # TypeScript tests
 pnpm typecheck
 dotnet test services/api     # C# tests
+```
+
+Browser tests (start the web dev server on port 4321 for you):
+
+```bash
+pnpm --filter @vybe/e2e exec playwright install chromium
+pnpm --filter @vybe/e2e test:e2e
 ```
 
 Regenerate the golden fixtures after a deliberate rules change, then review the diff:
