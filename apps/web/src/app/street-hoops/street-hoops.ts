@@ -245,7 +245,8 @@ export class StreetHoops {
   protected onKeyUp(event: KeyboardEvent): void {
     this.heldKeys.delete(event.code);
     if (SHOOT_KEYS.has(event.code) && this.phase() === "running") {
-      event.preventDefault();
+      // A checkbox toggles on the Space keyup, so keep the default on form fields.
+      if (!this.isFormField(event.target)) event.preventDefault();
       this.release(event.timeStamp);
     }
   }
