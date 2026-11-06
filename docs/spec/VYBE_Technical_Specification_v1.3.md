@@ -41,7 +41,7 @@ Authenticated/guest player completes eligible run → Create challenge (server s
 - The recipient gets exactly one game session per challenge. If that run is `rejected` or `expired`, the challenge moves to `expired` with no winner.
 - A challenge from a profile designates that profile's player as the recipient.
 - Ties: challenger retains title; both receive normal gameplay rewards; no winner bonus; stored as `completed` with `winner_player_id = NULL`.
-- Blocked players (either direction, `player_blocks`) cannot create or accept challenges with each other; `open` and `accepted` challenges between them are cancelled in the same transaction that applies the block. The block stays private: the blocked player sees the same response as for an invalid link, block-cancelled challenges are shown as `expired`, and a challenge to a player who blocked the creator is silently suppressed (§5).
+- Blocked players (either direction, `player_blocks`) cannot create or accept challenges with each other; `open` and `accepted` challenges between them are cancelled in the same transaction that applies the block. The block stays private: the blocked player sees the same response as for an invalid link, block-cancelled challenges are shown as `expired`, and a challenge to a player who blocked the creator is silently suppressed (§5). Accepted residual risk: a determined player can still infer a block (signed-in vs anonymous invite preview; a challenge that expires before its deadline).
 
 ### J3: account linking
 Guest → verify email/OAuth identity via Supabase Auth → backend binds existing player to verified subject in atomic operation → revoke guest credentials → keep player ID, wallet, inventory and history. If verified identity is already linked to another player, **do not auto-merge**; require explicit account selection/support flow.
@@ -75,9 +75,9 @@ Use PostgreSQL `uuid` IDs, `timestamptz` UTC, monetary amounts as `bigint` integ
 
 ### Core tables
 
-**players**: `id uuid PK`, `auth_subject text UNIQUE NULL`, `handle text NOT NULL`, `handle_normalized text UNIQUE NOT NULL`, `display_name varchar(40)`, `kind enum(guest,registered)`, `status enum(active,suspended,deleting,deleted)`, `level int NOT NULL DEFAULT 1 CHECK(level BETWEEN 1 AND 50)` (cache of the level derived from `xp_total` by §8; written in the same transaction as `xp_total`), `xp_total bigint NOT NULL DEFAULT 0`, `suspended_until timestamptz NULL` (NULL with `status = suspended` = indefinite), `suspension_reason text NULL`, `created_at`, `updated_at`, `deleted_at NULL`. A player is suspended when `status = suspended` and (`suspended_until IS NULL` or `suspended_until > now()`); an elapsed suspension is treated as `active` on read and reset to `active` by the sweeper. Handle format `[a-z0-9_]{3,20}`; case-insensitive normalized uniqueness; reserved names list.
+**players**: `id uuid PK`, `auth_subject text UNIQUE NULL`, `handle text NOT NULL`, `handle_normalized text UNIQUE NOT NULL`, `display_name varchar(40)`, `kind enum(guest,registered)`, `status enum(active,suspended,deleting,deleted)`, `level int NOT NULL DEFAULT 1 CHECK(level BETWEEN 1 AND 50)` (cache of the level derived from `xp_total` by §8; written in the same transaction as `xp_total`), `xp_total bigint NOT NULL DEFAULT 0`, `suspended_until timestamptz NULL` (NULL with `status = suspended` = indefinite), `suspension_reason text NULL`, `created_at`, `updated_at`, `deleted_at NULL`. A player is suspended when `status = suspended` and (`suspended_until IS NULL` or `suspended_until > now()`); an elapsed suspension is treated as `active` on read and reset to `active` by the sweeper. Handle format `[a-z0-9_]{3,20}`, stored and returned in lowercase; input handles are matched case-insensitively; reserved names list.
 
-**guest_sessions**: `id uuid PK`, `player_id uuid FK`, `token_hash bytea UNIQUE`, `expires_at`, `revoked_at NULL`, `created_at`; random high-entropy token in Secure, HttpOnly, SameSite=Lax cookie; rotate on linking. Never store raw tokens.
+**guest_sessions**: `id uuid PK`, `player_id uuid FK`, `token_hash bytea UNIQUE`, `expires_at`, `revoked_at NULL`, `created_at`; random high-entropy token in Secure, HttpOnly, SameSite=Lax cookie; revoked on linking (the link response clears the cookie). Never store raw tokens.
 
 **avatar_configs**: `player_id uuid PK/FK`, `body_preset_id text`, `skin_tone_id text`, `face_preset_id text`, `hair_preset_id text`, `hair_color_id text`, `equipped_json jsonb`, `revision bigint`, `updated_at`; validate each preset against versioned catalog, not arbitrary asset URLs.
 
@@ -112,7 +112,7 @@ A unique violation on `ledger_key` means the effect already happened; the caller
 
 **game_input_traces**: `session_id uuid PK/FK`, `compressed_trace bytea`, `encoding text`, `event_count int`, `received_at`; size cap and retention policy.
 
-**challenges**: `id uuid PK`, `creator_player_id uuid FK`, `creator_session_id uuid FK UNIQUE` (one challenge per verified run), `recipient_player_id uuid FK NULL` (set on accept; preset for a rematch or a profile challenge), `invite_token_hash bytea UNIQUE`, `ruleset_id text FK`, `status enum(open,accepted,completed,expired,cancelled)`, `created_at`, `accept_deadline`, `accepted_at NULL`, `complete_deadline NULL`, `recipient_session_id uuid FK UNIQUE NULL` (set by compare-and-swap when the recipient creates the session), `winner_player_id uuid FK NULL` (NULL on a `completed` challenge = tie), `rematch_of_challenge_id uuid FK NULL`, `suppressed bool NOT NULL DEFAULT false` (created against a player who blocked the creator; never shown to that recipient; expires normally), `resolved_at NULL`, `version bigint`; `CHECK(recipient_player_id IS NULL OR recipient_player_id <> creator_player_id)`; partial `UNIQUE(rematch_of_challenge_id, creator_player_id) WHERE rematch_of_challenge_id IS NOT NULL` (one rematch per participant per challenge); indexes `(creator_player_id,created_at DESC)`, `(recipient_player_id,status)`, `(status,accept_deadline)`.
+**challenges**: `id uuid PK`, `creator_player_id uuid FK`, `creator_session_id uuid FK UNIQUE` (one challenge per verified run), `recipient_player_id uuid FK NULL` (set on accept; preset for a rematch or a profile challenge), `invite_token_hash bytea UNIQUE` (token = base64url(HMAC-SHA256(server secret, challenge id)); only the hash is stored, and an idempotent replay rebuilds the share URL without storing the raw token), `ruleset_id text FK`, `status enum(open,accepted,completed,expired,cancelled)`, `created_at`, `accept_deadline`, `accepted_at NULL`, `complete_deadline NULL`, `recipient_session_id uuid FK UNIQUE NULL` (set by compare-and-swap when the recipient creates the session), `winner_player_id uuid FK NULL` (NULL on a `completed` challenge = tie), `rematch_of_challenge_id uuid FK NULL`, `suppressed bool NOT NULL DEFAULT false` (created against a player who blocked the creator; never shown to that recipient; expires normally), `resolved_at NULL`, `version bigint`; `CHECK(recipient_player_id IS NULL OR recipient_player_id <> creator_player_id)`; partial `UNIQUE(rematch_of_challenge_id, creator_player_id) WHERE rematch_of_challenge_id IS NOT NULL` (one rematch per participant per challenge); indexes `(creator_player_id,created_at DESC)`, `(recipient_player_id,status)`, `(status,accept_deadline)`.
 
 **quest_definitions**: `id uuid PK`, `code text`, `version int`, `period enum(daily,once)`, `criteria jsonb`, `target int NOT NULL CHECK(target > 0)`, `reward_coins bigint`, `reward_xp int`, `is_active bool`.
 
@@ -139,7 +139,7 @@ A unique violation on `ledger_key` means the effect already happened; the caller
 **idempotency_records**: `actor_subject text` (player id, or admin auth subject), `operation text`, `key uuid`, `request_hash text`, `status enum(in_progress,completed)`, `locked_until timestamptz NULL`, `response_status int NULL`, `response_body jsonb NULL`, `created_at`, `expires_at` (created + 72 h), `PRIMARY KEY(actor_subject,operation,key)`. `Idempotency-Key` must be a UUID (422 `invalid_idempotency_key` otherwise). Protocol:
 1. In a short transaction: `INSERT … (status = in_progress, locked_until = now() + 30 s) ON CONFLICT DO NOTHING`.
 2. If a row already exists: different `request_hash` → 422 `idempotency_key_mismatch`; `completed` → return the stored response; `in_progress` with `locked_until > now()` → 409 `request_in_progress`; `in_progress` with an elapsed lock → take it over with `UPDATE … SET locked_until = now() + 30 s WHERE locked_until < now() RETURNING` (if no row returns, answer 409).
-3. Execute the operation and, **in the same transaction**, write `response_status`, `response_body` and `status = completed`. Business outcomes (2xx and 4xx such as `insufficient_funds`) are stored and replayed. A 5xx or a crash stores nothing; the lock elapses and a retry takes over.
+3. Execute the operation and, **in the same transaction**, write `response_status`, `response_body` and `status = completed`. Exception: `createChallenge` and `createRematch` store the body without `shareUrl` and rebuild it on replay from the challenge id (the invite token is HMAC-derived), so no raw token is ever stored. Business outcomes (2xx and 4xx such as `insufficient_funds`) are stored and replayed. A 5xx or a crash stores nothing; the lock elapses and a retry takes over.
 Clients must not reuse a key after 24 h. The ledger `UNIQUE(player_id,ledger_key)` remains the final guard if a record expired.
 
 ### Database invariants
@@ -172,17 +172,17 @@ Clients must not reuse a key after 24 h. The ledger `UNIQUE(player_id,ledger_key
 
 ## 5. API contracts v1
 
-Base path `/api/v1`. JSON UTF-8; UTC ISO 8601; UUID strings; `Idempotency-Key` required for state-changing economic actions. Auth: validated Supabase bearer token for registered users or signed guest cookie for guests. `traceparent` propagated. Errors: RFC 9457 ProblemDetails with `type`, `title`, `status`, `detail`, `instance`, `code`, `traceId`. Never leak internal exception details. `code` is a stable machine-readable string; each endpoint below lists its codes, and the OpenAPI document enumerates them.
+Base path `/api/v1`. The machine-readable contract is `packages/contracts/openapi/vybe-api.v1.yaml` (decisions: `docs/adr/0001-openapi-contract.md`). JSON UTF-8; UTC ISO 8601; UUID strings; `Idempotency-Key` required for state-changing economic actions. Auth: validated Supabase bearer token for registered users or signed guest cookie for guests. `traceparent` propagated. Errors: RFC 9457 ProblemDetails with `type`, `title`, `status`, `detail`, `instance`, `code`, `traceId`. Never leak internal exception details. `code` is a stable machine-readable string; each endpoint below lists its codes, and the OpenAPI document enumerates them.
 
-**Common codes (all endpoints unless an endpoint states otherwise):** 400 `malformed_request` (unparseable JSON or wrong JSON types), 422 `invalid_idempotency_key` (not a UUID), 401 `unauthenticated`, 403 `forbidden`, 403 `account_suspended` (economic actions and challenge creation), 404 `not_found`, 409 `revision_conflict`, 409 `request_in_progress`, 413 `payload_too_large`, 422 `validation_failed` (field errors in `errors[]`), 422 `idempotency_key_mismatch`, 428 `idempotency_key_required`, 429 `rate_limited`.
+**Common codes (all endpoints unless an endpoint states otherwise):** 400 `malformed_request` (unparseable JSON or wrong JSON types), 422 `invalid_idempotency_key` (not a UUID), 401 `unauthenticated`, 404 `player_not_found` (valid Supabase token whose identity has no player yet: the client creates a guest without the bearer token, then links it), 403 `forbidden`, 403 `csrf_check_failed` (cookie-authenticated unsafe request without `X-Requested-With: vybe-web`), 403 `account_suspended` (economic actions and challenge creation), 404 `not_found`, 409 `revision_conflict`, 409 `request_in_progress`, 413 `payload_too_large`, 422 `validation_failed` (field errors in `errors[]`), 422 `idempotency_key_mismatch`, 428 `idempotency_key_required`, 429 `rate_limited`, 500 `internal_error`.
 
 ### Identity / avatar
-- `POST /guests` → `201 {playerId,handle,guestExpiresAt}` + secure guest cookie; rate limited.
-- `POST /accounts/link` `{linkProof}` → `200 {playerId,accountLinked:true}`; proof must be verified server-side; 409 `identity_already_linked`.
-- `GET /me` → `200 {id,handle,level,xpTotal,walletBalance,avatarRevision}`.
+- `POST /guests` → `201 {playerId,handle,guestExpiresAt}` + secure guest cookie; rate limited; requires `X-Requested-With: vybe-web` (403 `csrf_check_failed`), so a cross-site form cannot replace a guest cookie; 409 `already_authenticated` when a valid guest cookie or bearer token is present.
+- `POST /accounts/link` `{linkProof}` → `200 {playerId,accountLinked:true}`; proof must be verified server-side and must be a non-anonymous Supabase identity with a confirmed email; the response clears the guest cookie; 409 `identity_already_linked`; 422 `invalid_link_proof` (the guest session stays valid; 401 means the guest session itself is gone).
+- `GET /me` → `200 {id,handle,kind,status,suspendedUntil,level,xpTotal,walletBalance,avatarRevision}`; `status` ∈ `active`, `suspended`, `deleting`; `kind` (`guest` or `registered`) drives the link-account prompt.
 - `GET /me/avatar` → `200 {revision,bodyPresetId,skinToneId,facePresetId,hairPresetId,hairColorId,equipped}`; `equipped` uses the `equipped_json` shape (§4).
 - `PUT /me/avatar` `{bodyPresetId,skinToneId,facePresetId,hairPresetId,hairColorId,expectedRevision}` → `200 {revision,avatar}`; 409 `revision_conflict`; 422 `invalid_preset`; 409 `incompatible_equipment` with `itemIds[]` when a body preset change leaves equipped items incompatible (nothing changes; the client unequips them first).
-- `GET /profiles/{handle}` → public fields only; 404 `not_found` if unavailable.
+- `GET /profiles/{handle}` → public fields only; 404 `not_found` if unavailable; `Cache-Control: private, no-store` (optional auth).
 
 ### Safety
 - `POST /me/blocks` `{handle}` → `204`; idempotent; cancels pending challenges between the pair (invariant 8); 404 `not_found`; 422 `self_block`.
@@ -191,7 +191,7 @@ Base path `/api/v1`. JSON UTF-8; UTC ISO 8601; UUID strings; `Idempotency-Key` r
 - `POST /reports` `{targetHandle,reason,details?}` → `202 {reportId}`; `reason` from `player_reports.reason`; 404 `not_found`; 422 `self_report`; rate limited (provisional: 10/day per reporter).
 
 ### Catalog / inventory / economy
-- `GET /catalog/items?slot=top&cursor=...&limit=24` → `{items:[{id,sku,name,price,slot,rarity,minLevel,previewUrl,owned}],nextCursor}`; only active items with `price > 0` in their availability window; server-generated asset URLs.
+- `GET /catalog/items?slot=top&cursor=...&limit=24` → `{items:[{id,sku,name,price,slot,rarity,minLevel,previewUrl,owned}],nextCursor}`; only active items with `price > 0` in their availability window; server-generated asset URLs; `Cache-Control: private, no-store` (`owned` depends on the caller).
 - `GET /me/inventory` → owned item IDs and metadata, including `source`.
 - `POST /purchases` `{itemId}` + Idempotency-Key → `200 {transactionId,itemId,balanceAfter}`; 409 `insufficient_funds`; 409 `already_owned`; 403 `level_too_low`; 422 `item_unavailable` (inactive, outside window or unknown); 422 `item_not_purchasable` (`price = 0`).
 - `POST /me/equipment` `{slot,itemId|null,attachIndex?,expectedAvatarRevision}` → `200 {revision,equipped}`; `attachIndex` (0 or 1) is required for `slot = accessory` and forbidden otherwise; 422 `item_already_equipped` when the same accessory is already at the other attachment point; 403 `item_not_owned`; 422 `incompatible_item` (slot or body preset); 422 `item_inactive`; 409 `revision_conflict`.
@@ -220,22 +220,22 @@ Base path `/api/v1`. JSON UTF-8; UTC ISO 8601; UUID strings; `Idempotency-Key` r
 
 **Visible status rule (block privacy):** the API never returns `cancelled`. Internally `cancelled` (always caused by a block in MVP) is shown as `expired` to both participants, in every challenge endpoint and filter.
 
-- `GET /challenges/by-token/{token}` → safe public challenge preview, no secret token hash; 404 `challenge_unavailable` under the same rules as accept.
-- `POST /challenges/by-token/{token}/accept` + Idempotency-Key → `200 {challengeId,status,completeDeadline}`; atomic token redemption under the pair lock (invariant 12). Codes: 404 `challenge_unavailable` (unknown token, preset recipient is someone else, `suppressed`, or a block exists in either direction); 403 `self_accept`; 409 `challenge_already_accepted`; 410 `challenge_expired` (also for internal `cancelled`). The token, suppression and block checks run before all status checks.
-- `GET /challenges/{id}` → participants and visible status, filtered by privacy rules.
+- `GET /invites/{token}` → safe public challenge preview, no secret token hash; 404 `challenge_unavailable` under the same rules as accept; `Cache-Control: private, no-store`.
+- `POST /invites/{token}/accept` + Idempotency-Key → `200 {challengeId,status,completeDeadline}`; atomic token redemption under the pair lock (invariant 12). Codes: 404 `challenge_unavailable` (unknown token, preset recipient is someone else, `suppressed`, or a block exists in either direction); 403 `self_accept`; 409 `challenge_already_accepted`; 410 `challenge_expired` (also for internal `cancelled`). The token, suppression and block checks run before all status checks.
+- `GET /challenges/{id}` → participants and visible status, filtered by privacy rules; includes `shareUrl` only for the designated recipient (rematch or profile challenge) while `open`, so they can accept in the app.
 - `GET /me/challenges?role=created|received&status=&cursor=&limit=` → caller's challenges with visible status, newest first; `suppressed` challenges are omitted for the recipient.
 - `POST /challenges/{id}/rematch` `{creatorSessionId}` + Idempotency-Key → `201 {challengeId,shareUrl,acceptDeadline}`. Original challenge must be `completed`; caller must be one of its participants and becomes the new creator; the other participant becomes the preset `recipient_player_id`; `creatorSessionId` follows the same rules as `POST /challenges`; cannot recycle prior result; one rematch per participant per challenge. Codes: as `POST /challenges` (incl. the `suppressed` rule); 409 `challenge_not_completed`; 409 `rematch_already_created`.
 
 ### Quests and account
 - `GET /me/quests` → `200 {quests:[{playerQuestId,code,periodStart,progress,target,status,rewardCoins,rewardXp,claimableUntil}]}`; first creates today's rows for all active daily quests with `INSERT … ON CONFLICT DO NOTHING` (progress 0), so every quest has a `playerQuestId`; includes completed, unclaimed quests from earlier periods while claimable.
 - `POST /me/quests/{playerQuestId}/claim` + Idempotency-Key → `200 {coinsGranted,xpGranted,level}`. A completed quest stays claimable for 7 days after `period_start` (provisional). Codes: 409 `quest_not_completed`; 409 `quest_already_claimed`; 410 `quest_claim_expired`.
-- `POST /me/data-export` → `202 {exportId}`; `GET /me/data-export/{exportId}` → `{status:queued|running|ready|failed, downloadUrl?, downloadExpiresAt?}`; `downloadUrl` is short-lived and single-player.
-- `POST /me/deletion-requests` → `202 {requestId}`, requires reauthentication for registered account (403 `reauthentication_required`); `GET /me/deletion-requests/{requestId}` → `{status:queued|processing|completed,completedAt?}`.
+- `POST /me/data-export` → `202 {exportId}`; 409 `export_in_progress` (with its `exportId`) while one is `queued` or `running`; `GET /me/data-export/{exportId}` → `{status:queued|running|ready|failed, downloadUrl?, downloadExpiresAt?}`; `downloadUrl` is short-lived and single-player.
+- `POST /me/deletion-requests` + Idempotency-Key → `202 {requestId}` where `requestId` = the key (if the response is lost after the sessions are revoked, the client still knows the id), requires reauthentication for registered account: newest `amr[].timestamp` of the Supabase token at most 5 minutes old (provisional; not `iat`, which a refresh renews), else 403 `reauthentication_required`; `GET /deletion-requests/{requestId}` (no authentication: the sessions are revoked, so the random `requestId` is the capability; no personal data in the response) → `{status:queued|processing|completed,completedAt?}`.
 
 ### Admin (base `/api/v1/admin`; moderator or administrator claim)
 Every write requires `reason` and writes `admin_audit_logs` in the same transaction.
 - `GET /reports?status=open&cursor=` (moderator); `POST /reports/{id}/resolve` `{status:actioned|dismissed,reason}` (moderator).
-- `POST /players/{id}/suspension` `{reason,until?}`; `DELETE /players/{id}/suspension` `{reason}` (moderator).
+- `POST /players/{id}/suspension` `{reason,until?}`; `POST /players/{id}/suspension/lift` `{reason}` (moderator).
 - `PATCH /catalog/items/{id}` `{isActive,reason}` (administrator).
 - `POST /wallet-adjustments` `{playerId,delta,reason}` + Idempotency-Key (administrator only; ledger key `admin:{idempotencyKey}`, so a retry never adjusts twice); 409 `insufficient_funds` if the result is negative.
 - `GET /audit-logs?entityType=&entityId=&actor=&cursor=` (administrator).
@@ -397,10 +397,10 @@ Frontend never directly writes wallet, inventory or scores. Query cache invalida
 ## 11. Security and privacy
 
 - Threat model: score forgery, bot farming, replayed rewards, guest token theft, IDOR, XSS, malicious asset references, invitation enumeration, admin abuse, account linking takeover.
-- Auth: validate JWT issuer/audience/signature and token expiry; guest cookie with CSRF protection on cookie-authenticated mutations; secure CORS and origin checks.
+- Auth: validate JWT issuer/audience/signature and token expiry; guest cookie with CSRF protection on cookie-authenticated mutations (required `X-Requested-With: vybe-web` header, allowed by CORS only from the VYBE web origin); secure CORS and origin checks.
 - Authorization: resource owner policies on every endpoint; separate moderator/admin claims; never trust client `playerId`.
 - API: per-IP and per-player rate limits; payload/event count/size caps; structured validation; request timeouts; parameterized SQL; no arbitrary uploaded 3D files in MVP.
-- Invite URLs: 128-bit+ random opaque token, only hashed in DB, single-use, expiration; avoid leaking via analytics/referrers, apply `Referrer-Policy: no-referrer` on token pages.
+- Invite URLs: 256-bit opaque token derived as base64url(HMAC-SHA256(server secret, challenge id)), only hashed in DB (never in idempotency records), single-use, expiration; avoid leaking via analytics/referrers, apply `Referrer-Policy: no-referrer` on token pages.
 - Browser: CSP, safe HTML escaping, dependency scans, no tokens in localStorage, secure cookies.
 - GDPR: data inventory, legal bases, retention, privacy notice, export/deletion workflow, processor agreements, breach process. Determine minors policy before launch; no unrestricted chat.
 - Abuse: username filtering, report/block, moderation review, audit logs, appeal channel.
@@ -534,6 +534,31 @@ Test data created per run, isolated and deterministic; no production accounts. V
 12. **§4/§5/§7 seed exposure:** seed returned by `start`, not at creation; one open session per player (partial UNIQUE; a new session expires the old one).
 13. **§7 units:** `tMs` range uses `durationMs`; 93 shown only as the v1 value of `maxEvents`.
 14. **§4/§5 error codes:** 422 `self_challenge`, 422 `item_already_equipped`, 409 `rematch_already_created` with partial UNIQUE, 422 `invalid_idempotency_key`.
+
+### v1.3.1 (2026-11-06) — alignment with the OpenAPI contract (ADR 0001)
+1. **§5 invite routes:** `/challenges/by-token/{token}` → `/invites/{token}` (the old path was ambiguous with `/challenges/{challengeId}/…`).
+2. **§5 admin:** `DELETE …/suspension` with a body → `POST …/suspension/lift`.
+3. **§5/§11 CSRF:** `X-Requested-With: vybe-web` header for cookie-authenticated unsafe requests; 403 `csrf_check_failed`.
+4. **§5 codes:** 409 `export_in_progress`; 500 `internal_error`.
+5. **§5 `GET /me`:** adds `kind`.
+
+### v1.3.2 (2026-11-06) — OpenAPI contract review
+1. **§5 deletion:** reauthentication uses `amr[].timestamp`, not `iat`; status endpoint moved to `GET /deletion-requests/{requestId}` without authentication (capability id).
+2. **§4 invite token:** derived with HMAC from the challenge id, so idempotent replays never store the raw token.
+3. **§5 `POST /guests`:** CSRF header required; 409 `already_authenticated`.
+4. **§2 block privacy:** residual inference risk accepted and documented.
+5. **§5 `POST /accounts/link`:** 422 `invalid_link_proof`.
+6. **§5 `GET /me`:** adds `status` and `suspendedUntil`.
+7. **§4 handles:** lowercase storage and output; case-insensitive input.
+
+### v1.3.3 (2026-11-06) — second OpenAPI contract review
+1. **§4/§11 invite token:** idempotency records store challenge responses without `shareUrl`; token text updated to HMAC-derived.
+2. **§5 CSRF:** the header is declared on all unsafe guest-callable operations; the server checks it itself (403 `csrf_check_failed`).
+3. **§5 `GET /challenges/{id}`:** `shareUrl` for the designated recipient of an `open` rematch or profile challenge.
+4. **§4/§5 linking:** anonymous or unconfirmed Supabase identities rejected; guest cookie revoked and cleared ("rotate" removed).
+5. **§5 deletion/export:** `requestId` = Idempotency-Key; 409 `export_in_progress` returns `exportId`.
+6. **§5 common codes:** 404 `player_not_found` for a Supabase identity without a player.
+7. **§5 caching:** `Cache-Control: private, no-store` on caller-dependent public responses.
 
 ---
 

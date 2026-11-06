@@ -1,0 +1,6 @@
+extends:
+  - recommended
+rules:
+  # Private project without a published license yet.
+  info-license: off
+  info-license-strict: off

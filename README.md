@@ -7,9 +7,18 @@ Browser-based social arcade with customizable 3D cartoon avatars.
 ## Repository layout
 
 ```
+packages/contracts/    OpenAPI 3.1 contract (source of truth for the API) and generated TS types
 packages/game-rules/   Street Hoops simulator (TypeScript reference) and golden fixtures
 services/api/          ASP.NET Core solution; Vybe.GameRules is the C# simulator
 docs/spec/             Product, game and technical specification
+docs/adr/              Architecture decision records
+```
+
+After a contract change, lint it and regenerate the types:
+
+```bash
+pnpm --filter @vybe/contracts lint
+pnpm --filter @vybe/contracts generate
 ```
 
 The C# and TypeScript simulators must produce identical results. Both test suites

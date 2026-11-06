@@ -1,0 +1,2909 @@
+openapi: 3.1.0
+info:
+  title: VYBE API
+  version: 1.0.0-draft.1
+  summary: Contract for the VYBE browser arcade backend.
+  description: |
+    Source of truth for the VYBE HTTP API. Derived from specification v1.3 §5
+    (docs/spec/VYBE_Technical_Specification_v1.3.md). Decisions made while
+    writing this contract: docs/adr/0001-openapi-contract.md.
+
+    Conventions:
+    - JSON UTF-8. Timestamps are UTC ISO 8601. IDs are UUID strings.
+    - V-Coin amounts are integers (`format: int64`); they never exceed 2^53.
+    - Errors use RFC 9457 `application/problem+json` with a stable `code`.
+      The common codes of spec §5 apply to every operation and are covered by
+      the `default` response. `x-problem-codes` on an operation lists the
+      endpoint-specific codes per HTTP status.
+    - Collections use cursor pagination: `{ items, nextCursor }`.
+    - `traceparent` (W3C Trace Context) is accepted on every request.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+  - guestCookie: []
+tags:
+  - name: identity
+    description: Guest onboarding, account linking, own player and avatar.
+  - name: profiles
+    description: Public player profiles.
+  - name: safety
+    description: Blocks and reports.
+  - name: catalog
+    description: Shop catalog and purchases.
+  - name: wardrobe
+    description: Inventory, equipment and saved outfits.
+  - name: wallet
+    description: V-Coin ledger.
+  - name: gameplay
+    description: Rulesets and game sessions.
+  - name: challenges
+    description: Asynchronous challenges.
+  - name: quests
+    description: Daily quests.
+  - name: account
+    description: Data export and deletion.
+  - name: admin
+    description: Moderation and administration. Bearer token with a moderator or administrator role claim.
+
+paths:
+  # ------------------------------------------------------------------ identity
+  /guests:
+    post:
+      tags: [identity]
+      operationId: createGuest
+      summary: Create a guest player
+      description: |
+        Creates a guest player and sets the guest session cookie. Rate limited per IP.
+        Requires `X-Requested-With: vybe-web` (a cross-site form cannot send it, so it cannot
+        replace a victim's guest cookie). If the request already carries a valid guest cookie
+        or a bearer token linked to a player, nothing is created: 409 `already_authenticated`.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+      x-problem-codes:
+        "403": [csrf_check_failed]
+        "409": [already_authenticated]
+      responses:
+        "201":
+          description: Guest created.
+          headers:
+            Set-Cookie:
+              description: "`vybe_guest` session cookie (Secure, HttpOnly, SameSite=Lax)."
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestCreated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /accounts/link:
+    post:
+      tags: [identity]
+      operationId: linkAccount
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+      summary: Link the guest player to a verified identity
+      description: |
+        Binds the calling guest player to the verified Supabase identity in `linkProof`
+        (a Supabase access token). The guest credentials are revoked. If the identity
+        already belongs to another player, nothing is merged (409). 401 means the guest
+        session itself is missing or expired; 422 `invalid_link_proof` means only the proof
+        was rejected, and the guest session is still valid.
+      security:
+        - guestCookie: []
+      x-problem-codes:
+        "401": [unauthenticated]
+        "409": [identity_already_linked]
+        "422": [invalid_link_proof]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountLinkRequest"
+      responses:
+        "200":
+          description: Account linked. The guest session is revoked.
+          headers:
+            Set-Cookie:
+              description: Clears `vybe_guest` (expired cookie).
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountLinked"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableContent"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /me:
+    get:
+      tags: [identity]
+      operationId: getMe
+      summary: Get the calling player
+      description: |
+        A valid Supabase token whose identity has no player yet gets 404 `player_not_found`
+        (any authenticated operation does). The client then calls `createGuest` without the
+        bearer token and links the new guest with `linkAccount`.
+      x-problem-codes:
+        "404": [player_not_found]
+      responses:
+        "200":
+          description: Calling player.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Me"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /me/avatar:
+    get:
+      tags: [identity]
+      operationId: getMyAvatar
+      summary: Get the calling player's avatar
+      responses:
+        "200":
+          description: Avatar presets and equipment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Avatar"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+    put:
+      tags: [identity]
+      operationId: updateMyAvatar
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+      summary: Update avatar presets
+      description: |
+        Replaces the preset choices. A body preset change that leaves equipped items
+        incompatible changes nothing and returns 409 `incompatible_equipment` with `itemIds`.
+      x-problem-codes:
+        "409": [revision_conflict, incompatible_equipment]
+        "422": [invalid_preset]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AvatarUpdateRequest"
+      responses:
+        "200":
+          description: Avatar updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AvatarUpdated"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableContent"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /profiles/{handle}:
+    get:
+      tags: [profiles]
+      operationId: getProfile
+      summary: Get a public profile
+      security:
+        - {}
+        - bearerAuth: []
+        - guestCookie: []
+      parameters:
+        - $ref: "#/components/parameters/HandlePath"
+      responses:
+        "200":
+          description: Public profile fields only.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlPrivate"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicProfile"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # ------------------------------------------------------------------ safety
+  /me/blocks:
+    get:
+      tags: [safety]
+      operationId: listMyBlocks
+      summary: List players the caller blocked
+      description: Never exposes who blocked the caller.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Blocked players.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlockedPlayerPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      tags: [safety]
+      operationId: blockPlayer
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+      summary: Block a player
+      description: Idempotent. Cancels open and accepted challenges between the pair (spec §4 invariant 8).
+      x-problem-codes:
+        "404": [not_found]
+        "422": [self_block]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BlockRequest"
+      responses:
+        "204":
+          description: Player blocked.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableContent"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /me/blocks/{handle}:
+    delete:
+      tags: [safety]
+      operationId: unblockPlayer
+      summary: Remove a block
+      description: Idempotent. Does not restore cancelled challenges.
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+        - $ref: "#/components/parameters/HandlePath"
+      responses:
+        "204":
+          description: Block removed or not present.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /reports:
+    post:
+      tags: [safety]
+      operationId: reportPlayer
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+      summary: Report a player
+      description: Rate limited (provisional 10 per day per reporter).
+      x-problem-codes:
+        "404": [not_found]
+        "422": [self_report]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReportRequest"
+      responses:
+        "202":
+          description: Report received.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportAccepted"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableContent"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # ------------------------------------------------------------------ catalog
+  /catalog/items:
+    get:
+      tags: [catalog]
+      operationId: listCatalogItems
+      summary: List shop items
+      description: |
+        Only active items with `price > 0` inside their availability window.
+        `owned` is false for anonymous callers.
+      security:
+        - {}
+        - bearerAuth: []
+        - guestCookie: []
+      parameters:
+        - name: slot
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ItemSlot"
+        - $ref: "#/components/parameters/Cursor"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 24
+      responses:
+        "200":
+          description: One page of catalog items.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlPrivate"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /purchases:
+    post:
+      tags: [catalog]
+      operationId: purchaseItem
+      summary: Buy a catalog item
+      description: Debits the wallet and grants the item in one transaction (spec §4 invariant 1).
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      x-problem-codes:
+        "403": [level_too_low, account_suspended]
+        "409": [insufficient_funds, already_owned]
+        "422": [item_unavailable, item_not_purchasable]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PurchaseRequest"
+      responses:
+        "200":
+          description: Purchase committed (or the stored outcome of an earlier identical request).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Purchase"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableContent"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # ------------------------------------------------------------------ wardrobe
+  /me/inventory:
+    get:
+      tags: [wardrobe]
+      operationId: getMyInventory
+      summary: List owned items
+      responses:
+        "200":
+          description: Owned items with metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Inventory"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /me/equipment:
+    post:
+      tags: [wardrobe]
+      operationId: equipItem
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+      summary: Equip or unequip one slot
+      description: |
+        `itemId: null` unequips the slot. `attachIndex` (0 or 1) is required when
+        `slot = accessory` and forbidden otherwise (422 `validation_failed`).
+      x-problem-codes:
+        "403": [item_not_owned]
+        "409": [revision_conflict]
+        "422": [incompatible_item, item_inactive, item_already_equipped, validation_failed]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EquipRequest"
+      responses:
+        "200":
+          description: Equipment updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EquipmentUpdated"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableContent"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /me/outfits:
+    get:
+      tags: [wardrobe]
+      operationId: listMyOutfits
+      summary: List saved outfits
+      responses:
+        "200":
+          description: Saved outfits (max 3) with current validity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OutfitList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      tags: [wardrobe]
+      operationId: saveOutfit
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+      summary: Save the current equipment as an outfit
+      x-problem-codes:
+        "409": [outfit_limit_reached]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OutfitNameRequest"
+      responses:
+        "201":
+          description: Outfit saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OutfitCreated"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /me/outfits/{outfitId}:
+    parameters:
+      - $ref: "#/components/parameters/OutfitIdPath"
+    put:
+      tags: [wardrobe]
+      operationId: renameOutfit
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+      summary: Rename an outfit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OutfitNameRequest"
+      responses:
+        "200":
+          description: Outfit renamed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Outfit"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      tags: [wardrobe]
+      operationId: deleteOutfit
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+      summary: Delete an outfit
+      responses:
+        "204":
+          description: Outfit deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /me/outfits/{outfitId}/apply:
+    parameters:
+      - $ref: "#/components/parameters/OutfitIdPath"
+    post:
+      tags: [wardrobe]
+      operationId: applyOutfit
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+      summary: Equip a saved outfit
+      description: All-or-nothing. If any item is no longer owned, active or compatible, nothing changes.
+      x-problem-codes:
+        "409": [revision_conflict]
+        "422": [outfit_items_invalid]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OutfitApplyRequest"
+      responses:
+        "200":
+          description: Outfit applied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EquipmentUpdated"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableContent"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # ------------------------------------------------------------------ wallet
+  /me/wallet/transactions:
+    get:
+      tags: [wallet]
+      operationId: listMyWalletTransactions
+      summary: List ledger entries
+      description: Read-only, newest first.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: One page of ledger entries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LedgerPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # ------------------------------------------------------------------ gameplay
+  /games/rulesets/{rulesetId}:
+    get:
+      tags: [gameplay]
+      operationId: getRuleset
+      summary: Get an immutable ruleset
+      description: The client verifies `checksum` before it uses `config` (spec §4, §7).
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/RulesetIdPath"
+      responses:
+        "200":
+          description: Ruleset.
+          headers:
+            Cache-Control:
+              description: "`public, max-age=31536000, immutable`"
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ruleset"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /games/street-hoops/sessions:
+    post:
+      tags: [gameplay]
+      operationId: createStreetHoopsSession
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+      summary: Create a Street Hoops session
+      description: |
+        Creates a session in state `created`. No seed is returned yet. Any other
+        `created`/`active` session of the caller becomes `expired`.
+        With `challengeId`, only the bound recipient of an `accepted` challenge may call it,
+        before `complete_deadline`; the session uses the creator run's seed and ruleset.
+      x-problem-codes:
+        "403": [account_suspended]
+        "404": [challenge_unavailable]
+        "409": [challenge_session_exists]
+        "410": [challenge_expired]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionCreateRequest"
+      responses:
+        "201":
+          description: Session created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionCreated"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "410":
+          $ref: "#/components/responses/Gone"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /games/sessions/{sessionId}:
+    get:
+      tags: [gameplay]
+      operationId: getGameSession
+      summary: Get a game session
+      description: |
+        Owner only. The input trace and the seed are never returned here; the seed comes only
+        from `startGameSession` (idempotent, so a reloaded client calls it again).
+      parameters:
+        - $ref: "#/components/parameters/SessionIdPath"
+      responses:
+        "200":
+          description: Session state and, when verified, score and rewards.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameSession"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /games/sessions/{sessionId}/start:
+    post:
+      tags: [gameplay]
+      operationId: startGameSession
+      summary: Start the game clock
+      description: |
+        Moves `created -> active` and returns the seed. Call it after assets are loaded and
+        the countdown ends; the client sets its local time 0 when the response arrives.
+        Idempotent: a repeat returns the same values.
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+        - $ref: "#/components/parameters/SessionIdPath"
+      x-problem-codes:
+        "404": [not_found, challenge_unavailable]
+        "410": [session_expired, challenge_expired]
+      responses:
+        "200":
+          description: Session started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionStarted"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "410":
+          $ref: "#/components/responses/Gone"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /games/sessions/{sessionId}/submit:
+    post:
+      tags: [gameplay]
+      operationId: submitGameSession
+      summary: Submit the input trace
+      description: |
+        **Exception to the common 400 (spec §5):** `events` items are free-form so the
+        framework never rejects event content; the server validates raw JSON tokens and
+        answers `rejected` / `invalid_event`. 400 only for unparseable JSON or a body that is
+        not an object with `rulesetId` (string) and `events` (array). 413 above 16 KB. After
+        400 or 413 the session stays `active` until `submit_deadline`.
+        A repeated submission returns the canonical result.
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+        - $ref: "#/components/parameters/SessionIdPath"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitRequest"
+      responses:
+        "200":
+          description: Final outcome (verified, rejected or expired).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmitResult"
+        "202":
+          description: Accepted for asynchronous verification; poll `getGameSession`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmitAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # ------------------------------------------------------------------ challenges
+  /challenges:
+    post:
+      tags: [challenges]
+      operationId: createChallenge
+      summary: Create a challenge from a verified run
+      description: |
+        The creator session must be the caller's, `verified`, not a recipient session, have at
+        least `minShotsForRewards` events, and not be used before. `recipientHandle` presets
+        the recipient (profile challenge). If the recipient blocked the caller, the API still
+        returns 201 and stores the challenge as suppressed (spec §5 block privacy).
+        `shareUrl` contains the single-use invite token. The designated recipient also gets it
+        from `getChallenge` / `listMyChallenges` while the challenge is `open`.
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      x-problem-codes:
+        "403": [account_suspended]
+        "404": [not_found]
+        "409": [session_already_used]
+        "422": [session_not_eligible, self_challenge, recipient_blocked]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChallengeCreateRequest"
+      responses:
+        "201":
+          description: Challenge created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChallengeCreated"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableContent"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /invites/{token}:
+    get:
+      tags: [challenges]
+      operationId: getChallengePreview
+      summary: Preview a challenge from its invite link
+      description: |
+        Safe public preview. 404 `challenge_unavailable` under the same rules as accept
+        (unknown token, other designated recipient, suppressed, or a block) when the caller
+        is identified. Accepted residual risk (ADR 0001): a blocked player can compare the
+        signed-in and anonymous answers and infer the block.
+      security:
+        - {}
+        - bearerAuth: []
+        - guestCookie: []
+      parameters:
+        - $ref: "#/components/parameters/InviteTokenPath"
+      x-problem-codes:
+        "404": [challenge_unavailable]
+      responses:
+        "200":
+          description: Challenge preview.
+          headers:
+            Referrer-Policy:
+              $ref: "#/components/headers/ReferrerPolicyNoReferrer"
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlPrivate"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChallengePreview"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /invites/{token}/accept:
+    post:
+      tags: [challenges]
+      operationId: acceptChallenge
+      summary: Accept a challenge
+      description: |
+        Atomic single-use token redemption under the pair lock. Token, suppression and block
+        checks run before status checks. An internally cancelled challenge answers 410
+        `challenge_expired`.
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+        - $ref: "#/components/parameters/InviteTokenPath"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      x-problem-codes:
+        "403": [self_accept]
+        "404": [challenge_unavailable]
+        "409": [challenge_already_accepted]
+        "410": [challenge_expired]
+      responses:
+        "200":
+          description: Challenge accepted.
+          headers:
+            Referrer-Policy:
+              $ref: "#/components/headers/ReferrerPolicyNoReferrer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChallengeAccepted"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "410":
+          $ref: "#/components/responses/Gone"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /challenges/{challengeId}:
+    get:
+      tags: [challenges]
+      operationId: getChallenge
+      summary: Get a challenge
+      description: |
+        Participants only. Shows the visible status (never `cancelled`). The designated
+        recipient of a suppressed challenge gets 404, the same as a non-participant.
+        `shareUrl` is set only for the designated recipient of an `open` challenge.
+      parameters:
+        - $ref: "#/components/parameters/ChallengeIdPath"
+      responses:
+        "200":
+          description: Challenge.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Challenge"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /challenges/{challengeId}/rematch:
+    post:
+      tags: [challenges]
+      operationId: createRematch
+      summary: Create a rematch
+      description: |
+        The original challenge must be `completed`; the caller must be a participant and
+        becomes the creator; the other participant becomes the designated recipient.
+        One rematch per participant per challenge. Same session rules as `createChallenge`.
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+        - $ref: "#/components/parameters/ChallengeIdPath"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      x-problem-codes:
+        "403": [account_suspended]
+        "404": [not_found]
+        "409": [session_already_used, challenge_not_completed, rematch_already_created]
+        "422": [session_not_eligible, recipient_blocked]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RematchRequest"
+      responses:
+        "201":
+          description: Rematch created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChallengeCreated"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableContent"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /me/challenges:
+    get:
+      tags: [challenges]
+      operationId: listMyChallenges
+      summary: List the caller's challenges
+      description: Newest first. Suppressed challenges are omitted for the recipient.
+      parameters:
+        - name: role
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ChallengeRole"
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ChallengeStatus"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: One page of challenges.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChallengePage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # ------------------------------------------------------------------ quests
+  /me/quests:
+    get:
+      tags: [quests]
+      operationId: listMyQuests
+      summary: List daily quests
+      description: |
+        Creates today's rows first (progress 0), so every quest has a `playerQuestId`.
+        Includes completed, unclaimed quests from earlier periods while claimable.
+      responses:
+        "200":
+          description: Quests.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuestList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /me/quests/{playerQuestId}/claim:
+    post:
+      tags: [quests]
+      operationId: claimQuest
+      summary: Claim a completed quest
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+        - $ref: "#/components/parameters/PlayerQuestIdPath"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      x-problem-codes:
+        "403": [account_suspended]
+        "409": [quest_not_completed, quest_already_claimed]
+        "410": [quest_claim_expired]
+      responses:
+        "200":
+          description: Reward granted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuestClaimed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "410":
+          $ref: "#/components/responses/Gone"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # ------------------------------------------------------------------ account
+  /me/data-export:
+    post:
+      tags: [account]
+      operationId: requestDataExport
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+      summary: Request a data export
+      description: While an export is `queued` or `running`, 409 `export_in_progress` carries its `exportId`.
+      x-problem-codes:
+        "409": [export_in_progress]
+      responses:
+        "202":
+          description: Export queued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportRequested"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /me/data-export/{exportId}:
+    get:
+      tags: [account]
+      operationId: getDataExport
+      summary: Get data export status
+      parameters:
+        - $ref: "#/components/parameters/ExportIdPath"
+      responses:
+        "200":
+          description: Export status. `downloadUrl` is short-lived and only for the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataExport"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /me/deletion-requests:
+    post:
+      tags: [account]
+      operationId: requestAccountDeletion
+      summary: Request account deletion
+      description: |
+        Registered players must have signed in recently: the newest `amr[].timestamp` in the
+        Supabase access token must be at most 5 minutes old (provisional), else 403
+        `reauthentication_required`. `iat` is not used, because a token refresh renews it.
+        Guests have no reauthentication step.
+        The `Idempotency-Key` becomes the `requestId`. If the 202 is lost, the client still
+        knows the id and polls `getDeletionRequest`, even after its sessions are revoked.
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      x-problem-codes:
+        "403": [reauthentication_required]
+        "422": [idempotency_key_mismatch]
+      responses:
+        "202":
+          description: Deletion queued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeletionRequested"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableContent"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /deletion-requests/{requestId}:
+    get:
+      tags: [account]
+      operationId: getDeletionRequest
+      summary: Get deletion status
+      description: |
+        No authentication: the deletion revokes the caller's sessions, so the random
+        `requestId` (UUID v4) is the capability. The response holds no personal data.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/DeletionRequestIdPath"
+      responses:
+        "200":
+          description: Deletion status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeletionRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # ------------------------------------------------------------------ admin
+  /admin/reports:
+    get:
+      tags: [admin]
+      operationId: adminListReports
+      summary: List player reports
+      security:
+        - bearerAuth: []
+      x-required-role: moderator
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReportStatus"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: One page of reports.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminReportPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /admin/reports/{reportId}/resolve:
+    post:
+      tags: [admin]
+      operationId: adminResolveReport
+      summary: Resolve a report
+      security:
+        - bearerAuth: []
+      x-required-role: moderator
+      parameters:
+        - $ref: "#/components/parameters/ReportIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReportResolveRequest"
+      responses:
+        "200":
+          description: Report resolved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminReport"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /admin/players/{playerId}/suspension:
+    post:
+      tags: [admin]
+      operationId: adminSuspendPlayer
+      summary: Suspend a player
+      description: Without `until`, the suspension is indefinite.
+      security:
+        - bearerAuth: []
+      x-required-role: moderator
+      parameters:
+        - $ref: "#/components/parameters/PlayerIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SuspensionRequest"
+      responses:
+        "200":
+          description: Player suspended.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Suspension"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /admin/players/{playerId}/suspension/lift:
+    post:
+      tags: [admin]
+      operationId: adminLiftSuspension
+      summary: Lift a suspension
+      description: Replaces `DELETE …/suspension` with a body from spec v1.3 (see ADR 0001).
+      security:
+        - bearerAuth: []
+      x-required-role: moderator
+      parameters:
+        - $ref: "#/components/parameters/PlayerIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminReasonRequest"
+      responses:
+        "200":
+          description: Suspension lifted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Suspension"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /admin/catalog/items/{itemId}:
+    patch:
+      tags: [admin]
+      operationId: adminUpdateCatalogItem
+      summary: Activate or deactivate a catalog item
+      security:
+        - bearerAuth: []
+      x-required-role: administrator
+      parameters:
+        - $ref: "#/components/parameters/ItemIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogItemUpdateRequest"
+      responses:
+        "200":
+          description: Item updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminCatalogItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /admin/wallet-adjustments:
+    post:
+      tags: [admin]
+      operationId: adminAdjustWallet
+      summary: Adjust a wallet with an audited reason
+      description: Ledger key `admin:{Idempotency-Key}`, so a retry never adjusts twice.
+      security:
+        - bearerAuth: []
+      x-required-role: administrator
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      x-problem-codes:
+        "409": [insufficient_funds]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WalletAdjustmentRequest"
+      responses:
+        "200":
+          description: Adjustment committed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletAdjustment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /admin/audit-logs:
+    get:
+      tags: [admin]
+      operationId: adminListAuditLogs
+      summary: Search the audit log
+      security:
+        - bearerAuth: []
+      x-required-role: administrator
+      parameters:
+        - name: entityType
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 64
+        - name: entityId
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+        - name: actor
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 256
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: One page of audit log entries, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditLogPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        default:
+          $ref: "#/components/responses/Problem"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Supabase access token for registered players. The API validates issuer, audience,
+        signature and expiry. Moderator and administrator roles come from token claims.
+    guestCookie:
+      type: apiKey
+      in: cookie
+      name: vybe_guest
+      description: |
+        Guest session cookie (Secure, HttpOnly, SameSite=Lax). Every cookie-authenticated
+        request with an unsafe method (POST, PUT, PATCH, DELETE) must also send the header
+        `X-Requested-With: vybe-web`; otherwise 403 `csrf_check_failed`. CORS allows this
+        header only from the VYBE web origin, so cross-site forms cannot send it.
+
+  headers:
+    CacheControlPrivate:
+      description: The body depends on the caller; shared caches must not store it.
+      schema:
+        type: string
+        const: private, no-store
+    ReferrerPolicyNoReferrer:
+      description: Invite-token responses never leak the token through the Referer header.
+      schema:
+        type: string
+        const: no-referrer
+
+  parameters:
+    CsrfHeader:
+      name: X-Requested-With
+      in: header
+      required: true
+      description: |
+        Must be `vybe-web`. Declared on every unsafe operation that guests can call; clients
+        always send it. The server checks it itself (not through generic schema validation) on
+        cookie-authenticated requests: missing or wrong → 403 `csrf_check_failed`.
+      schema:
+        type: string
+        const: vybe-web
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Client-generated UUID. Same key + same body returns the stored outcome (spec §4
+        idempotency protocol). The server validates this header itself, not through generic
+        schema validation: missing → 428 `idempotency_key_required`; not a UUID → 422
+        `invalid_idempotency_key`.
+      schema:
+        type: string
+        format: uuid
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque cursor from the previous page's `nextCursor`.
+      schema:
+        type: string
+        maxLength: 512
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    HandlePath:
+      name: handle
+      in: path
+      required: true
+      description: Player handle; matched case-insensitively.
+      schema:
+        $ref: "#/components/schemas/HandleInput"
+    OutfitIdPath:
+      name: outfitId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    RulesetIdPath:
+      name: rulesetId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/RulesetId"
+    SessionIdPath:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    ChallengeIdPath:
+      name: challengeId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    InviteTokenPath:
+      name: token
+      in: path
+      required: true
+      description: Opaque single-use invite token (at least 128 bits, base64url).
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9_-]{22,128}$"
+    PlayerQuestIdPath:
+      name: playerQuestId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    ExportIdPath:
+      name: exportId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    DeletionRequestIdPath:
+      name: requestId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    ReportIdPath:
+      name: reportId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    PlayerIdPath:
+      name: playerId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+    ItemIdPath:
+      name: itemId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Uuid"
+
+  responses:
+    Problem:
+      description: Error (common codes of spec §5).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    BadRequest:
+      description: Malformed request.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Unauthorized:
+      description: Missing or invalid credentials.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Forbidden:
+      description: Not allowed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: Not found or not visible to the caller.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Conflict:
+      description: Conflict with the current state.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Gone:
+      description: No longer available.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    PayloadTooLarge:
+      description: Body above the size cap.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    UnprocessableContent:
+      description: Request is well-formed but not valid for this operation.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    TooManyRequests:
+      description: Rate limit reached.
+      headers:
+        Retry-After:
+          description: Seconds until the next attempt.
+          schema:
+            type: integer
+            minimum: 0
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+  schemas:
+    # ---------------------------------------------------------------- primitives
+    Uuid:
+      type: string
+      format: uuid
+    NullableUuid:
+      type: [string, "null"]
+      format: uuid
+    Timestamp:
+      type: string
+      format: date-time
+    NullableTimestamp:
+      type: [string, "null"]
+      format: date-time
+    Coins:
+      description: V-Coin amount.
+      type: integer
+      format: int64
+      minimum: 0
+    Handle:
+      type: string
+      description: Stored and returned in lowercase (spec §4).
+      pattern: "^[a-z0-9_]{3,20}$"
+    HandleInput:
+      type: string
+      description: Handle as typed by a user; matched case-insensitively.
+      pattern: "^[A-Za-z0-9_]{3,20}$"
+    DisplayName:
+      type: [string, "null"]
+      maxLength: 40
+    PresetId:
+      type: string
+      pattern: "^[a-z0-9_-]{1,64}$"
+    RulesetId:
+      type: string
+      pattern: "^[a-z0-9-]{1,64}$"
+    Revision:
+      type: integer
+      format: int64
+      minimum: 0
+    Level:
+      type: integer
+      minimum: 1
+      maximum: 50
+    AdminReason:
+      type: string
+      minLength: 3
+      maxLength: 500
+
+    # ---------------------------------------------------------------- errors
+    Problem:
+      type: object
+      description: RFC 9457 problem details with VYBE extensions.
+      required: [type, title, status, code, traceId]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        code:
+          $ref: "#/components/schemas/ProblemCode"
+        traceId:
+          type: string
+        errors:
+          description: Field errors for `validation_failed`.
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldError"
+        exportId:
+          description: The running export for `export_in_progress`.
+          $ref: "#/components/schemas/Uuid"
+        itemIds:
+          description: Affected items for `incompatible_equipment` and `outfit_items_invalid`.
+          type: array
+          items:
+            $ref: "#/components/schemas/Uuid"
+    FieldError:
+      type: object
+      required: [field, code]
+      properties:
+        field:
+          type: string
+          description: JSON Pointer to the invalid field.
+        code:
+          type: string
+        message:
+          type: string
+    ProblemCode:
+      type: string
+      enum:
+        # common (spec §5)
+        - malformed_request
+        - invalid_idempotency_key
+        - unauthenticated
+        - forbidden
+        - account_suspended
+        - csrf_check_failed
+        - not_found
+        - revision_conflict
+        - request_in_progress
+        - payload_too_large
+        - validation_failed
+        - idempotency_key_mismatch
+        - idempotency_key_required
+        - rate_limited
+        - internal_error
+        # identity / avatar
+        - player_not_found
+        - already_authenticated
+        - invalid_link_proof
+        - identity_already_linked
+        - invalid_preset
+        - incompatible_equipment
+        # safety
+        - self_block
+        - self_report
+        # catalog / wardrobe
+        - insufficient_funds
+        - already_owned
+        - level_too_low
+        - item_unavailable
+        - item_not_purchasable
+        - item_not_owned
+        - incompatible_item
+        - item_inactive
+        - item_already_equipped
+        - outfit_limit_reached
+        - outfit_items_invalid
+        # gameplay
+        - session_expired
+        # challenges
+        - challenge_unavailable
+        - challenge_session_exists
+        - challenge_expired
+        - session_not_eligible
+        - session_already_used
+        - self_challenge
+        - recipient_blocked
+        - self_accept
+        - challenge_already_accepted
+        - challenge_not_completed
+        - rematch_already_created
+        # quests / account
+        - quest_not_completed
+        - quest_already_claimed
+        - quest_claim_expired
+        - export_in_progress
+        - reauthentication_required
+
+    # ---------------------------------------------------------------- pagination
+    NextCursor:
+      type: [string, "null"]
+      description: Cursor for the next page; null on the last page.
+
+    # ---------------------------------------------------------------- identity
+    PlayerKind:
+      type: string
+      enum: [guest, registered]
+    PlayerStatus:
+      type: string
+      description: Spec §6 account state as seen by the player.
+      enum: [active, suspended, deleting]
+    GuestCreated:
+      type: object
+      required: [playerId, handle, guestExpiresAt]
+      properties:
+        playerId:
+          $ref: "#/components/schemas/Uuid"
+        handle:
+          $ref: "#/components/schemas/Handle"
+        guestExpiresAt:
+          $ref: "#/components/schemas/Timestamp"
+    AccountLinkRequest:
+      type: object
+      required: [linkProof]
+      additionalProperties: false
+      properties:
+        linkProof:
+          type: string
+          minLength: 1
+          maxLength: 8192
+          description: |
+            Supabase access token of a verified identity. Rejected with 422 `invalid_link_proof`
+            when the token is invalid or expired, belongs to an anonymous Supabase user
+            (`is_anonymous: true`), or has an unconfirmed email.
+    AccountLinked:
+      type: object
+      required: [playerId, accountLinked]
+      properties:
+        playerId:
+          $ref: "#/components/schemas/Uuid"
+        accountLinked:
+          type: boolean
+          const: true
+    Me:
+      type: object
+      required: [id, handle, kind, status, suspendedUntil, level, xpTotal, walletBalance, avatarRevision]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        handle:
+          $ref: "#/components/schemas/Handle"
+        kind:
+          $ref: "#/components/schemas/PlayerKind"
+        status:
+          $ref: "#/components/schemas/PlayerStatus"
+        suspendedUntil:
+          description: Null when not suspended or when the suspension is indefinite.
+          $ref: "#/components/schemas/NullableTimestamp"
+        level:
+          $ref: "#/components/schemas/Level"
+        xpTotal:
+          type: integer
+          format: int64
+          minimum: 0
+        walletBalance:
+          $ref: "#/components/schemas/Coins"
+        avatarRevision:
+          $ref: "#/components/schemas/Revision"
+
+    # ---------------------------------------------------------------- avatar
+    Equipped:
+      type: object
+      description: Equipment per slot (spec §4 `equipped_json`). `accessories` index = attachment point.
+      required: [hair, top, bottom, shoes, emote, accessories]
+      additionalProperties: false
+      properties:
+        hair:
+          $ref: "#/components/schemas/NullableUuid"
+        top:
+          $ref: "#/components/schemas/NullableUuid"
+        bottom:
+          $ref: "#/components/schemas/NullableUuid"
+        shoes:
+          $ref: "#/components/schemas/NullableUuid"
+        emote:
+          $ref: "#/components/schemas/NullableUuid"
+        accessories:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            $ref: "#/components/schemas/NullableUuid"
+    AvatarPresets:
+      type: object
+      required: [bodyPresetId, skinToneId, facePresetId, hairPresetId, hairColorId]
+      properties:
+        bodyPresetId:
+          $ref: "#/components/schemas/PresetId"
+        skinToneId:
+          $ref: "#/components/schemas/PresetId"
+        facePresetId:
+          $ref: "#/components/schemas/PresetId"
+        hairPresetId:
+          $ref: "#/components/schemas/PresetId"
+        hairColorId:
+          $ref: "#/components/schemas/PresetId"
+    Avatar:
+      allOf:
+        - $ref: "#/components/schemas/AvatarPresets"
+        - type: object
+          required: [revision, equipped]
+          properties:
+            revision:
+              $ref: "#/components/schemas/Revision"
+            equipped:
+              $ref: "#/components/schemas/Equipped"
+    AvatarUpdateRequest:
+      type: object
+      required: [bodyPresetId, skinToneId, facePresetId, hairPresetId, hairColorId, expectedRevision]
+      additionalProperties: false
+      properties:
+        bodyPresetId:
+          $ref: "#/components/schemas/PresetId"
+        skinToneId:
+          $ref: "#/components/schemas/PresetId"
+        facePresetId:
+          $ref: "#/components/schemas/PresetId"
+        hairPresetId:
+          $ref: "#/components/schemas/PresetId"
+        hairColorId:
+          $ref: "#/components/schemas/PresetId"
+        expectedRevision:
+          $ref: "#/components/schemas/Revision"
+    AvatarUpdated:
+      type: object
+      required: [revision, avatar]
+      properties:
+        revision:
+          $ref: "#/components/schemas/Revision"
+        avatar:
+          $ref: "#/components/schemas/Avatar"
+    PublicAvatar:
+      allOf:
+        - $ref: "#/components/schemas/AvatarPresets"
+        - type: object
+          required: [equipped]
+          properties:
+            equipped:
+              $ref: "#/components/schemas/Equipped"
+    PublicProfile:
+      type: object
+      required: [handle, displayName, level, avatar]
+      properties:
+        handle:
+          $ref: "#/components/schemas/Handle"
+        displayName:
+          $ref: "#/components/schemas/DisplayName"
+        level:
+          $ref: "#/components/schemas/Level"
+        avatar:
+          $ref: "#/components/schemas/PublicAvatar"
+    PlayerSummary:
+      type: object
+      required: [handle, displayName, level]
+      properties:
+        handle:
+          $ref: "#/components/schemas/Handle"
+        displayName:
+          $ref: "#/components/schemas/DisplayName"
+        level:
+          $ref: "#/components/schemas/Level"
+
+    # ---------------------------------------------------------------- safety
+    BlockRequest:
+      type: object
+      required: [handle]
+      additionalProperties: false
+      properties:
+        handle:
+          $ref: "#/components/schemas/HandleInput"
+    BlockedPlayer:
+      type: object
+      required: [handle, displayName, blockedAt]
+      properties:
+        handle:
+          $ref: "#/components/schemas/Handle"
+        displayName:
+          $ref: "#/components/schemas/DisplayName"
+        blockedAt:
+          $ref: "#/components/schemas/Timestamp"
+    BlockedPlayerPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BlockedPlayer"
+        nextCursor:
+          $ref: "#/components/schemas/NextCursor"
+    ReportReason:
+      type: string
+      enum: [offensive_name, cheating, harassment, other]
+    ReportRequest:
+      type: object
+      required: [targetHandle, reason]
+      additionalProperties: false
+      properties:
+        targetHandle:
+          $ref: "#/components/schemas/HandleInput"
+        reason:
+          $ref: "#/components/schemas/ReportReason"
+        details:
+          type: string
+          maxLength: 500
+    ReportAccepted:
+      type: object
+      required: [reportId]
+      properties:
+        reportId:
+          $ref: "#/components/schemas/Uuid"
+
+    # ---------------------------------------------------------------- catalog
+    ItemSlot:
+      type: string
+      enum: [hair, top, bottom, shoes, accessory, emote]
+    Rarity:
+      type: string
+      enum: [common, rare, epic]
+    CatalogItem:
+      type: object
+      required: [id, sku, name, price, slot, rarity, minLevel, previewUrl, owned]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        sku:
+          type: string
+        name:
+          type: string
+        price:
+          description: Shop items always cost at least 1 V-Coin (free items are only granted).
+          type: integer
+          format: int64
+          minimum: 1
+        slot:
+          $ref: "#/components/schemas/ItemSlot"
+        rarity:
+          $ref: "#/components/schemas/Rarity"
+        minLevel:
+          $ref: "#/components/schemas/Level"
+        previewUrl:
+          type: string
+          format: uri
+        owned:
+          type: boolean
+    CatalogPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogItem"
+        nextCursor:
+          $ref: "#/components/schemas/NextCursor"
+    PurchaseRequest:
+      type: object
+      required: [itemId]
+      additionalProperties: false
+      properties:
+        itemId:
+          $ref: "#/components/schemas/Uuid"
+    Purchase:
+      type: object
+      required: [transactionId, itemId, balanceAfter]
+      properties:
+        transactionId:
+          $ref: "#/components/schemas/Uuid"
+        itemId:
+          $ref: "#/components/schemas/Uuid"
+        balanceAfter:
+          $ref: "#/components/schemas/Coins"
+
+    # ---------------------------------------------------------------- wardrobe
+    InventorySource:
+      type: string
+      enum: [purchase, starter_grant, achievement_grant, admin_grant]
+    InventoryItem:
+      type: object
+      required: [itemId, sku, name, slot, rarity, source, acquiredAt, previewUrl, compatibleBodyPresets]
+      properties:
+        itemId:
+          $ref: "#/components/schemas/Uuid"
+        sku:
+          type: string
+        name:
+          type: string
+        slot:
+          $ref: "#/components/schemas/ItemSlot"
+        rarity:
+          $ref: "#/components/schemas/Rarity"
+        source:
+          $ref: "#/components/schemas/InventorySource"
+        acquiredAt:
+          $ref: "#/components/schemas/Timestamp"
+        previewUrl:
+          type: string
+          format: uri
+        compatibleBodyPresets:
+          type: array
+          items:
+            $ref: "#/components/schemas/PresetId"
+    Inventory:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/InventoryItem"
+    EquipRequest:
+      type: object
+      required: [slot, itemId, expectedAvatarRevision]
+      additionalProperties: false
+      properties:
+        slot:
+          $ref: "#/components/schemas/ItemSlot"
+        itemId:
+          $ref: "#/components/schemas/NullableUuid"
+        attachIndex:
+          type: integer
+          enum: [0, 1]
+          description: Required for `slot = accessory`; forbidden otherwise.
+        expectedAvatarRevision:
+          $ref: "#/components/schemas/Revision"
+    EquipmentUpdated:
+      type: object
+      required: [revision, equipped]
+      properties:
+        revision:
+          $ref: "#/components/schemas/Revision"
+        equipped:
+          $ref: "#/components/schemas/Equipped"
+    OutfitName:
+      type: string
+      minLength: 1
+      maxLength: 40
+    Outfit:
+      type: object
+      required: [id, name, equipped, valid, invalidItemIds]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        name:
+          $ref: "#/components/schemas/OutfitName"
+        equipped:
+          $ref: "#/components/schemas/Equipped"
+        valid:
+          type: boolean
+        invalidItemIds:
+          type: array
+          items:
+            $ref: "#/components/schemas/Uuid"
+    OutfitList:
+      type: object
+      required: [outfits]
+      properties:
+        outfits:
+          type: array
+          maxItems: 3
+          items:
+            $ref: "#/components/schemas/Outfit"
+    OutfitNameRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name:
+          $ref: "#/components/schemas/OutfitName"
+    OutfitCreated:
+      type: object
+      required: [id]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+    OutfitApplyRequest:
+      type: object
+      required: [expectedAvatarRevision]
+      additionalProperties: false
+      properties:
+        expectedAvatarRevision:
+          $ref: "#/components/schemas/Revision"
+
+    # ---------------------------------------------------------------- wallet
+    LedgerReason:
+      type: string
+      enum: [game_reward, quest_reward, purchase, level_reward, challenge_reward, admin_adjustment]
+    LedgerEntry:
+      type: object
+      required: [id, delta, balanceAfter, reason, referenceType, referenceId, createdAt]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        delta:
+          type: integer
+          format: int64
+          not:
+            const: 0
+        balanceAfter:
+          $ref: "#/components/schemas/Coins"
+        reason:
+          $ref: "#/components/schemas/LedgerReason"
+        referenceType:
+          type: [string, "null"]
+        referenceId:
+          $ref: "#/components/schemas/NullableUuid"
+        createdAt:
+          $ref: "#/components/schemas/Timestamp"
+    LedgerPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/LedgerEntry"
+        nextCursor:
+          $ref: "#/components/schemas/NextCursor"
+
+    # ---------------------------------------------------------------- gameplay
+    StreetHoopsConfig:
+      type: object
+      description: Street Hoops ruleset config (spec §7). All values are integers.
+      additionalProperties: false
+      required:
+        - streamId
+        - durationMs
+        - graceMs
+        - earlyToleranceMs
+        - segmentMs
+        - xMin
+        - xMax
+        - pMin
+        - pMax
+        - hitDx
+        - hitDp
+        - perfectDx
+        - perfectDp
+        - hitPoints
+        - perfectPoints
+        - streakStart
+        - streakStep
+        - streakMax
+        - minGapMs
+        - maxEvents
+        - minShotsForRewards
+      properties:
+        streamId:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 4294967295
+        durationMs:
+          type: integer
+          minimum: 1
+        graceMs:
+          type: integer
+          minimum: 0
+        earlyToleranceMs:
+          type: integer
+          minimum: 0
+        segmentMs:
+          type: integer
+          minimum: 1
+        xMin:
+          type: integer
+        xMax:
+          type: integer
+        pMin:
+          type: integer
+        pMax:
+          type: integer
+        hitDx:
+          type: integer
+          minimum: 0
+        hitDp:
+          type: integer
+          minimum: 0
+        perfectDx:
+          type: integer
+          minimum: 0
+        perfectDp:
+          type: integer
+          minimum: 0
+        hitPoints:
+          type: integer
+          minimum: 0
+        perfectPoints:
+          type: integer
+          minimum: 0
+        streakStart:
+          type: integer
+          minimum: 1
+        streakStep:
+          type: integer
+          minimum: 0
+        streakMax:
+          type: integer
+          minimum: 0
+        minGapMs:
+          type: integer
+          minimum: 1
+        maxEvents:
+          type: integer
+          minimum: 0
+        minShotsForRewards:
+          type: integer
+          minimum: 0
+    Ruleset:
+      type: object
+      required: [id, gameId, version, config, checksum]
+      properties:
+        id:
+          $ref: "#/components/schemas/RulesetId"
+        gameId:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        config:
+          $ref: "#/components/schemas/StreetHoopsConfig"
+        checksum:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+          description: Lowercase hex SHA-256 of the RFC 8785 canonical JSON of `config`.
+    GameSessionStatus:
+      type: string
+      enum: [created, active, submitted, verified, rejected, expired]
+    RejectionReason:
+      type: string
+      enum:
+        - not_started
+        - ruleset_mismatch
+        - invalid_event
+        - out_of_range
+        - too_many_events
+        - non_monotonic
+        - cadence_violation
+        - submitted_too_early
+    Seed:
+      type: integer
+      format: int64
+      minimum: 0
+      maximum: 4294967295
+    SessionCreateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        challengeId:
+          $ref: "#/components/schemas/Uuid"
+    SessionCreated:
+      type: object
+      required: [sessionId, status, rulesetId, rulesetChecksum, startDeadline]
+      properties:
+        sessionId:
+          $ref: "#/components/schemas/Uuid"
+        status:
+          type: string
+          const: created
+        rulesetId:
+          $ref: "#/components/schemas/RulesetId"
+        rulesetChecksum:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        startDeadline:
+          $ref: "#/components/schemas/Timestamp"
+    SessionStarted:
+      type: object
+      required: [seed, startedAt, submitDeadline]
+      properties:
+        seed:
+          $ref: "#/components/schemas/Seed"
+        startedAt:
+          $ref: "#/components/schemas/Timestamp"
+        submitDeadline:
+          $ref: "#/components/schemas/Timestamp"
+    SubmitRequest:
+      type: object
+      required: [rulesetId, events]
+      description: |
+        Each `events` item should be `{ "tMs": int, "aimX": int, "power": int }` (spec §7 units).
+        Items are free-form here on purpose: the server validates raw tokens and answers
+        `rejected` / `invalid_event` instead of 400. `clientReportedScore` is diagnostic only.
+      properties:
+        rulesetId:
+          type: string
+        events:
+          type: array
+          items: {}
+        clientReportedScore: {}
+    Rewards:
+      type: object
+      required: [coins, xp, levelAfter]
+      properties:
+        coins:
+          $ref: "#/components/schemas/Coins"
+        xp:
+          type: integer
+          minimum: 0
+        levelAfter:
+          $ref: "#/components/schemas/Level"
+    SubmitAccepted:
+      type: object
+      required: [sessionId, status]
+      properties:
+        sessionId:
+          $ref: "#/components/schemas/Uuid"
+        status:
+          type: string
+          const: submitted
+    SubmitVerified:
+      type: object
+      required: [sessionId, status, score, rewards]
+      properties:
+        sessionId:
+          $ref: "#/components/schemas/Uuid"
+        status:
+          type: string
+          const: verified
+        score:
+          type: integer
+          minimum: 0
+        rewards:
+          $ref: "#/components/schemas/Rewards"
+    SubmitRejected:
+      type: object
+      required: [sessionId, status, rejectionReason]
+      properties:
+        sessionId:
+          $ref: "#/components/schemas/Uuid"
+        status:
+          type: string
+          const: rejected
+        rejectionReason:
+          $ref: "#/components/schemas/RejectionReason"
+    SubmitExpired:
+      type: object
+      required: [sessionId, status]
+      properties:
+        sessionId:
+          $ref: "#/components/schemas/Uuid"
+        status:
+          type: string
+          const: expired
+    SubmitResult:
+      oneOf:
+        - $ref: "#/components/schemas/SubmitVerified"
+        - $ref: "#/components/schemas/SubmitRejected"
+        - $ref: "#/components/schemas/SubmitExpired"
+      discriminator:
+        propertyName: status
+        mapping:
+          verified: "#/components/schemas/SubmitVerified"
+          rejected: "#/components/schemas/SubmitRejected"
+          expired: "#/components/schemas/SubmitExpired"
+    GameSession:
+      type: object
+      required:
+        - sessionId
+        - gameId
+        - rulesetId
+        - status
+        - challengeId
+        - createdAt
+        - startDeadline
+        - startedAt
+        - submitDeadline
+        - score
+        - rewards
+        - rejectionReason
+      properties:
+        sessionId:
+          $ref: "#/components/schemas/Uuid"
+        gameId:
+          type: string
+        rulesetId:
+          $ref: "#/components/schemas/RulesetId"
+        status:
+          $ref: "#/components/schemas/GameSessionStatus"
+        challengeId:
+          $ref: "#/components/schemas/NullableUuid"
+        createdAt:
+          $ref: "#/components/schemas/Timestamp"
+        startDeadline:
+          $ref: "#/components/schemas/Timestamp"
+        startedAt:
+          $ref: "#/components/schemas/NullableTimestamp"
+        submitDeadline:
+          $ref: "#/components/schemas/NullableTimestamp"
+        score:
+          type: [integer, "null"]
+          minimum: 0
+        rewards:
+          oneOf:
+            - $ref: "#/components/schemas/Rewards"
+            - type: "null"
+        rejectionReason:
+          oneOf:
+            - $ref: "#/components/schemas/RejectionReason"
+            - type: "null"
+
+    # ---------------------------------------------------------------- challenges
+    ChallengeStatus:
+      type: string
+      description: Visible status. Internal `cancelled` is shown as `expired` (spec §5 block privacy).
+      enum: [open, accepted, completed, expired]
+    ChallengeRole:
+      type: string
+      enum: [created, received]
+    ChallengeResult:
+      type: string
+      enum: [creator_win, recipient_win, tie]
+    ChallengeCreateRequest:
+      type: object
+      required: [creatorSessionId]
+      additionalProperties: false
+      properties:
+        creatorSessionId:
+          $ref: "#/components/schemas/Uuid"
+        recipientHandle:
+          $ref: "#/components/schemas/HandleInput"
+    RematchRequest:
+      type: object
+      required: [creatorSessionId]
+      additionalProperties: false
+      properties:
+        creatorSessionId:
+          $ref: "#/components/schemas/Uuid"
+    ChallengeCreated:
+      type: object
+      required: [challengeId, shareUrl, acceptDeadline]
+      properties:
+        challengeId:
+          $ref: "#/components/schemas/Uuid"
+        shareUrl:
+          type: string
+          format: uri
+          description: |
+            Contains the single-use invite token. The token is derived as
+            base64url(HMAC-SHA256(server secret, challengeId)) and only its hash is stored, so an
+            idempotent replay rebuilds the same URL without storing the raw token.
+        acceptDeadline:
+          $ref: "#/components/schemas/Timestamp"
+    ChallengePreview:
+      type: object
+      required: [challengeId, gameId, rulesetId, creator, creatorScore, status, acceptDeadline]
+      properties:
+        challengeId:
+          $ref: "#/components/schemas/Uuid"
+        gameId:
+          type: string
+        rulesetId:
+          $ref: "#/components/schemas/RulesetId"
+        creator:
+          $ref: "#/components/schemas/PlayerSummary"
+        creatorScore:
+          type: integer
+          minimum: 0
+        status:
+          $ref: "#/components/schemas/ChallengeStatus"
+        acceptDeadline:
+          $ref: "#/components/schemas/Timestamp"
+    ChallengeAccepted:
+      type: object
+      required: [challengeId, status, completeDeadline]
+      properties:
+        challengeId:
+          $ref: "#/components/schemas/Uuid"
+        status:
+          type: string
+          const: accepted
+        completeDeadline:
+          $ref: "#/components/schemas/Timestamp"
+    Challenge:
+      type: object
+      required:
+        - challengeId
+        - status
+        - gameId
+        - rulesetId
+        - creator
+        - recipient
+        - creatorScore
+        - recipientScore
+        - result
+        - createdAt
+        - acceptDeadline
+        - acceptedAt
+        - completeDeadline
+        - resolvedAt
+        - rematchOfChallengeId
+        - shareUrl
+      properties:
+        challengeId:
+          $ref: "#/components/schemas/Uuid"
+        status:
+          $ref: "#/components/schemas/ChallengeStatus"
+        gameId:
+          type: string
+        rulesetId:
+          $ref: "#/components/schemas/RulesetId"
+        creator:
+          $ref: "#/components/schemas/PlayerSummary"
+        recipient:
+          oneOf:
+            - $ref: "#/components/schemas/PlayerSummary"
+            - type: "null"
+        creatorScore:
+          type: integer
+          minimum: 0
+        recipientScore:
+          type: [integer, "null"]
+          minimum: 0
+        result:
+          oneOf:
+            - $ref: "#/components/schemas/ChallengeResult"
+            - type: "null"
+        createdAt:
+          $ref: "#/components/schemas/Timestamp"
+        acceptDeadline:
+          $ref: "#/components/schemas/Timestamp"
+        acceptedAt:
+          $ref: "#/components/schemas/NullableTimestamp"
+        completeDeadline:
+          $ref: "#/components/schemas/NullableTimestamp"
+        resolvedAt:
+          $ref: "#/components/schemas/NullableTimestamp"
+        rematchOfChallengeId:
+          $ref: "#/components/schemas/NullableUuid"
+        shareUrl:
+          type: [string, "null"]
+          format: uri
+          description: |
+            Invite link. Set only for the designated recipient (rematch or profile challenge)
+            while the status is `open`, so they can accept in the app; null for everyone else.
+    ChallengePage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Challenge"
+        nextCursor:
+          $ref: "#/components/schemas/NextCursor"
+
+    # ---------------------------------------------------------------- quests
+    QuestStatus:
+      type: string
+      enum: [active, completed, claimed]
+    PlayerQuest:
+      type: object
+      required: [playerQuestId, code, periodStart, progress, target, status, rewardCoins, rewardXp, claimableUntil]
+      properties:
+        playerQuestId:
+          $ref: "#/components/schemas/Uuid"
+        code:
+          type: string
+        periodStart:
+          type: string
+          format: date
+        progress:
+          type: integer
+          minimum: 0
+        target:
+          type: integer
+          minimum: 1
+        status:
+          $ref: "#/components/schemas/QuestStatus"
+        rewardCoins:
+          $ref: "#/components/schemas/Coins"
+        rewardXp:
+          type: integer
+          minimum: 0
+        claimableUntil:
+          $ref: "#/components/schemas/Timestamp"
+    QuestList:
+      type: object
+      required: [quests]
+      properties:
+        quests:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlayerQuest"
+    QuestClaimed:
+      type: object
+      required: [coinsGranted, xpGranted, level]
+      properties:
+        coinsGranted:
+          $ref: "#/components/schemas/Coins"
+        xpGranted:
+          type: integer
+          minimum: 0
+        level:
+          $ref: "#/components/schemas/Level"
+
+    # ---------------------------------------------------------------- account
+    ExportStatus:
+      type: string
+      enum: [queued, running, ready, failed]
+    ExportRequested:
+      type: object
+      required: [exportId]
+      properties:
+        exportId:
+          $ref: "#/components/schemas/Uuid"
+    DataExport:
+      type: object
+      required: [exportId, status, createdAt, downloadUrl, downloadExpiresAt]
+      properties:
+        exportId:
+          $ref: "#/components/schemas/Uuid"
+        status:
+          $ref: "#/components/schemas/ExportStatus"
+        createdAt:
+          $ref: "#/components/schemas/Timestamp"
+        downloadUrl:
+          type: [string, "null"]
+          format: uri
+        downloadExpiresAt:
+          $ref: "#/components/schemas/NullableTimestamp"
+    DeletionStatus:
+      type: string
+      enum: [queued, processing, completed]
+    DeletionRequested:
+      type: object
+      description: "`requestId` equals the request's `Idempotency-Key`."
+      required: [requestId]
+      properties:
+        requestId:
+          $ref: "#/components/schemas/Uuid"
+    DeletionRequest:
+      type: object
+      required: [requestId, status, createdAt, completedAt]
+      properties:
+        requestId:
+          $ref: "#/components/schemas/Uuid"
+        status:
+          $ref: "#/components/schemas/DeletionStatus"
+        createdAt:
+          $ref: "#/components/schemas/Timestamp"
+        completedAt:
+          $ref: "#/components/schemas/NullableTimestamp"
+
+    # ---------------------------------------------------------------- admin
+    PlayerRef:
+      type: object
+      required: [playerId, handle]
+      properties:
+        playerId:
+          $ref: "#/components/schemas/Uuid"
+        handle:
+          $ref: "#/components/schemas/Handle"
+    ReportStatus:
+      type: string
+      enum: [open, actioned, dismissed]
+    AdminReport:
+      type: object
+      required: [reportId, reporter, target, reason, details, status, createdAt, reviewedAt]
+      properties:
+        reportId:
+          $ref: "#/components/schemas/Uuid"
+        reporter:
+          $ref: "#/components/schemas/PlayerRef"
+        target:
+          $ref: "#/components/schemas/PlayerRef"
+        reason:
+          $ref: "#/components/schemas/ReportReason"
+        details:
+          type: [string, "null"]
+          maxLength: 500
+        status:
+          $ref: "#/components/schemas/ReportStatus"
+        createdAt:
+          $ref: "#/components/schemas/Timestamp"
+        reviewedAt:
+          $ref: "#/components/schemas/NullableTimestamp"
+    AdminReportPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminReport"
+        nextCursor:
+          $ref: "#/components/schemas/NextCursor"
+    ReportResolveRequest:
+      type: object
+      required: [status, reason]
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum: [actioned, dismissed]
+        reason:
+          $ref: "#/components/schemas/AdminReason"
+    AdminReasonRequest:
+      type: object
+      required: [reason]
+      additionalProperties: false
+      properties:
+        reason:
+          $ref: "#/components/schemas/AdminReason"
+    SuspensionRequest:
+      type: object
+      required: [reason]
+      additionalProperties: false
+      properties:
+        reason:
+          $ref: "#/components/schemas/AdminReason"
+        until:
+          $ref: "#/components/schemas/Timestamp"
+    Suspension:
+      type: object
+      required: [playerId, suspended, suspendedUntil]
+      properties:
+        playerId:
+          $ref: "#/components/schemas/Uuid"
+        suspended:
+          type: boolean
+        suspendedUntil:
+          $ref: "#/components/schemas/NullableTimestamp"
+    CatalogItemUpdateRequest:
+      type: object
+      required: [isActive, reason]
+      additionalProperties: false
+      properties:
+        isActive:
+          type: boolean
+        reason:
+          $ref: "#/components/schemas/AdminReason"
+    AdminCatalogItem:
+      type: object
+      required: [id, sku, name, isActive]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        sku:
+          type: string
+        name:
+          type: string
+        isActive:
+          type: boolean
+    WalletAdjustmentRequest:
+      type: object
+      required: [playerId, delta, reason]
+      additionalProperties: false
+      properties:
+        playerId:
+          $ref: "#/components/schemas/Uuid"
+        delta:
+          type: integer
+          format: int64
+          not:
+            const: 0
+        reason:
+          $ref: "#/components/schemas/AdminReason"
+    WalletAdjustment:
+      type: object
+      required: [transactionId, playerId, delta, balanceAfter, auditLogId]
+      properties:
+        transactionId:
+          $ref: "#/components/schemas/Uuid"
+        playerId:
+          $ref: "#/components/schemas/Uuid"
+        delta:
+          type: integer
+          format: int64
+        balanceAfter:
+          $ref: "#/components/schemas/Coins"
+        auditLogId:
+          $ref: "#/components/schemas/Uuid"
+    AdminRole:
+      type: string
+      enum: [moderator, administrator]
+    AuditLogEntry:
+      type: object
+      required: [id, actorSubject, actorRole, action, entityType, entityId, before, after, reason, createdAt]
+      properties:
+        id:
+          $ref: "#/components/schemas/Uuid"
+        actorSubject:
+          type: string
+        actorRole:
+          $ref: "#/components/schemas/AdminRole"
+        action:
+          type: string
+        entityType:
+          type: string
+        entityId:
+          type: string
+        before:
+          type: [object, "null"]
+          additionalProperties: true
+        after:
+          type: [object, "null"]
+          additionalProperties: true
+        reason:
+          type: string
+        createdAt:
+          $ref: "#/components/schemas/Timestamp"
+    AuditLogPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLogEntry"
+        nextCursor:
+          $ref: "#/components/schemas/NextCursor"

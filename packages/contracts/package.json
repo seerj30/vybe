@@ -1,0 +1,25 @@
+{
+  "name": "@vybe/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "redocly lint openapi/vybe-api.v1.yaml",
+    "generate": "openapi-typescript openapi/vybe-api.v1.yaml -o src/generated/vybe-api.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm lint"
+  },
+  "devDependencies": {
+    "@redocly/cli": "2.64.1",
+    "@types/node": "22.15.21",
+    "@vybe/game-rules": "workspace:*",
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3"
+  }
+}
