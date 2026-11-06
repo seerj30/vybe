@@ -19,7 +19,10 @@ public static class JobsSetup
     public static IServiceCollection AddVybeJobs(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
-        services.Configure<JobOptions>(configuration.GetSection(JobOptions.Section));
+        services.AddOptions<JobOptions>()
+            .Bind(configuration.GetSection(JobOptions.Section))
+            .Validate(o => o.OutboxPollSeconds >= 1 && o.SweepSeconds >= 1, "Jobs:OutboxPollSeconds and Jobs:SweepSeconds must be at least 1")
+            .ValidateOnStart();
         services.AddSingleton<OutboxProcessor>();
         services.AddSingleton<Sweeper>();
         if (configuration.GetSection(JobOptions.Section).Get<JobOptions>()?.Enabled ?? true)

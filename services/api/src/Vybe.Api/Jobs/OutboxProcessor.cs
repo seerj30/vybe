@@ -49,19 +49,27 @@ public sealed partial class OutboxProcessor(IServiceScopeFactory scopes, TimePro
 
         try
         {
-            switch (job.Kind)
+            var runAgainAt = job.Kind switch
             {
-                case ChallengeResolvedJob.Kind:
-                    var payload = JsonSerializer.Deserialize<ChallengeResolvedJob.Payload>(job.Payload, PayloadJson)
-                        ?? throw new InvalidDataException("empty payload");
-                    await ChallengeResolvedJob.RunAsync(db, payload, now, cancellationToken);
-                    break;
-                default:
-                    throw new InvalidOperationException($"unknown outbox job kind {job.Kind}");
+                ChallengeResolvedJob.Kind => await ChallengeResolvedJob.RunAsync(
+                    db,
+                    JsonSerializer.Deserialize<ChallengeResolvedJob.Payload>(job.Payload, PayloadJson) ?? throw new InvalidDataException("empty payload"),
+                    now,
+                    cancellationToken),
+                _ => throw new InvalidOperationException($"unknown outbox job kind {job.Kind}"),
+            };
+
+            if (runAgainAt is { } at)
+            {
+                // Not a failure: the job waits (e.g. for a suspension to end) without using an attempt.
+                job.RunAfter = at;
+            }
+            else
+            {
+                job.Status = OutboxStatus.Done;
+                job.Attempts++;
             }
 
-            job.Status = Data.OutboxStatus.Done;
-            job.Attempts++;
             job.LastError = null;
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
@@ -80,11 +88,21 @@ public sealed partial class OutboxProcessor(IServiceScopeFactory scopes, TimePro
                 SET attempts = {attempts}, status = {status}, run_after = {retryAt}, last_error = {error}
                 WHERE id = {job.Id}
                 """, cancellationToken);
-            LogJobFailed(logger, exception, job.JobKey, attempts);
+            if (status == "failed")
+            {
+                LogJobGaveUp(logger, exception, job.JobKey, attempts);
+            }
+            else
+            {
+                LogJobFailed(logger, exception, job.JobKey, attempts);
+            }
         }
 
         return true;
     }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Outbox job {JobKey} is failed after {Attempts} attempts; it will not run again")]
+    private static partial void LogJobGaveUp(ILogger logger, Exception exception, string jobKey, int attempts);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Outbox job {JobKey} failed (attempt {Attempts})")]
     private static partial void LogJobFailed(ILogger logger, Exception exception, string jobKey, int attempts);

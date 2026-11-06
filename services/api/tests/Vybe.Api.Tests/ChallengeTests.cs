@@ -315,6 +315,90 @@ public sealed class ChallengeTests(ApiFactory api)
     }
 
     [Fact]
+    public async Task ConcurrentRecipientSessions_OneChallenge_OneWins()
+    {
+        var creator = await Player.CreateGuestAsync(api);
+        var recipient = await Player.CreateGuestAsync(api);
+        var (challengeId, token) = await CreateOkAsync(creator, await api.PlayRunAsync(creator, 10));
+        await AcceptAsync(recipient, token);
+
+        var responses = await Task.WhenAll(CreateSessionAsync(recipient, challengeId), CreateSessionAsync(recipient, challengeId));
+
+        await Contract.AssertAsync(Assert.Single(responses, r => r.StatusCode == HttpStatusCode.Created), HttpStatusCode.Created, "SessionCreated");
+        await Contract.AssertProblemAsync(
+            Assert.Single(responses, r => r.StatusCode != HttpStatusCode.Created), HttpStatusCode.Conflict, "challenge_session_exists");
+    }
+
+    [Fact]
+    public async Task ListMyChallenges_PagesNewestFirst_WithTheCursor()
+    {
+        var creator = await Player.CreateGuestAsync(api);
+        var ids = new List<Guid>();
+        for (var i = 0; i < 3; i++)
+        {
+            ids.Add((await CreateOkAsync(creator, await api.PlayRunAsync(creator, 10))).ChallengeId);
+        }
+
+        var first = await ListAsync(creator, "?role=created&limit=2");
+        Assert.Equal([ids[2], ids[1]], first.GetProperty("items").EnumerateArray().Select(c => c.GetProperty("challengeId").GetGuid()));
+        var second = await ListAsync(creator, $"?role=created&limit=2&cursor={first.GetProperty("nextCursor").GetString()}");
+        Assert.Equal(ids[0], Assert.Single(second.GetProperty("items").EnumerateArray()).GetProperty("challengeId").GetGuid());
+        Assert.Equal(JsonValueKind.Null, second.GetProperty("nextCursor").ValueKind);
+        await Contract.AssertProblemAsync(
+            await creator.Http.GetAsync("/api/v1/me/challenges?cursor=bm90LWEtY3Vyc29y"), HttpStatusCode.UnprocessableEntity, "validation_failed");
+    }
+
+    [Fact]
+    public async Task Accept_IdempotencyRecord_NeverHoldsTheToken()
+    {
+        var creator = await Player.CreateGuestAsync(api);
+        var recipient = await Player.CreateGuestAsync(api);
+        var (_, token) = await CreateOkAsync(creator, await api.PlayRunAsync(creator, 10));
+        await Contract.AssertAsync(await AcceptAsync(recipient, token), HttpStatusCode.OK, "ChallengeAccepted");
+
+        await using var db = api.CreateDbContext();
+        var record = await db.IdempotencyRecords.SingleAsync(r => r.ActorSubject == recipient.Id.ToString() && r.Operation == "challenges.accept");
+        Assert.DoesNotContain(token, record.ResponseBody!, StringComparison.Ordinal);
+        Assert.DoesNotContain(token, record.RequestHash, StringComparison.Ordinal);
+        var stored = await db.Challenges.Where(c => c.CreatorPlayerId == creator.Id).Select(c => c.InviteTokenHash).SingleAsync();
+        Assert.Equal(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(token)), stored);
+    }
+
+    [Fact]
+    public async Task RunVerifiedAfterMidnight_CountsOnItsRewardDay_ChallengeOnTheResolvedDay()
+    {
+        var creator = await Player.CreateGuestAsync(api);
+        var recipient = await Player.CreateGuestAsync(api);
+        var (challengeId, token) = await CreateOkAsync(creator, await api.PlayRunAsync(creator, 10));
+        await AcceptAsync(recipient, token);
+
+        // Start at 23:59:30 UTC; the submit arrives after midnight, inside submit_deadline.
+        var now = api.Clock.GetUtcNow();
+        api.Clock.Advance(new DateTimeOffset(now.UtcDateTime.Date.AddDays(1).AddSeconds(-30), TimeSpan.Zero) - now);
+        var (sessionId, seed, config, rulesetId) = await recipient.StartRecipientRunAsync(challengeId);
+        api.Clock.Advance(TimeSpan.FromMilliseconds(config.DurationMs + 100));
+        await Contract.AssertAsync(
+            await recipient.SubmitAsync(sessionId, rulesetId, Player.PerfectEvents(config, seed, 93)), HttpStatusCode.OK, "SubmitResult");
+        await RunOutboxAsync();
+
+        await using var db = api.CreateDbContext();
+        var runDay = (await db.GameSessions.SingleAsync(s => s.Id == sessionId)).RewardDay!.Value;
+        var resolvedDay = DateOnly.FromDateTime((await db.Challenges.SingleAsync(c => c.Id == challengeId)).ResolvedAt!.Value);
+        Assert.Equal(runDay.AddDays(1), resolvedDay);
+        var counters = await db.PlayerDailyCounters.Where(c => c.PlayerId == recipient.Id).ToDictionaryAsync(c => c.Day);
+        Assert.Equal(1, counters[runDay].RunsRewarded);
+        Assert.Equal(1, counters[resolvedDay].ChallengeBonuses);
+        Assert.Equal(0, counters[resolvedDay].RunsRewarded);
+        var quests = await db.PlayerQuests.Where(q => q.PlayerId == recipient.Id)
+            .Join(db.QuestDefinitions, q => q.QuestId, d => d.Id, (q, d) => new { d.Code, q.PeriodStart, q.Progress })
+            .ToListAsync();
+        Assert.Contains(quests, q => q is { Code: "play_3", Progress: 1 } && q.PeriodStart == runDay);
+        Assert.Contains(quests, q => q is { Code: "challenge_or_streak", Progress: 1 } && q.PeriodStart == runDay); // streak path
+        Assert.Contains(quests, q => q is { Code: "challenge_or_streak", Progress: 1 } && q.PeriodStart == resolvedDay); // challenge path
+        Assert.DoesNotContain(quests, q => q.Code == "play_3" && q.PeriodStart == resolvedDay);
+    }
+
+    [Fact]
     public async Task Rematch_PresetsTheRecipient_OncePerParticipant()
     {
         var creator = await Player.CreateGuestAsync(api);
@@ -477,5 +561,22 @@ internal static class ChallengeRunExtensions
             await player.SubmitAsync(sessionId, rulesetId, Player.PerfectEvents(config, seed, shots)), HttpStatusCode.OK, "SubmitResult");
         Assert.Equal("verified", body.GetProperty("status").GetString());
         return body;
+    }
+
+    /// <summary>Six shots: four perfect, one miss, one perfect (max streak 4, below the quest's 5).</summary>
+    public static async Task<Guid> PlayShortStreakRunAsync(this ApiFactory api, Player player)
+    {
+        var (sessionId, seed, config, rulesetId) = await player.StartRunAsync();
+        var waypoints = StreetHoopsSimulator.GenerateWaypoints(config, seed);
+        var events = Enumerable.Range(0, 6).Select(i =>
+        {
+            var t = i * 650;
+            var (x, p) = StreetHoopsSimulator.TargetAt(config, waypoints, t);
+            return (object)new { tMs = t, aimX = i == 4 ? (x > 0 ? -1000 : 1000) : x, power = p };
+        }).ToArray();
+        api.Clock.Advance(TimeSpan.FromMilliseconds(config.DurationMs + 100));
+        var body = await Contract.AssertAsync(await player.SubmitAsync(sessionId, rulesetId, events), HttpStatusCode.OK, "SubmitResult");
+        Assert.Equal("verified", body.GetProperty("status").GetString());
+        return sessionId;
     }
 }

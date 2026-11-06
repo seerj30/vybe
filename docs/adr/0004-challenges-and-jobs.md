@@ -15,7 +15,8 @@ states, the invariants (5, 8–12) and the codes. This ADR records the decisions
    as text)), 43 characters. The database stores only SHA-256(token). The secret comes from
    `Challenges:InviteSecret` (base64, at least 32 bytes). Outside Development the API does not start
    without it. In Development a missing secret gives a random secret per process, so links stop
-   working after a restart. Share links are `{Challenges:ShareBaseUrl}/challenge/{token}`.
+   working after a restart. Share links are `{Challenges:ShareBaseUrl}/challenge/{token}`. Outside
+   Development, `Challenges:ShareBaseUrl` must be an absolute https URL, else the API does not start.
 2. **Idempotent replays without the token.** `Idempotency.RunAsync` takes an optional presenter. It
    changes a stored success body on the way out, for the first response and for replays. Create and
    rematch store `{challengeId, acceptDeadline}` and the presenter adds `shareUrl`. The accept
@@ -39,9 +40,13 @@ states, the invariants (5, 8–12) and the codes. This ADR records the decisions
    it in one transaction, which also writes `done`. A failure rolls back and records `attempts`,
    `last_error` and `run_after = now + 2^attempts s` (at most 1 h); after 10 attempts the job is
    `failed`. `challenge-resolved` locks one player row only. It skips the winner bonus when the ledger
-   row `challenge:{id}` already exists, so a retried job never pays twice. A suspended, deleting or
-   deleted player gets no bonus and no quest progress. The hosted `OutboxWorker` polls every `Jobs:OutboxPollSeconds`
-   (default 5). `Jobs:Enabled = false` turns all workers off; the tests run the jobs directly.
+   row `challenge:{id}` already exists, so a retried job never pays twice. A deleting or deleted player
+   gets no bonus and no quest progress, and the job ends. For a suspended player the job stays `pending`
+   and runs again at `suspended_until` (an indefinite suspension: every day), without using an attempt,
+   so the bonus and the quest progress arrive when the suspension ends. A job that becomes `failed` is
+   logged at Error. The hosted `OutboxWorker` polls every `Jobs:OutboxPollSeconds` (default 5).
+   `Jobs:Enabled = false` turns all workers off; the tests run the jobs directly. `Jobs:OutboxPollSeconds`
+   and `Jobs:SweepSeconds` must be at least 1 (checked at start-up).
 7. **Sweepers.** `Sweeper` runs every `Jobs:SweepSeconds` (default 30) in batches of 500. It claims
    rows with `FOR UPDATE SKIP LOCKED`, so it never waits for a request, and every write is a status
    compare-and-swap. Sessions: `created` after `start_deadline` and `active` after `submit_deadline`
@@ -68,6 +73,7 @@ states, the invariants (5, 8–12) and the codes. This ADR records the decisions
 - The production deploy step must seed quests as well as rulesets and catalog.
 - Stream B (blocks) cancels `open`/`accepted` challenges under `PairLock`; the reads in this ADR already
   show those challenges as `expired`.
-- Known, not changed here: create-session (player row, then the old session row) and submit (session
-  row, then player row) can deadlock when one player replaces a session that is being submitted.
-  PostgreSQL aborts one of them (500); the client retry succeeds.
+- Lock order for one player's writes: player row first (`FOR NO KEY UPDATE`), then session, quest and
+  wallet rows. Create-session, submit, quest list and claim, and the outbox all follow it, so a session
+  replaced during its submit cannot deadlock. Challenge paths take the pair lock and the challenge row
+  before the player row; no transaction locks two players' rows.

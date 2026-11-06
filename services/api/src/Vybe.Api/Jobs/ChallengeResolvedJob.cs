@@ -10,6 +10,7 @@ namespace Vybe.Api.Jobs;
 /// one transaction for one player. Grants the +50 winner bonus (ledger <c>challenge:{id}</c>, at most 5 per
 /// UTC day of <c>resolved_at</c> via <c>player_daily_counters.challenge_bonuses</c>) and adds
 /// <c>challenge_or_streak</c> progress on that day for both participants (target 1, so a retry cannot overcount).
+/// A suspended player's job is rescheduled to the end of the suspension; a deleting or deleted player's job ends.
 /// </summary>
 public static class ChallengeResolvedJob
 {
@@ -17,26 +18,36 @@ public static class ChallengeResolvedJob
     public const long WinnerBonus = 50;
     public const int DailyBonusCap = 5;
 
+    /// <summary>Retry delay while a suspension has no end; the job stays pending until it is lifted.</summary>
+    public static readonly TimeSpan IndefiniteSuspensionRetry = TimeSpan.FromDays(1);
+
     public sealed record Payload(Guid ChallengeId, Guid PlayerId);
 
-    public static async Task RunAsync(VybeDbContext db, Payload payload, DateTime now, CancellationToken cancellationToken)
+    /// <summary>Runs the job; returns null when it is done, or the time to run it again (suspended player).</summary>
+    public static async Task<DateTime?> RunAsync(VybeDbContext db, Payload payload, DateTime now, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(db);
         ArgumentNullException.ThrowIfNull(payload);
         var challenge = await db.Challenges.AsNoTracking().SingleAsync(c => c.Id == payload.ChallengeId, cancellationToken);
         if (challenge.Status != ChallengeStatus.Completed)
         {
-            return;
+            return null;
         }
 
         var player = await db.Players
             .FromSql($"SELECT * FROM vybe.players WHERE id = {payload.PlayerId} FOR NO KEY UPDATE")
             .AsNoTracking()
             .SingleAsync(cancellationToken);
-        // Suspension blocks economic actions (spec §6); deletion ends them.
-        if (player.Status is PlayerStatus.Deleting or PlayerStatus.Deleted || CurrentPlayer.IsSuspended(player, now))
+        // Deletion ends economic actions for good. Suspension only blocks them (spec §6): the bonus and
+        // the quest progress wait until the suspension ends.
+        if (player.Status is PlayerStatus.Deleting or PlayerStatus.Deleted)
         {
-            return;
+            return null;
+        }
+
+        if (CurrentPlayer.IsSuspended(player, now))
+        {
+            return player.SuspendedUntil ?? now + IndefiniteSuspensionRetry;
         }
 
         var day = DateOnly.FromDateTime(challenge.ResolvedAt!.Value);
@@ -59,5 +70,6 @@ public static class ChallengeResolvedJob
         }
 
         await QuestProgress.AddAsync(db, player.Id, QuestProgress.ChallengeOrStreak, day, 1, now, cancellationToken);
+        return null;
     }
 }
