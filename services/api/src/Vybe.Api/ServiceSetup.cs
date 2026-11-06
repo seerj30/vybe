@@ -131,7 +131,8 @@ public static class ServiceSetup
                 options.Authority = section["Authority"];
                 options.MetadataAddress = section["MetadataAddress"] ?? string.Empty;
                 options.MapInboundClaims = false;
-                options.RequireHttpsMetadata = true;
+                // Development only: the browser tests use a local fake Supabase Auth on http (tests/e2e/fake-auth).
+                options.RequireHttpsMetadata = !environment.IsDevelopment();
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidIssuer = section["Issuer"] ?? section["Authority"],

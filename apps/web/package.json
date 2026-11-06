@@ -15,6 +15,7 @@
     "@angular/core": "22.2.3",
     "@angular/platform-browser": "22.2.3",
     "@angular/router": "22.2.3",
+    "@supabase/supabase-js": "2.118.0",
     "@vybe/contracts": "workspace:*",
     "@vybe/game-rules": "workspace:*",
     "rxjs": "7.8.2",

@@ -16,6 +16,7 @@ const NAV: readonly NavItem[] = [
   { path: "/shop", label: "Shop" },
   { path: "/wardrobe", label: "Wardrobe" },
   { path: "/wallet", label: "Wallet" },
+  { path: "/settings", label: "Settings" },
 ];
 
 function layoutOf(snapshot: ActivatedRouteSnapshot): Layout {

@@ -1,9 +1,12 @@
 import type { Routes } from "@angular/router";
+import { Admin } from "./pages/admin";
 import { AvatarCreator } from "./pages/avatar-creator";
 import { Arcade } from "./pages/arcade";
+import { DeletionStatus } from "./pages/deletion-status";
 import { Hub } from "./pages/hub";
 import { Landing } from "./pages/landing";
 import { Onboarding } from "./pages/onboarding";
+import { Settings } from "./pages/settings";
 import { Shop } from "./pages/shop";
 import { Wallet } from "./pages/wallet";
 import { Wardrobe } from "./pages/wardrobe";
@@ -16,6 +19,9 @@ export type Layout = "bare" | "app" | "fullscreen";
 export const routes: Routes = [
   { path: "", pathMatch: "full", component: Landing, title: "VYBE", data: { layout: "bare" } },
   { path: "play", component: Onboarding, title: "Start · VYBE", data: { layout: "bare" } },
+  // Staff may have no player, and a deletion status must open after the sessions are revoked.
+  { path: "admin", component: Admin, title: "Admin · VYBE", data: { layout: "bare" } },
+  { path: "deletion/:requestId", component: DeletionStatus, title: "Account deletion · VYBE", data: { layout: "bare" } },
   {
     path: "practice",
     loadComponent: () => import("./street-hoops/street-hoops").then((m) => m.StreetHoops),
@@ -41,6 +47,7 @@ export const routes: Routes = [
       { path: "shop", component: Shop, title: "Shop · VYBE" },
       { path: "wardrobe", component: Wardrobe, title: "Wardrobe · VYBE" },
       { path: "wallet", component: Wallet, title: "Wallet · VYBE" },
+      { path: "settings", component: Settings, title: "Settings · VYBE" },
     ],
   },
   { path: "**", redirectTo: "" },
