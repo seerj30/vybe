@@ -55,6 +55,10 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__Vybe: Host=db;Database=vybe;Username=vybe;Password=vybe-local-only
       Content__SeedOnStartup: "false"
+      # The load test (infra/load) creates many guests from one address; the default limit is 10 per minute.
+      RateLimits__GuestsPerIpPerMinute: ${VYBE_GUESTS_PER_IP_PER_MINUTE:-10}
+      # No SQL text in the console: it slows the API under load.
+      Logging__LogLevel__Microsoft.EntityFrameworkCore: Warning
     ports: ["127.0.0.1:8080:8080"]
     depends_on:
       seed: { condition: service_completed_successfully }
