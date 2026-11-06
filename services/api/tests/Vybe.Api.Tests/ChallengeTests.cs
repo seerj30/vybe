@@ -401,7 +401,7 @@ public sealed class ChallengeTests(ApiFactory api)
         return await player.Http.SendAsync(request);
     }
 
-    private static async Task<(Guid ChallengeId, string Token)> CreateOkAsync(Player player, Guid sessionId, string? recipientHandle = null)
+    internal static async Task<(Guid ChallengeId, string Token)> CreateOkAsync(Player player, Guid sessionId, string? recipientHandle = null)
     {
         var created = await Contract.AssertAsync(await CreateAsync(player, sessionId, recipientHandle), HttpStatusCode.Created, "ChallengeCreated");
         var shareUrl = new Uri(created.GetProperty("shareUrl").GetString()!);
@@ -419,7 +419,7 @@ public sealed class ChallengeTests(ApiFactory api)
         return await player.Http.SendAsync(request);
     }
 
-    private static async Task<HttpResponseMessage> AcceptAsync(Player player, string token)
+    internal static async Task<HttpResponseMessage> AcceptAsync(Player player, string token)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/invites/{token}/accept");
         request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
