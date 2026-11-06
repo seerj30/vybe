@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test";
 import pg from "pg";
 
 /** PostgreSQL with `services/api/db/schema.sql` applied; the API under test uses the same database. */
-export const DATABASE_URL = process.env["E2E_DATABASE_URL"] ?? "postgres://vybe:vybe@localhost:55432/vybe";
+export const DATABASE_URL = process.env["E2E_DATABASE_URL"] ?? `postgres://vybe:vybe@localhost:${process.env["E2E_PG_PORT"] ?? "55432"}/vybe`;
 
 /** The calling player's id, from the API with the page's guest cookie. */
 export async function playerId(page: Page): Promise<string> {

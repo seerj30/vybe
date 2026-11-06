@@ -2,8 +2,9 @@ import { defineConfig, devices } from "@playwright/test";
 // PostgreSQL with `services/api/db/schema.sql` applied (`pnpm --filter @vybe/e2e db:up` locally).
 import { DATABASE_URL } from "./specs/db.ts";
 
-const PORT = 4321;
-const API_PORT = 5246;
+// Override the ports to run several worktrees at the same time (tests/e2e/scripts/db-up.sh).
+const PORT = Number(process.env["E2E_WEB_PORT"] ?? 4321);
+const API_PORT = Number(process.env["E2E_API_PORT"] ?? 5246);
 const isCI = process.env["CI"] !== undefined;
 
 
@@ -63,6 +64,7 @@ export default defineConfig({
       url: `http://localhost:${PORT}`,
       reuseExistingServer: !isCI,
       timeout: 180_000,
+      env: { E2E_API_PORT: String(API_PORT) },
     },
   ],
 });
