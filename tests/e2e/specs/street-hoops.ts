@@ -29,7 +29,7 @@ export function powerMeter(page: Page): Locator {
 
 /** Opens the screen and waits until the ruleset checksum is verified. */
 export async function openStreetHoops(page: Page): Promise<void> {
-  await page.goto("/");
+  await page.goto("/practice");
   await expect(page.getByRole("heading", { name: "Street Hoops" })).toBeVisible();
   await expect(startButton(page)).toBeEnabled();
 }
