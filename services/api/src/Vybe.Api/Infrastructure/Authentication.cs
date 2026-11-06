@@ -71,7 +71,7 @@ internal sealed class GuestAuthenticationHandler(
         }
 
         var hash = GuestTokens.Hash(token!);
-        var now = clock.GetUtcNow().UtcDateTime;
+        var now = clock.UtcNowForDb();
         // A deleting or deleted player's cookie no longer authenticates (spec §2 J4, §6).
         var playerId = await db.GuestSessions.AsNoTracking()
             .Where(s => s.TokenHash == hash && s.RevokedAt == null && s.ExpiresAt > now)
@@ -154,7 +154,7 @@ public sealed class CurrentPlayer(IHttpContextAccessor accessor, VybeDbContext d
     public void EnsureNotSuspended(Player player)
     {
         ArgumentNullException.ThrowIfNull(player);
-        if (IsSuspended(player, clock.GetUtcNow().UtcDateTime))
+        if (IsSuspended(player, clock.UtcNowForDb()))
         {
             throw Problem.Of(403, "account_suspended");
         }

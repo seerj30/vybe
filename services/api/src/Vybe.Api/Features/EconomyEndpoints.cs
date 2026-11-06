@@ -48,7 +48,7 @@ public static class EconomyEndpoints
         var take = Cursor.Limit(limit, 24);
         var after = ParseGuidCursor(cursor);
         var playerId = await current.TryGetIdAsync(cancellationToken);
-        var now = clock.GetUtcNow().UtcDateTime;
+        var now = clock.UtcNowForDb();
 
         var query = db.CatalogItems.AsNoTracking()
             .Where(i => i.IsActive && i.Price > 0
@@ -112,7 +112,7 @@ public static class EconomyEndpoints
             // Invariant 1 and 2: debit, ledger row and inventory grant commit together, under the wallet row lock.
             var player = await db.Players.AsNoTracking().SingleAsync(p => p.Id == playerId, ct);
             current.EnsureNotSuspended(player);
-            var now = clock.GetUtcNow().UtcDateTime;
+            var now = clock.UtcNowForDb();
             var item = await db.CatalogItems.AsNoTracking().SingleOrDefaultAsync(i => i.Id == request.ItemId, ct);
             if (item is null || !item.IsActive || item.AvailableFrom > now || item.AvailableUntil <= now)
             {

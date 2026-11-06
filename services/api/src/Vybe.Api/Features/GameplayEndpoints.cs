@@ -63,7 +63,7 @@ public static class GameplayEndpoints
             throw Problem.Of(404, "challenge_unavailable");
         }
 
-        var now = clock.GetUtcNow().UtcDateTime;
+        var now = clock.UtcNowForDb();
         var ruleset = await db.GameRulesets.AsNoTracking()
             .Where(r => r.GameId == StreetHoops && r.RetiredAt == null && r.ActiveFrom <= now)
             .OrderByDescending(r => r.Version)
@@ -108,7 +108,7 @@ public static class GameplayEndpoints
             .FromSql($"SELECT * FROM vybe.game_sessions WHERE id = {sessionId} AND player_id = {playerId} FOR UPDATE")
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw Problem.Of(404, "not_found");
-        var now = clock.GetUtcNow().UtcDateTime;
+        var now = clock.UtcNowForDb();
 
         if (session.Status == GameSessionStatus.Active)
         {
@@ -180,7 +180,7 @@ public static class GameplayEndpoints
             return await CanonicalAsync(db, session, cancellationToken);
         }
 
-        var now = clock.GetUtcNow().UtcDateTime;
+        var now = clock.UtcNowForDb();
         var config = RulesetConfig.Parse(await RulesetJsonAsync(db, session.RulesetId, cancellationToken));
         var eventsJson = events.GetRawText();
 

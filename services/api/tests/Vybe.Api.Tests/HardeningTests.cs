@@ -56,6 +56,9 @@ public sealed class HardeningTests(ApiFactory api)
         var sessionId = (await Contract.AssertAsync(
             await player.Http.PostAsJsonAsync("/api/v1/games/street-hoops/sessions", new { }), HttpStatusCode.Created, "SessionCreated"))
             .GetProperty("sessionId").GetGuid();
+        // A clock that is not on a whole microsecond: PostgreSQL stores microseconds, so a value
+        // returned from memory and the same value read back must already agree.
+        api.Clock.Advance(TimeSpan.FromTicks(7));
 
         var responses = await Task.WhenAll(
             player.Http.PostAsync($"/api/v1/games/sessions/{sessionId}/start", null),

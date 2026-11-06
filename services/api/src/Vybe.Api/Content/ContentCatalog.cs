@@ -115,7 +115,7 @@ public static class ContentSeeder
         ArgumentNullException.ThrowIfNull(db);
         ArgumentNullException.ThrowIfNull(content);
         ArgumentNullException.ThrowIfNull(clock);
-        var now = clock.GetUtcNow().UtcDateTime;
+        var now = clock.UtcNowForDb();
 
         foreach (var ruleset in content.Rulesets.Values)
         {

@@ -45,7 +45,7 @@ public static class IdentityEndpoints
             throw Problem.Of(409, "already_authenticated");
         }
 
-        var now = clock.GetUtcNow().UtcDateTime;
+        var now = clock.UtcNowForDb();
         var token = GuestTokens.NewToken();
         var expiresAt = now + GuestTokens.Lifetime;
         var starterSkus = content.StarterSkus.ToArray();
@@ -112,7 +112,7 @@ public static class IdentityEndpoints
         var player = await db.Players.AsNoTracking().SingleAsync(p => p.Id == id, cancellationToken);
         var balance = await db.Wallets.Where(w => w.PlayerId == id).Select(w => w.Balance).SingleAsync(cancellationToken);
         var revision = await db.AvatarConfigs.Where(a => a.PlayerId == id).Select(a => a.Revision).SingleAsync(cancellationToken);
-        var now = clock.GetUtcNow().UtcDateTime;
+        var now = clock.UtcNowForDb();
         var suspended = CurrentPlayer.IsSuspended(player, now);
         var status = player.Status switch
         {
