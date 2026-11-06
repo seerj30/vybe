@@ -1,0 +1,132 @@
+<main class="stage" #stage>
+  <canvas
+    #court
+    tabindex="0"
+    aria-label="Street Hoops court. Move the pointer or use the arrow keys to aim. Hold and release to shoot."
+    (pointerdown)="onPointerDown($event)"
+    (pointermove)="onPointerMove($event)"
+    (pointerup)="onPointerUp($event)"
+    (pointercancel)="cancelInput()"
+    (contextmenu)="$event.preventDefault()"
+  ></canvas>
+
+  <header class="hud">
+    <div class="hud-item"><span class="hud-label">Time</span><span class="hud-value">{{ secondsLeft() }}</span></div>
+    <div class="hud-item"><span class="hud-label">Score</span><span class="hud-value">{{ score() }}</span></div>
+    <div class="hud-item"><span class="hud-label">Streak</span><span class="hud-value">{{ streak() }}</span></div>
+    <label class="motion-toggle">
+      <input type="checkbox" [checked]="reducedMotion()" (change)="reducedMotion.set(inputChecked($event))" />
+      Reduce motion
+    </label>
+  </header>
+
+  <p class="result" aria-live="polite" [attr.data-result]="lastShot()?.result">
+    {{ notice() ?? lastShotLabel() }}
+  </p>
+
+  @if (phase() === "running") {
+    <div
+      class="meter"
+      role="meter"
+      aria-label="Shot power"
+      aria-valuemin="0"
+      aria-valuemax="1000"
+      [attr.aria-valuenow]="power()"
+      [class.cooling]="coolingDown()"
+    >
+      <div class="meter-fill" [style.height.%]="power() / 10"></div>
+      <span class="meter-text">{{ coolingDown() ? "wait" : power() }}</span>
+    </div>
+  }
+
+  @if (phase() !== "running") {
+    <section class="overlay" aria-labelledby="title">
+      <h1 id="title">Street Hoops</h1>
+      @switch (phase()) {
+        @case ("loading") {
+          <p>Loading and checking the ruleset…</p>
+        }
+        @case ("error") {
+          <p class="error" role="alert">{{ error() }}</p>
+        }
+        @default {
+          @if (summary(); as s) {
+            <dl class="summary">
+              <div><dt>Score</dt><dd>{{ s.score }}</dd></div>
+              <div><dt>Shots</dt><dd>{{ s.eventCount }}</dd></div>
+              <div><dt>Max streak</dt><dd>{{ s.maxStreak }}</dd></div>
+            </dl>
+          }
+          <p class="help">
+            Aim: move the pointer or finger, or hold <kbd>←</kbd> <kbd>→</kbd>.
+            Shoot: hold the mouse button, finger, <kbd>Space</kbd> or <kbd>Enter</kbd>, and release when the ring sits
+            in the basket's zone on the floor.
+          </p>
+          <button type="button" class="start" (click)="start()" [disabled]="effective().config === null || seedProblem() !== null">
+            {{ summary() ? "Play again" : "Start 60 s run" }}
+          </button>
+        }
+      }
+    </section>
+  }
+</main>
+
+@if (devMode) {
+  <details class="tuning" [open]="panelOpen">
+    <summary>Tuning (dev)</summary>
+    @if (ruleset(); as r) {
+      <p class="note">{{ r.id }} · checksum verified · changes apply on the next run</p>
+      <div class="fields">
+        @for (key of tunableKeys; track key) {
+          <label>
+            <span>{{ key }}</span>
+            <input
+              type="number"
+              step="1"
+              inputmode="numeric"
+              [placeholder]="r.config[key]"
+              [value]="overrides()[key] ?? ''"
+              (input)="setOverride(key, $event)"
+            />
+          </label>
+        }
+        <label>
+          <span>charge cycle ms (client)</span>
+          <input type="number" step="50" min="200" [value]="chargeCycleMs()" (change)="setChargeCycle($event)" />
+        </label>
+        <label>
+          <span>seed (blank = random)</span>
+          <input type="text" inputmode="numeric" [value]="seedInput()" (input)="seedInput.set(inputValue($event))" />
+        </label>
+      </div>
+      <label class="check">
+        <input type="checkbox" [checked]="showReticle()" (change)="showReticle.set(inputChecked($event))" />
+        Landing ring (client)
+      </label>
+      @if (effective().problem; as problem) {
+        <p class="error" role="alert">{{ problem }}</p>
+      }
+      @if (seedProblem(); as problem) {
+        <p class="error" role="alert">{{ problem }}</p>
+      }
+      <button type="button" (click)="resetTuning()">Reset to fixture</button>
+
+      <h2>Session stats</h2>
+      <dl class="stats">
+        <div><dt>Runs</dt><dd>{{ stats().runs }}</dd></div>
+        <div><dt>Shots</dt><dd>{{ stats().shots }}</dd></div>
+        <div><dt>Hit rate</dt><dd>{{ statRates().hitRate | number: "1.0-1" }} %</dd></div>
+        <div><dt>Perfect rate</dt><dd>{{ statRates().perfectRate | number: "1.0-1" }} %</dd></div>
+        <div><dt>Best score</dt><dd>{{ stats().bestScore }}</dd></div>
+        <div><dt>Last seed</dt><dd>{{ lastSeed() ?? "–" }}</dd></div>
+        <div><dt>FPS</dt><dd>{{ fps() }}</dd></div>
+      </dl>
+      <p class="note">Counted over finished runs. Hit rate counts perfects as hits. Stats reset when a run starts with a different config.</p>
+
+      <details>
+        <summary>Effective config</summary>
+        <pre>{{ effectiveJson() }}</pre>
+      </details>
+    }
+  </details>
+}

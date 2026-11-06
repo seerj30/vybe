@@ -1,0 +1,33 @@
+{
+  "name": "@vybe/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "ng serve",
+    "build": "ng build",
+    "test": "vitest run",
+    "typecheck": "ngc -p tsconfig.app.json && tsc -p tsconfig.spec.json"
+  },
+  "dependencies": {
+    "@angular/common": "22.2.3",
+    "@angular/compiler": "22.2.3",
+    "@angular/core": "22.2.3",
+    "@angular/platform-browser": "22.2.3",
+    "@vybe/game-rules": "workspace:*",
+    "rxjs": "7.8.2",
+    "three": "0.186.1",
+    "tslib": "2.8.1"
+  },
+  "devDependencies": {
+    "@angular/build": "22.2.4",
+    "@angular/cli": "22.2.4",
+    "@angular/compiler-cli": "22.2.3",
+    "@types/three": "0.186.0",
+    "typescript": "6.0.3",
+    "vitest": "3.2.4"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}
