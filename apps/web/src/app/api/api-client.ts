@@ -94,7 +94,8 @@ export class ApiClient {
     try {
       return { status: response.status, data: (await response.json()) as T };
     } catch {
-      throw new ApiError(response.status, "unexpected_response");
+      // The body was cut (timeout, reset) or is not JSON: the server may have applied the request.
+      throw new ApiError(0, "network_error");
     }
   }
 

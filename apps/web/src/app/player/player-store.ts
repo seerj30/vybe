@@ -16,20 +16,18 @@ export class PlayerStore {
   private readonly api = inject(API);
   private readonly meSignal = signal<Me | null>(null);
   private loaded: Promise<Me | null> | null = null;
+  private generation = 0;
 
   readonly me = this.meSignal.asReadonly();
 
   /** The player, loaded once; null when there is no valid guest session. Other failures throw. */
   ensure(): Promise<Me | null> {
-    this.loaded ??= this.fetch().catch((error: unknown) => {
-      this.loaded = null;
-      throw error;
-    });
+    this.loaded ??= this.load();
     return this.loaded;
   }
 
   refresh(): Promise<Me | null> {
-    this.loaded = this.fetch();
+    this.loaded = this.load();
     return this.loaded;
   }
 
@@ -48,16 +46,26 @@ export class PlayerStore {
     }
   }
 
-  private async fetch(): Promise<Me | null> {
+  /** A failed load is forgotten, so the next `ensure()` tries again; only the latest load sets `me`. */
+  private load(): Promise<Me | null> {
+    const generation = ++this.generation;
+    const loading: Promise<Me | null> = this.fetch(generation).catch((error: unknown) => {
+      if (this.loaded === loading) this.loaded = null;
+      throw error;
+    });
+    return loading;
+  }
+
+  private async fetch(generation: number): Promise<Me | null> {
+    let me: Me | null;
     try {
-      const me = await this.api.getMe();
-      this.meSignal.set(me);
-      return me;
+      me = await this.api.getMe();
     } catch (error: unknown) {
       if (!isApiError(error, "unauthenticated")) throw error;
-      this.meSignal.set(null);
-      return null;
+      me = null;
     }
+    if (generation === this.generation) this.meSignal.set(me);
+    return me;
   }
 }
 

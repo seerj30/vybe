@@ -77,6 +77,13 @@ describe("ApiClient", () => {
     expect((error as ApiError).retryable).toBe(true);
   });
 
+  it("reports a cut 2xx body as a retryable network_error, because the request may have been applied", async () => {
+    const { fetch } = fakeFetch(() => new Response('{"transactionId":', { status: 200 }));
+    const error = await new ApiClient(fetch).getMe().catch((e: unknown) => e);
+    expect(isApiError(error, "network_error")).toBe(true);
+    expect((error as ApiError).retryable).toBe(true);
+  });
+
   it("treats request_in_progress as retryable", () => {
     expect(new ApiError(409, "request_in_progress").retryable).toBe(true);
     expect(new ApiError(409, "insufficient_funds").retryable).toBe(false);
