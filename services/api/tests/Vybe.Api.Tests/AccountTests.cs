@@ -87,7 +87,70 @@ public sealed class AccountTests(ApiFactory api)
             Guid.NewGuid().ToString(),
             new Dictionary<string, object> { ["is_anonymous"] = false, ["email"] = "x@vybe.test", ["user_metadata"] = new Dictionary<string, object> { ["email_verified"] = true } },
             new SymmetricSecurityKey(Encoding.UTF8.GetBytes("another-signing-key-0123456789abcdef"))),
+        Confirmed(expires: DateTime.UtcNow.AddMinutes(-10)),
+        Confirmed(audience: "anon"),
+        Confirmed(issuer: "https://evil.test/auth/v1"),
+        AuthAnswers(401),
+        AuthAnswers(403),
+        AuthAnswers(404),
+        ApiFactory.RegisteredToken(Guid.NewGuid().ToString(), extraClaims: new Dictionary<string, object> { [FakeSupabaseAuth.IdClaim] = "someone-else" }),
     };
+
+    [Theory]
+    [InlineData(503)]
+    [InlineData(500)]
+    [InlineData(429)]
+    public async Task AuthOutage_Is503WithRetryAfter_AndTheGuestSessionStaysValid(int authStatus)
+    {
+        var guest = await Player.CreateGuestAsync(api);
+        var response = await LinkAsync(guest, AuthAnswers(authStatus));
+        Assert.Equal("7", response.Headers.GetValues("Retry-After").Single());
+        await Contract.AssertProblemAsync(response, HttpStatusCode.ServiceUnavailable, "auth_unavailable");
+        Assert.Equal("guest", (await guest.MeAsync()).GetProperty("kind").GetString());
+    }
+
+    [Fact]
+    public async Task LinkedIdentity_IsAConflict_WithoutAskingSupabaseAuth()
+    {
+        var subject = Guid.NewGuid().ToString();
+        await Contract.AssertAsync(await LinkAsync(await Player.CreateGuestAsync(api), ApiFactory.RegisteredToken(subject)), HttpStatusCode.OK, "AccountLinked");
+
+        // Auth would answer 503 for this token; the local conflict check answers first.
+        var proof = ApiFactory.RegisteredToken(subject, extraClaims: new Dictionary<string, object> { [FakeSupabaseAuth.StatusClaim] = 503 });
+        await Contract.AssertProblemAsync(await LinkAsync(await Player.CreateGuestAsync(api), proof), HttpStatusCode.Conflict, "identity_already_linked");
+    }
+
+    [Fact]
+    public async Task LinkAttempts_AreRateLimitedPerGuestPlayer()
+    {
+        var guest = await Player.CreateGuestAsync(api);
+        for (var i = 0; i < 5; i++)
+        {
+            await Contract.AssertProblemAsync(await LinkAsync(guest, "not-a-jwt"), HttpStatusCode.UnprocessableEntity, "invalid_link_proof");
+        }
+
+        var limited = await LinkAsync(guest, ApiFactory.RegisteredToken(Guid.NewGuid().ToString()));
+        Assert.True(int.Parse(limited.Headers.GetValues("Retry-After").Single(), System.Globalization.CultureInfo.InvariantCulture) > 0);
+        await Contract.AssertProblemAsync(limited, HttpStatusCode.TooManyRequests, "rate_limited");
+
+        // Another guest from the same address is not affected.
+        await Contract.AssertAsync(
+            await LinkAsync(await Player.CreateGuestAsync(api), ApiFactory.RegisteredToken(Guid.NewGuid().ToString())), HttpStatusCode.OK, "AccountLinked");
+    }
+
+    private static string AuthAnswers(int status) =>
+        ApiFactory.RegisteredToken(Guid.NewGuid().ToString(), extraClaims: new Dictionary<string, object> { [FakeSupabaseAuth.StatusClaim] = status });
+
+    private static string Confirmed(string issuer = ApiFactory.TokenIssuer, string audience = "authenticated", DateTime? expires = null)
+    {
+        var subject = Guid.NewGuid().ToString();
+        return ApiFactory.SupabaseToken(subject, new Dictionary<string, object>
+        {
+            ["is_anonymous"] = false,
+            ["email"] = $"{subject}@vybe.test",
+            [FakeSupabaseAuth.EmailConfirmedClaim] = true,
+        }, issuer: issuer, audience: audience, expires: expires);
+    }
 
     [Theory]
     [MemberData(nameof(RejectedProofs))]

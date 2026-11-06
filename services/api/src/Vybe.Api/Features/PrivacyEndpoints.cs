@@ -22,6 +22,11 @@ public static class PrivacyEndpoints
     /// <summary>Provisional (spec §5): the newest sign-in of a registered player must be at most this old.</summary>
     public static readonly TimeSpan ReauthenticationWindow = TimeSpan.FromMinutes(5);
 
+    private const string DeletionOperation = "deletion.request";
+
+    /// <summary>A download URL is valid for at most this long, and never after the export expires.</summary>
+    public static readonly TimeSpan DownloadUrlLifetime = TimeSpan.FromMinutes(10);
+
     /// <summary>Provisional: a player gets at most one ready export per rolling 24 hours.</summary>
     public static readonly TimeSpan ExportCooldown = TimeSpan.FromHours(24);
 
@@ -81,10 +86,16 @@ public static class PrivacyEndpoints
         var export = await db.DataExportRequests.AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == exportId && x.PlayerId == playerId, cancellationToken)
             ?? throw Problem.Of(404, "not_found");
-        var downloadable = export is { Status: ExportStatus.Ready, StorageKey: not null } && clock.UtcNowForDb() < export.DownloadExpiresAt;
-        return new DataExportResponse(export.Id, export.Status, export.CreatedAt,
-            downloadable ? storage.DownloadUrl(export.StorageKey!, export.DownloadExpiresAt!.Value).AbsoluteUri : null,
-            export.Status == ExportStatus.Ready ? export.DownloadExpiresAt : null);
+        var now = clock.UtcNowForDb();
+        if (export is not { Status: ExportStatus.Ready, StorageKey: { } key, DownloadExpiresAt: { } exportExpiry } || now >= exportExpiry)
+        {
+            return new DataExportResponse(export.Id, export.Status, export.CreatedAt, null,
+                export.Status == ExportStatus.Ready ? export.DownloadExpiresAt : null);
+        }
+
+        // Each URL is signed for a short time; the client asks again for a fresh one (ADR 0005).
+        var urlExpiry = now + DownloadUrlLifetime < exportExpiry ? now + DownloadUrlLifetime : exportExpiry;
+        return new DataExportResponse(export.Id, export.Status, export.CreatedAt, storage.DownloadUrl(key, urlExpiry).AbsoluteUri, urlExpiry);
     }
 
     /// <summary>
@@ -98,14 +109,25 @@ public static class PrivacyEndpoints
     {
         var playerId = await current.GetIdAsync(cancellationToken);
         var key = Idempotency.ReadKey(context.Request);
-        if (context.User.FindFirstValue(AuthSchemes.AuthKindClaim) != AuthSchemes.Guest
+        // The key becomes the unauthenticated capability requestId, so it must be a random UUID v4 (contract).
+        if (key == Guid.Empty || key.Version != 4)
+        {
+            throw Problem.Of(422, "invalid_idempotency_key");
+        }
+
+        // A replay of a completed request answers without a new sign-in: the client may retry a lost 202 later.
+        var actor = playerId.ToString();
+        var replay = await db.IdempotencyRecords.AsNoTracking().AnyAsync(
+            r => r.ActorSubject == actor && r.Operation == DeletionOperation && r.Key == key && r.Status == IdempotencyStatus.Completed,
+            cancellationToken);
+        if (!replay && context.User.FindFirstValue(AuthSchemes.AuthKindClaim) != AuthSchemes.Guest
             && !(NewestAuthentication(context.User) is { } signedIn && clock.GetUtcNow() - signedIn <= ReauthenticationWindow))
         {
             throw Problem.Of(403, "reauthentication_required");
         }
 
-        var hash = Idempotency.Hash("deletion.request", string.Empty, await RequestBody.ReadAsync(context, cancellationToken));
-        var result = await idempotency.RunAsync(context, playerId.ToString(), "deletion.request", hash, async ct =>
+        var hash = Idempotency.Hash(DeletionOperation, string.Empty, await RequestBody.ReadAsync(context, cancellationToken));
+        var result = await idempotency.RunAsync(context, actor, DeletionOperation, hash, async ct =>
         {
             var player = await db.Players.FromSql($"SELECT * FROM vybe.players WHERE id = {playerId} FOR NO KEY UPDATE").SingleAsync(ct);
             if (player.Status == PlayerStatus.Deleting)

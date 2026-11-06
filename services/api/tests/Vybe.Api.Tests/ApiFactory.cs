@@ -55,20 +55,34 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         return client;
     }
 
-    public static string SupabaseToken(string subject, IDictionary<string, object>? claims = null, SecurityKey? key = null) =>
-        new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
+    public static string SupabaseToken(
+        string subject, IDictionary<string, object>? claims = null, SecurityKey? key = null, string issuer = TokenIssuer,
+        string audience = "authenticated", DateTime? expires = null)
+    {
+        var expiresAt = expires ?? DateTime.UtcNow.AddMinutes(5);
+        return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
         {
-            Issuer = TokenIssuer,
-            Audience = "authenticated",
+            Issuer = issuer,
+            Audience = audience,
             Subject = new ClaimsIdentity([new Claim("sub", subject)]),
             Claims = claims,
-            Expires = DateTime.UtcNow.AddMinutes(5),
+            IssuedAt = expiresAt.AddMinutes(-10),
+            NotBefore = expiresAt.AddMinutes(-10),
+            Expires = expiresAt,
             SigningCredentials = new SigningCredentials(key ?? TokenKey, SecurityAlgorithms.HmacSha256),
         });
+    }
+
+    /// <summary>The export storage of the API: local files, with a switch that makes deletes fail.</summary>
+    public TestExportStorage ExportStorage { get; } = new(ExportDirectory);
+
+    public static string ExportDirectory { get; } = Path.Combine(Path.GetTempPath(), "vybe-test-exports", Guid.NewGuid().ToString());
 
     /// <summary>A Supabase access token as Supabase issues it for a signed-in user (claims used by linking and reauthentication).</summary>
-    public static string RegisteredToken(string subject, bool anonymous = false, bool emailVerified = true, DateTimeOffset? authenticatedAt = null) =>
-        SupabaseToken(subject, new Dictionary<string, object>
+    public static string RegisteredToken(
+        string subject, bool anonymous = false, bool emailVerified = true, DateTimeOffset? authenticatedAt = null,
+        IDictionary<string, object>? extraClaims = null) =>
+        SupabaseToken(subject, new Dictionary<string, object>(extraClaims ?? new Dictionary<string, object>())
         {
             ["is_anonymous"] = anonymous,
             ["email"] = $"{subject}@vybe.test",
@@ -88,11 +102,15 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("Challenges:ShareBaseUrl", "https://vybe.test");
         builder.UseSetting("Jobs:Enabled", "false"); // tests run the jobs directly
         builder.UseSetting("Auth:Supabase:ApiKey", FakeSupabaseAuth.ApiKey);
+        builder.UseSetting("Privacy:ExportDirectory", ExportDirectory);
+        builder.UseSetting("RateLimits:LinkPerIpPerMinute", "10000"); // every test client has the same address
         builder.UseSetting("RateLimits:GuestsPerIpPerMinute", GuestsPerMinute.ToString(System.Globalization.CultureInfo.InvariantCulture));
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(Clock);
+            services.RemoveAll<Features.IExportStorage>();
+            services.AddSingleton<Features.IExportStorage>(ExportStorage);
             services.AddHttpClient(Features.SupabaseLinkProofVerifier.HttpClientName)
                 .ConfigurePrimaryHttpMessageHandler(() => new FakeSupabaseAuth());
             services.PostConfigure<JwtBearerOptions>(AuthSchemes.Supabase, options =>
