@@ -8,7 +8,8 @@ namespace Vybe.Api.Features;
 
 /// <summary>
 /// Rewards for one verified run (spec §7, invariant 10). Runs inside the submit transaction and locks
-/// rows of this player only: the player row (FOR NO KEY UPDATE), the day's counter row and the wallet.
+/// rows of this player only: the player row (FOR NO KEY UPDATE), the day's counter row, the day's quest
+/// rows and the wallet.
 /// </summary>
 public static class RewardService
 {
@@ -16,7 +17,7 @@ public static class RewardService
     private sealed record CounterRow(int RunsRewarded, int XpFromGames);
 
     public static async Task<RewardsResponse> GrantForRunAsync(
-        VybeDbContext db, GameSession session, StreetHoopsConfig config, int score, int eventCount, DateTime now,
+        VybeDbContext db, GameSession session, StreetHoopsConfig config, int score, int eventCount, int maxStreak, DateTime now,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(db);
@@ -47,6 +48,9 @@ public static class RewardService
             RETURNING runs_rewarded, xp_from_games
             """).ToListAsync(cancellationToken)).Single();
 
+        // A reward-eligible run counts for quests whatever its coin tier (spec §7 minimum play, §8).
+        await QuestProgress.AddForRunAsync(db, player.Id, day, score, maxStreak, now, cancellationToken);
+
         var coins = Rewards.CoinsForRun(Rewards.BaseCoins(score), counter.RunsRewarded);
         var xp = Rewards.XpGrant(Rewards.BaseXp(score), counter.XpFromGames);
         if (xp > 0)
@@ -62,6 +66,17 @@ public static class RewardService
             await CreditAsync(db, player.Id, coins, LedgerReason.GameReward, "game_session", session.Id, $"game:{session.Id}", cancellationToken);
         }
 
+        await AddXpAsync(db, player, xp, cancellationToken);
+        return new RewardsResponse(coins, xp, player.Level);
+    }
+
+    /// <summary>
+    /// Adds XP to a player row locked by the caller, updates the cached level and grants 100 V-Coins
+    /// once per new level (spec §8, ledger <c>level:{L}</c>).
+    /// </summary>
+    public static async Task AddXpAsync(VybeDbContext db, Player player, int xp, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(player);
         var oldLevel = player.Level;
         player.XpTotal += xp;
         player.Level = Rewards.LevelFor(player.XpTotal);
@@ -69,8 +84,6 @@ public static class RewardService
         {
             await CreditAsync(db, player.Id, Rewards.LevelUpCoins, LedgerReason.LevelReward, "level", null, $"level:{level}", cancellationToken);
         }
-
-        return new RewardsResponse(coins, xp, player.Level);
     }
 
     /// <summary>Adds a ledger row and moves the wallet balance; the wallet row is locked for the transaction.</summary>

@@ -1,0 +1,8 @@
+{
+  "description": "Daily quests (spec §8). Progress rules live in the API (QuestProgress); criteria document them. Rewards are tuning defaults (spec §17 item 5).",
+  "quests": [
+    { "code": "play_3", "version": 1, "period": "daily", "criteria": { "event": "reward_eligible_run" }, "target": 3, "rewardCoins": 100, "rewardXp": 60 },
+    { "code": "score_1500", "version": 1, "period": "daily", "criteria": { "event": "reward_eligible_run", "minScore": 1500 }, "target": 1, "rewardCoins": 100, "rewardXp": 60 },
+    { "code": "challenge_or_streak", "version": 1, "period": "daily", "criteria": { "anyOf": [{ "event": "challenge_completed" }, { "event": "reward_eligible_run", "minMaxStreak": 5 }] }, "target": 1, "rewardCoins": 100, "rewardXp": 60 }
+  ]
+}
