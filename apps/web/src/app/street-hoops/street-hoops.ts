@@ -7,7 +7,9 @@ import {
   DestroyRef,
   type ElementRef,
   inject,
+  input,
   isDevMode,
+  type OnInit,
   signal,
   viewChild,
 } from "@angular/core";
@@ -19,8 +21,14 @@ import {
   type StreetHoopsConfig,
   type Waypoint,
 } from "@vybe/game-rules";
+import { isApiError } from "../api/api-client";
+import { RouterLink } from "@angular/router";
+import { API } from "../api/api";
+import { errorMessage as playerMessage } from "../api/messages";
+import { PlayerStore } from "../player/player-store";
 import { ballEndPoint, courtPoint, POWER_GUIDES, type CourtPoint } from "./court";
 import { HoopsScene } from "./hoops-scene";
+import { type OnlineRun, OnlineSessions, rejectionText, type RunOutcome } from "./online-session";
 import { aimFromFraction, chargePower, stepAim } from "./input";
 import { applyOverrides, loadRuleset, TUNABLE_KEYS, type Overrides, type RulesetFile, type TunableKey } from "./ruleset";
 import {
@@ -35,7 +43,10 @@ import {
   type VerifiedResult,
 } from "./trace";
 
-type Phase = "loading" | "ready" | "running" | "finished" | "error";
+type Phase = "loading" | "ready" | "preparing" | "running" | "submitting" | "finished" | "error";
+
+/** `practice`: client-only prototype with the dev tuning panel. `online`: API session, server-verified rewards. */
+export type Mode = "practice" | "online";
 
 /** Client feel values, not ruleset values: they never change the score. */
 const KEYBOARD_AIM_UNITS_PER_S = 1500;
@@ -78,7 +89,7 @@ function randomSeed(): number {
 
 @Component({
   selector: "vybe-street-hoops",
-  imports: [DecimalPipe],
+  imports: [DecimalPipe, RouterLink],
   templateUrl: "./street-hoops.html",
   styleUrl: "./street-hoops.css",
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -88,7 +99,10 @@ function randomSeed(): number {
     "(window:blur)": "cancelInput()",
   },
 })
-export class StreetHoops {
+export class StreetHoops implements OnInit {
+  /** Bound from the route data. */
+  readonly mode = input<Mode>("practice");
+
   protected readonly devMode = isDevMode();
   protected readonly tunableKeys = TUNABLE_KEYS;
   protected readonly labels = RESULT_LABELS;
@@ -106,6 +120,12 @@ export class StreetHoops {
   protected readonly coolingDown = signal(false);
   protected readonly summary = signal<VerifiedResult | null>(null);
   protected readonly reducedMotion = signal(matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+  // Online mode: the server outcome of the last run, or why it is not known yet.
+  protected readonly outcome = signal<RunOutcome | null>(null);
+  protected readonly onlineError = signal<string | null>(null);
+  protected readonly canRetrySubmit = signal(false);
+  protected readonly rejectionText = rejectionText;
 
   // Dev tuning panel.
   protected readonly panelOpen = matchMedia("(min-width: 768px)").matches;
@@ -134,6 +154,9 @@ export class StreetHoops {
     const seed = Number(text);
     return Number.isInteger(seed) && seed >= 0 && seed <= UINT32_MAX ? null : "Seed must be an integer in [0, 4294967295]";
   });
+  protected readonly canStart = computed(
+    () => this.mode() === "online" || (this.effective().config !== null && this.seedProblem() === null),
+  );
   protected readonly lastShotLabel = computed(() => {
     const shot = this.lastShot();
     if (shot === null) return "";
@@ -145,6 +168,9 @@ export class StreetHoops {
   private readonly stage = viewChild.required<ElementRef<HTMLElement>>("stage");
 
   private scene: HoopsScene | null = null;
+  private readonly sessions = new OnlineSessions(inject(API));
+  private readonly player = inject(PlayerStore);
+  private onlineRun: OnlineRun | null = null;
   private run: ActiveRun | null = null;
   private events: ShotEvent[] = [];
   private pendingReveals: PendingReveal[] = [];
@@ -160,14 +186,6 @@ export class StreetHoops {
 
   constructor() {
     const destroyRef = inject(DestroyRef);
-
-    loadRuleset().then(
-      (ruleset) => {
-        this.ruleset.set(ruleset);
-        if (this.phase() === "loading") this.phase.set("ready");
-      },
-      (error: unknown) => this.fail(errorMessage(error)),
-    );
 
     afterNextRender(() => {
       const canvas = this.canvas().nativeElement;
@@ -194,7 +212,26 @@ export class StreetHoops {
     });
   }
 
+  ngOnInit(): void {
+    if (this.mode() === "online") {
+      // Each online run gets its ruleset from its session.
+      this.phase.set("ready");
+      return;
+    }
+    loadRuleset().then(
+      (ruleset) => {
+        this.ruleset.set(ruleset);
+        if (this.phase() === "loading") this.phase.set("ready");
+      },
+      (error: unknown) => this.fail(errorMessage(error)),
+    );
+  }
+
   protected start(): void {
+    if (this.mode() === "online") {
+      void this.startOnline();
+      return;
+    }
     const ruleset = this.ruleset();
     const { config } = this.effective();
     if (ruleset === null || config === null || this.seedProblem() !== null || this.scene === null) return;
@@ -207,7 +244,49 @@ export class StreetHoops {
       this.stats.set(EMPTY_STATS);
     }
 
-    this.run = { config, rulesetId: ruleset.id, seed, waypoints: generateWaypoints(config, seed), startMs: performance.now() };
+    this.beginRun(config, ruleset.id, seed);
+  }
+
+  /** Retries a submission whose outcome is unknown: reads the session first, then sends the same key. */
+  protected async retrySubmit(): Promise<void> {
+    const online = this.onlineRun;
+    const summary = this.summary();
+    if (online === null || summary === null) return;
+    this.phase.set("submitting");
+    this.onlineError.set(null);
+    this.canRetrySubmit.set(false);
+    try {
+      const known = await this.sessions.reconcile(online.sessionId);
+      this.settle(known ?? (await this.sessions.submit(online, this.events, summary.score)));
+    } catch (error: unknown) {
+      this.submitFailed(error);
+    }
+  }
+
+  private async startOnline(): Promise<void> {
+    if (this.scene === null) return;
+    this.phase.set("preparing");
+    this.outcome.set(null);
+    this.onlineError.set(null);
+    this.canRetrySubmit.set(false);
+    this.summary.set(null);
+    let online: OnlineRun;
+    try {
+      online = await this.sessions.prepare();
+    } catch (error: unknown) {
+      this.onlineError.set(isApiError(error) ? playerMessage(error) : errorMessage(error));
+      this.phase.set("ready");
+      return;
+    }
+    // The server clock started when startSession answered, so local time 0 is now (spec §5).
+    this.onlineRun = online;
+    this.ruleset.set(online.ruleset);
+    this.beginRun(online.ruleset.config, online.ruleset.id, online.seed);
+  }
+
+  private beginRun(config: StreetHoopsConfig, rulesetId: string, seed: number): void {
+    if (this.scene === null) return;
+    this.run = { config, rulesetId, seed, waypoints: generateWaypoints(config, seed), startMs: performance.now() };
     this.events = [];
     this.pendingReveals = [];
     this.aimX = 0;
@@ -380,6 +459,40 @@ export class StreetHoops {
     this.run = null;
     this.secondsLeft.set(0);
     this.coolingDown.set(false);
+    if (this.mode() === "online") {
+      void this.submitOnline();
+    } else {
+      this.phase.set("finished");
+    }
+  }
+
+  private async submitOnline(): Promise<void> {
+    const online = this.onlineRun;
+    const summary = this.summary();
+    if (online === null || summary === null) return;
+    this.phase.set("submitting");
+    try {
+      this.settle(await this.sessions.submit(online, this.events, summary.score));
+    } catch (error: unknown) {
+      this.submitFailed(error);
+    }
+  }
+
+  private settle(outcome: RunOutcome | null): void {
+    if (outcome === null) {
+      this.onlineError.set("VYBE is still checking your run.");
+      this.canRetrySubmit.set(true);
+    } else {
+      this.outcome.set(outcome);
+      // Wallet, XP and level come from the server, never from local arithmetic (spec §10).
+      void this.player.refresh().catch(() => undefined);
+    }
+    this.phase.set("finished");
+  }
+
+  private submitFailed(error: unknown): void {
+    this.onlineError.set(playerMessage(error));
+    this.canRetrySubmit.set(isApiError(error) && error.retryable);
     this.phase.set("finished");
   }
 
