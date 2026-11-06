@@ -69,6 +69,27 @@ export class ApiClient {
     return this.data("PUT", "/me/avatar", { body });
   }
 
+  getRuleset(rulesetId: string): Promise<Schemas["Ruleset"]> {
+    return this.data("GET", `/games/rulesets/${segment(rulesetId)}`);
+  }
+
+  createStreetHoopsSession(body: Schemas["SessionCreateRequest"] = {}): Promise<Schemas["SessionCreated"]> {
+    return this.data("POST", "/games/street-hoops/sessions", { body });
+  }
+
+  startSession(sessionId: string): Promise<Schemas["SessionStarted"]> {
+    return this.data("POST", `/games/sessions/${segment(sessionId)}/start`);
+  }
+
+  /** 200 is the final outcome; 202 means "poll `getSession`". */
+  submitSession(sessionId: string, body: Schemas["SubmitRequest"], idempotencyKey: string): Promise<SubmitResponse> {
+    return this.data("POST", `/games/sessions/${segment(sessionId)}/submit`, { body, idempotencyKey });
+  }
+
+  getSession(sessionId: string): Promise<Schemas["GameSession"]> {
+    return this.data("GET", `/games/sessions/${segment(sessionId)}`);
+  }
+
   async request<T>(method: string, path: string, options: RequestOptions = {}): Promise<ApiResponse<T>> {
     const headers: Record<string, string> = { Accept: "application/json" };
     if (UNSAFE_METHODS.has(method)) headers["X-Requested-With"] = "vybe-web";

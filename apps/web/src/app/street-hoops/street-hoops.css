@@ -293,3 +293,15 @@ pre {
     max-height: 60%;
   }
 }
+
+.verified {
+  margin: 8px 0 0;
+  font-weight: 700;
+  color: #7be3a1;
+}
+
+.leave {
+  display: block;
+  margin-top: 12px;
+  color: #c8d6ff;
+}

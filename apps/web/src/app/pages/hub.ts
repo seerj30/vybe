@@ -33,7 +33,7 @@ import { PlayerStore } from "../player/player-store";
           <div class="card play">
             <h2>Street Hoops</h2>
             <p class="muted">Sixty seconds, one moving basket. Score points to earn V-Coins and XP.</p>
-            <a class="button" routerLink="/arcade">Play</a>
+            <a class="button" routerLink="/arcade/street-hoops">Play Street Hoops</a>
           </div>
         </div>
       }

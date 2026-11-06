@@ -49,32 +49,73 @@
         @case ("loading") {
           <p>Loading and checking the ruleset…</p>
         }
+        @case ("preparing") {
+          <p role="status">Starting your run…</p>
+        }
+        @case ("submitting") {
+          <p role="status">Checking your run with VYBE…</p>
+        }
         @case ("error") {
           <p class="error" role="alert">{{ error() }}</p>
         }
         @default {
-          @if (summary(); as s) {
+          @if (outcome(); as o) {
+            @switch (o.status) {
+              @case ("verified") {
+                <p class="verified" role="status">Run verified by VYBE</p>
+                <dl class="summary">
+                  <div><dt>Score</dt><dd>{{ o.score }}</dd></div>
+                  <div><dt>V-Coins</dt><dd>+{{ o.rewards.coins }}</dd></div>
+                  <div><dt>XP</dt><dd>+{{ o.rewards.xp }}</dd></div>
+                  <div><dt>Level</dt><dd>{{ o.rewards.levelAfter }}</dd></div>
+                </dl>
+                @if (o.rewards.coins === 0 && o.rewards.xp === 0) {
+                  <p class="help">No rewards for this run: take at least {{ ruleset()?.config?.minShotsForRewards }} shots, or the daily reward limit is reached.</p>
+                }
+              }
+              @case ("rejected") {
+                <p class="error" role="alert">VYBE did not count this run: {{ rejectionText(o.reason) }}. No rewards.</p>
+              }
+              @case ("expired") {
+                <p class="error" role="alert">This run expired before VYBE received it. No rewards.</p>
+              }
+            }
+          } @else if (summary(); as s) {
+            @if (mode() === "online") {
+              <p class="help">Your score, not verified yet:</p>
+            }
             <dl class="summary">
               <div><dt>Score</dt><dd>{{ s.score }}</dd></div>
               <div><dt>Shots</dt><dd>{{ s.eventCount }}</dd></div>
               <div><dt>Max streak</dt><dd>{{ s.maxStreak }}</dd></div>
             </dl>
           }
+          @if (onlineError(); as message) {
+            <p class="error" role="alert">{{ message }}</p>
+          }
           <p class="help">
             Aim: move the pointer or finger, or hold <kbd>←</kbd> <kbd>→</kbd>.
             Shoot: hold the mouse button, finger, <kbd>Space</kbd> or <kbd>Enter</kbd>, and release when the ring sits
             in the basket's zone on the floor.
           </p>
-          <button type="button" class="start" (click)="start()" [disabled]="effective().config === null || seedProblem() !== null">
+          @if (canRetrySubmit()) {
+            <button type="button" class="start" (click)="retrySubmit()">Retry sending the run</button>
+          }
+          <button type="button" class="start" (click)="start()" [disabled]="!canStart()">
             {{ summary() ? "Play again" : "Start 60 s run" }}
           </button>
+          @if (mode() === "online") {
+            <a class="leave" routerLink="/arcade">Back to the arcade</a>
+          } @else {
+            <a class="leave" routerLink="/">Leave practice</a>
+          }
         }
       }
     </section>
   }
 </div>
 
-@if (devMode) {
+@if (devMode && mode() === "practice") {
   <details class="tuning" [open]="panelOpen">
     <summary>Tuning (dev)</summary>
     @if (ruleset(); as r) {

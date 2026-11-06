@@ -10,8 +10,9 @@ import { RouterLink } from "@angular/router";
       <h1>Arcade</h1>
       <article class="card">
         <h2>Street Hoops</h2>
-        <p class="muted">Aim, charge and release. Hit the moving basket as often as you can in 60 seconds.</p>
+        <p class="muted">Aim, charge and release. Hit the moving basket as often as you can in 60 seconds. VYBE checks each run and pays V-Coins and XP.</p>
         <div class="actions">
+          <a class="button" routerLink="/arcade/street-hoops">Play Street Hoops</a>
           <a class="button secondary" routerLink="/practice">Practice (no rewards)</a>
         </div>
       </article>

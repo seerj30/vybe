@@ -20,6 +20,13 @@ export const routes: Routes = [
     data: { layout: "fullscreen" },
   },
   {
+    path: "arcade/street-hoops",
+    canActivate: [requirePlayer],
+    loadComponent: () => import("./street-hoops/street-hoops").then((m) => m.StreetHoops),
+    title: "Street Hoops · VYBE",
+    data: { layout: "fullscreen", mode: "online" },
+  },
+  {
     path: "",
     canActivate: [requirePlayer],
     data: { layout: "app" },
