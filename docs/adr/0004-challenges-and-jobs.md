@@ -1,0 +1,53 @@
+# ADR 0004: Challenges, outbox worker and background jobs
+
+- Status: accepted
+- Date: 2026-11-06
+- Spec: [v1.3 §2 J2, §4, §5 Challenges, §6, §7](../spec/VYBE_Technical_Specification_v1.3.md); slice: [ADR 0003](0003-api-vertical-slice.md)
+
+## Context
+
+Stream A of `docs/roadmap.md` adds J2 challenges on top of the P0 API slice. The spec fixes the
+states, the invariants (5, 8–12) and the codes. This ADR records the decisions that the spec leaves open.
+
+## Decision
+
+1. **Invite tokens.** `ChallengeInvites` derives the token as base64url(HMAC-SHA256(secret, challenge id
+   as text)), 43 characters. The database stores only SHA-256(token). The secret comes from
+   `Challenges:InviteSecret` (base64, at least 32 bytes). Outside Development the API does not start
+   without it. In Development a missing secret gives a random secret per process, so links stop
+   working after a restart. Share links are `{Challenges:ShareBaseUrl}/challenge/{token}`.
+2. **Idempotent replays without the token.** `Idempotency.RunAsync` takes an optional presenter. It
+   changes a stored success body on the way out, for the first response and for replays. Create and
+   rematch store `{challengeId, acceptDeadline}` and the presenter adds `shareUrl`. The accept
+   operation hashes the SHA-256 of the token, not the token.
+3. **Visible status on reads.** Every read and filter shows `cancelled` as `expired`. Reads also apply
+   the sweeper rules: an `open` challenge at or after `accept_deadline`, and an `accepted` challenge at
+   or after `complete_deadline` without an `active`/`submitted`/`verified` recipient session, show as
+   `expired` before the sweeper writes it.
+4. **Preset recipient.** The "preset recipient is someone else" rule applies while the challenge is
+   `open`. After an accept, another player gets 409 `challenge_already_accepted` (public invite) or
+   the status answer, not 404. A suppressed challenge answers 404 `challenge_unavailable` to every
+   identified player except its creator. An anonymous preview shows every known token.
+5. **Recipient run.** Session creation with `challengeId` takes the pair lock, re-checks blocks, then
+   locks the challenge row (`FOR UPDATE`), creates the session with the creator run's seed and ruleset
+   and binds it by compare-and-swap. A preset recipient who has not accepted gets 404
+   `challenge_unavailable`. `start` checks `complete_deadline` (410 `challenge_expired`) before the
+   challenge status (404 `challenge_unavailable`). A recipient session that ends `rejected` or
+   `expired` (submit, late submit, missed start deadline, or replaced by a new session) moves its
+   challenge `accepted -> expired` in the same transaction.
+6. **Outbox.** `OutboxProcessor` claims one due job at a time with `FOR UPDATE SKIP LOCKED` and runs
+   it in one transaction, which also writes `done`. A failure rolls back and records `attempts`,
+   `last_error` and `run_after = now + 2^attempts s` (at most 1 h); after 10 attempts the job is
+   `failed`. `challenge-resolved` locks one player row only. It skips the winner bonus when the ledger
+   row `challenge:{id}` already exists, so a retried job never pays twice. A suspended, deleting or
+   deleted player gets no bonus. The hosted `OutboxWorker` polls every `Jobs:OutboxPollSeconds`
+   (default 5). `Jobs:Enabled = false` turns all workers off; the tests run the jobs directly.
+
+## Consequences
+
+- The invite secret is a deploy-time secret (stream D). Rotating it breaks all open invite links.
+- Stream B (blocks) cancels `open`/`accepted` challenges under `PairLock`; the reads in this ADR already
+  show those challenges as `expired`.
+- Known, not changed here: create-session (player row, then the old session row) and submit (session
+  row, then player row) can deadlock when one player replaces a session that is being submitted.
+  PostgreSQL aborts one of them (500); the client retry succeeds.

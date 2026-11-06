@@ -71,6 +71,8 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("ConnectionStrings:Vybe", _postgres.GetConnectionString());
         builder.UseSetting("Content:Root", RepoRoot);
         builder.UseSetting("Content:SeedOnStartup", "true");
+        builder.UseSetting("Challenges:InviteSecret", Convert.ToBase64String(Encoding.UTF8.GetBytes("vybe-test-invite-secret-0123456789abcdef")));
+        builder.UseSetting("Jobs:Enabled", "false"); // tests run the jobs directly
         builder.UseSetting("RateLimits:GuestsPerIpPerMinute", GuestsPerMinute.ToString(System.Globalization.CultureInfo.InvariantCulture));
         builder.ConfigureServices(services =>
         {

@@ -57,44 +57,75 @@ public static class GameplayEndpoints
         var player = await db.Players.AsNoTracking().SingleAsync(p => p.Id == playerId, cancellationToken);
         current.EnsureNotSuspended(player);
 
-        if (request.ChallengeId is not null)
+        var now = clock.UtcNowForDb();
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        Challenge? challenge = null;
+        var seed = BitConverter.ToUInt32(RandomNumberGenerator.GetBytes(4)); // uniform uint32 (spec §4)
+        string rulesetId;
+        if (request.ChallengeId is { } challengeId)
         {
-            // Challenges are not in the P0 vertical slice yet (spec §16); no challenge can be accepted.
-            throw Problem.Of(404, "challenge_unavailable");
+            // Recipient run: the creator run's ruleset and seed (spec §7 challenge rules).
+            (challenge, var creatorSeed) = await ChallengeRuns.LockForRecipientAsync(db, playerId, challengeId, now, cancellationToken);
+            seed = (uint)creatorSeed;
+            rulesetId = challenge.RulesetId;
+        }
+        else
+        {
+            rulesetId = await db.GameRulesets.AsNoTracking()
+                .Where(r => r.GameId == StreetHoops && r.RetiredAt == null && r.ActiveFrom <= now)
+                .OrderByDescending(r => r.Version)
+                .Select(r => r.Id)
+                .FirstOrDefaultAsync(cancellationToken)
+                ?? throw new InvalidOperationException("no active Street Hoops ruleset");
         }
 
-        var now = clock.UtcNowForDb();
-        var ruleset = await db.GameRulesets.AsNoTracking()
-            .Where(r => r.GameId == StreetHoops && r.RetiredAt == null && r.ActiveFrom <= now)
-            .OrderByDescending(r => r.Version)
-            .FirstOrDefaultAsync(cancellationToken)
-            ?? throw new InvalidOperationException("no active Street Hoops ruleset");
-
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         // Serialize this player's session creations (double tap, two tabs); otherwise both inserts
         // race on ux_game_sessions_one_open_per_player and one fails.
         await db.Database.ExecuteSqlAsync(
             $"SELECT 1 FROM vybe.players WHERE id = {playerId} FOR NO KEY UPDATE", cancellationToken);
-        // One open session per player: a new session replaces the old one (spec §4).
-        await db.GameSessions
-            .Where(s => s.PlayerId == playerId && (s.Status == GameSessionStatus.Created || s.Status == GameSessionStatus.Active))
-            .ExecuteUpdateAsync(u => u.SetProperty(s => s.Status, GameSessionStatus.Expired), cancellationToken);
+        await ExpireOpenSessionsAsync(db, playerId, cancellationToken);
 
         var session = new GameSession
         {
             PlayerId = playerId,
             GameId = StreetHoops,
-            RulesetId = ruleset.Id,
-            Seed = BitConverter.ToUInt32(RandomNumberGenerator.GetBytes(4)), // uniform uint32 (spec §4)
+            RulesetId = rulesetId,
+            Seed = seed,
             Status = GameSessionStatus.Created,
             StartDeadline = now + StartWindow,
+            ChallengeId = challenge?.Id,
         };
         db.GameSessions.Add(session);
         await db.SaveChangesAsync(cancellationToken);
+        if (challenge is not null)
+        {
+            await ChallengeRuns.BindSessionAsync(db, challenge.Id, session.Id, cancellationToken);
+        }
+
         await transaction.CommitAsync(cancellationToken);
+        var checksum = await db.GameRulesets.Where(r => r.Id == rulesetId).Select(r => r.Checksum).SingleAsync(cancellationToken);
 
         return TypedResults.Created($"/api/v1/games/sessions/{session.Id}",
-            new SessionCreated(session.Id, "created", ruleset.Id, ruleset.Checksum, session.StartDeadline));
+            new SessionCreated(session.Id, "created", rulesetId, checksum, session.StartDeadline));
+    }
+
+    /// <summary>
+    /// One open session per player (spec §4): a new session replaces the old one. A replaced recipient
+    /// session ends <c>expired</c>, so its challenge moves <c>accepted -> expired</c> in the same transaction.
+    /// </summary>
+    private static async Task ExpireOpenSessionsAsync(VybeDbContext db, Guid playerId, CancellationToken cancellationToken)
+    {
+        var replaced = await db.GameSessions
+            .Where(s => s.PlayerId == playerId && (s.Status == GameSessionStatus.Created || s.Status == GameSessionStatus.Active))
+            .Select(s => new { s.Id, s.ChallengeId })
+            .ToListAsync(cancellationToken);
+        await db.GameSessions
+            .Where(s => s.PlayerId == playerId && (s.Status == GameSessionStatus.Created || s.Status == GameSessionStatus.Active))
+            .ExecuteUpdateAsync(u => u.SetProperty(s => s.Status, GameSessionStatus.Expired), cancellationToken);
+        foreach (var old in replaced.Where(s => s.ChallengeId is not null))
+        {
+            await ChallengeRuns.ExpireForRecipientSessionAsync(db, old.Id, cancellationToken);
+        }
     }
 
     private static async Task<SessionStarted> StartSessionAsync(
@@ -124,8 +155,25 @@ public static class GameplayEndpoints
         {
             session.Status = GameSessionStatus.Expired;
             await db.SaveChangesAsync(cancellationToken);
+            await ChallengeRuns.ExpireForRecipientSessionAsync(db, session.Id, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             throw Problem.Of(410, "session_expired");
+        }
+
+        if (session.ChallengeId is { } challengeId)
+        {
+            // Spec §5/§6: start also requires now < complete_deadline and a challenge still accepted.
+            var challenge = await db.Challenges.AsNoTracking()
+                .Where(c => c.Id == challengeId).Select(c => new { c.Status, c.CompleteDeadline }).SingleAsync(cancellationToken);
+            if (now >= challenge.CompleteDeadline)
+            {
+                throw Problem.Of(410, "challenge_expired");
+            }
+
+            if (challenge.Status != ChallengeStatus.Accepted)
+            {
+                throw Problem.Of(404, "challenge_unavailable");
+            }
         }
 
         var config = RulesetConfig.Parse(await RulesetJsonAsync(db, session.RulesetId, cancellationToken));
@@ -220,6 +268,7 @@ public static class GameplayEndpoints
             case Outcome.Expired:
                 session.Status = GameSessionStatus.Expired;
                 await db.SaveChangesAsync(cancellationToken);
+                await ChallengeRuns.ExpireForRecipientSessionAsync(db, session.Id, cancellationToken);
                 return new OperationResult(200, new { sessionId = session.Id, status = "expired" });
 
             case Outcome.Rejected:
@@ -237,6 +286,10 @@ public static class GameplayEndpoints
         session.RewardXp = rewards.Xp;
         AddTrace(db, session, eventsJson, shots.Count, now);
         await db.SaveChangesAsync(cancellationToken);
+        if (session.ChallengeId is not null)
+        {
+            await ChallengeRuns.ResolveAsync(db, session, result.Score.Value, now, cancellationToken);
+        }
 
         return new OperationResult(200, new { sessionId = session.Id, status = "verified", score = result.Score, rewards });
     }
@@ -251,6 +304,7 @@ public static class GameplayEndpoints
         session.EventCount = eventCount;
         AddTrace(db, session, eventsJson, eventCount ?? 0, now);
         await db.SaveChangesAsync(cancellationToken);
+        await ChallengeRuns.ExpireForRecipientSessionAsync(db, session.Id, cancellationToken);
         return new OperationResult(200, new { sessionId = session.Id, status = "rejected", rejectionReason = reason });
     }
 

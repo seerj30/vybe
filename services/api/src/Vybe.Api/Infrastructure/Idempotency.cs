@@ -16,6 +16,8 @@ public sealed record OperationResult(int Status, object Body);
 /// 2. replay a completed record, reject a mismatch, or take over an elapsed lease;
 /// 3. run the operation and complete the record in the same transaction, fenced on the lease.
 /// Business 4xx outcomes are stored and replayed; 5xx and crashes store nothing.
+/// <c>present</c> turns a stored success body into the response (fresh and replayed), so a value
+/// that must never be stored, such as an invite token, is added on the way out (spec §4 step 3).
 /// </summary>
 public sealed class Idempotency(VybeDbContext db)
 {
@@ -45,13 +47,14 @@ public sealed class Idempotency(VybeDbContext db)
         string operation,
         string requestHash,
         Func<CancellationToken, Task<OperationResult>> work,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<string, string>? present = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(work);
         var key = ReadKey(context.Request);
 
-        var claim = await ClaimAsync(actor, operation, key, requestHash, cancellationToken);
+        var claim = await ClaimAsync(actor, operation, key, requestHash, present, cancellationToken);
         if (claim.Replay is not null)
         {
             return claim.Replay;
@@ -65,7 +68,7 @@ public sealed class Idempotency(VybeDbContext db)
             var body = JsonSerializer.Serialize(result.Body, ApiJson.Options);
             await CompleteAsync(actor, operation, key, lease, result.Status, body, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return Results.Text(body, "application/json", Encoding.UTF8, result.Status);
+            return Results.Text(present is null ? body : present(body), "application/json", Encoding.UTF8, result.Status);
         }
         catch (ApiProblemException problem) when (problem.Status is >= 400 and < 500 && problem.Code != "request_in_progress")
         {
@@ -79,7 +82,8 @@ public sealed class Idempotency(VybeDbContext db)
     }
 
     private async Task<(DateTime? Lease, IResult? Replay)> ClaimAsync(
-        string actor, string operation, Guid key, string requestHash, CancellationToken cancellationToken)
+        string actor, string operation, Guid key, string requestHash, Func<string, string>? present,
+        CancellationToken cancellationToken)
     {
         var inserted = await db.Database.SqlQuery<DateTime>($"""
             INSERT INTO vybe.idempotency_records (actor_subject, operation, key, request_hash, status, locked_until, expires_at)
@@ -101,8 +105,10 @@ public sealed class Idempotency(VybeDbContext db)
 
         if (record.Status == IdempotencyStatus.Completed)
         {
-            var contentType = record.ResponseStatus >= 400 ? ProblemWriter.ContentType : "application/json";
-            return (null, Results.Text(record.ResponseBody ?? "{}", contentType, Encoding.UTF8, record.ResponseStatus));
+            var failed = record.ResponseStatus >= 400;
+            var body = record.ResponseBody ?? "{}";
+            var replay = failed || present is null ? body : present(body);
+            return (null, Results.Text(replay, failed ? ProblemWriter.ContentType : "application/json", Encoding.UTF8, record.ResponseStatus));
         }
 
         var takenOver = await db.Database.SqlQuery<DateTime>($"""
