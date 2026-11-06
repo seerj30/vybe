@@ -47,7 +47,7 @@ Authenticated/guest player completes eligible run → Create challenge (server s
 Guest → verify email/OAuth identity via Supabase Auth → backend binds existing player to verified subject in atomic operation → revoke guest credentials → keep player ID, wallet, inventory and history. If verified identity is already linked to another player, **do not auto-merge**; require explicit account selection/support flow.
 
 ### J4: deletion
-Request deletion → reauthentication for registered users → revoke sessions → queue deletion workflow → delete or anonymize data according to documented retention/legal obligations → return confirmation and status. Preserve minimal fraud/audit data only with documented lawful basis and retention window; never promise immediate total erasure of backups.
+Request deletion → reauthentication for registered users → revoke sessions → queue deletion workflow → anonymize the player (the ledger is append-only, so the player row stays: `status = deleted`, `deleted_at` set, handle replaced by the reserved pseudonym `d_` + 18 random `[a-z0-9]`, personal fields cleared) and delete other data according to documented retention/legal obligations → return confirmation and status. Preserve minimal fraud/audit data only with documented lawful basis and retention window; never promise immediate total erasure of backups.
 
 ## 3. Screen inventory
 
@@ -71,11 +71,11 @@ Global UI: responsive desktop sidebar/mobile bottom nav; accessible focus order;
 
 ## 4. Domain model and database schema
 
-Use PostgreSQL `uuid` IDs, `timestamptz` UTC, monetary amounts as `bigint` integer V-Coins (never float), optimistic concurrency or row locks for mutable aggregates. All tables include `created_at` where relevant; migrations are additive/expand-contract.
+Schema `vybe` (not `public`; ADR 0002). Use PostgreSQL `uuid` IDs (UUIDv7), `timestamptz` UTC, enum columns as `text` with CHECK constraints, monetary amounts as `bigint` integer V-Coins (never float), optimistic concurrency or row locks for mutable aggregates. All tables include `created_at` where relevant; migrations are additive/expand-contract.
 
 ### Core tables
 
-**players**: `id uuid PK`, `auth_subject text UNIQUE NULL`, `handle text NOT NULL`, `handle_normalized text UNIQUE NOT NULL`, `display_name varchar(40)`, `kind enum(guest,registered)`, `status enum(active,suspended,deleting,deleted)`, `level int NOT NULL DEFAULT 1 CHECK(level BETWEEN 1 AND 50)` (cache of the level derived from `xp_total` by §8; written in the same transaction as `xp_total`), `xp_total bigint NOT NULL DEFAULT 0`, `suspended_until timestamptz NULL` (NULL with `status = suspended` = indefinite), `suspension_reason text NULL`, `created_at`, `updated_at`, `deleted_at NULL`. A player is suspended when `status = suspended` and (`suspended_until IS NULL` or `suspended_until > now()`); an elapsed suspension is treated as `active` on read and reset to `active` by the sweeper. Handle format `[a-z0-9_]{3,20}`, stored and returned in lowercase; input handles are matched case-insensitively; reserved names list.
+**players**: `id uuid PK`, `auth_subject text UNIQUE NULL`, `handle text NOT NULL`, `handle_normalized text UNIQUE NOT NULL`, `display_name varchar(40)`, `kind enum(guest,registered)`, `status enum(active,suspended,deleting,deleted)`, `level int NOT NULL DEFAULT 1 CHECK(level BETWEEN 1 AND 50)` (cache of the level derived from `xp_total` by §8; written in the same transaction as `xp_total`), `xp_total bigint NOT NULL DEFAULT 0`, `suspended_until timestamptz NULL` (NULL with `status = suspended` = indefinite), `suspension_reason text NULL`, `created_at`, `updated_at`, `deleted_at NULL`. A player is suspended when `status = suspended` and (`suspended_until IS NULL` or `suspended_until > now()`); an elapsed suspension is treated as `active` on read and reset to `active` by the sweeper. Handle format `[a-z0-9_]{3,20}`, stored and returned in lowercase (`CHECK(handle_normalized = handle)`); input handles are matched case-insensitively; reserved names list.
 
 **guest_sessions**: `id uuid PK`, `player_id uuid FK`, `token_hash bytea UNIQUE`, `expires_at`, `revoked_at NULL`, `created_at`; random high-entropy token in Secure, HttpOnly, SameSite=Lax cookie; revoked on linking (the link response clears the cookie). Never store raw tokens.
 
@@ -83,15 +83,15 @@ Use PostgreSQL `uuid` IDs, `timestamptz` UTC, monetary amounts as `bigint` integ
 
 `equipped_json` shape (also used by `saved_outfits`): `{"hair":uuid|null,"top":uuid|null,"bottom":uuid|null,"shoes":uuid|null,"emote":uuid|null,"accessories":[uuid|null,uuid|null]}`; `accessories` index = attachment point (0 or 1). An equipped `hair` item overrides `hair_preset_id` for rendering; unequipping it shows the preset again.
 
-**catalog_items**: `id uuid PK`, `sku text UNIQUE`, `slot enum(hair,top,bottom,shoes,accessory,emote)`, `name text`, `price bigint CHECK(price>=0)`, `min_level int`, `asset_key text`, `compatible_body_presets text[]`, `rarity enum(common,rare,epic)`, `is_active bool`, `catalog_version int`, `available_from/available_until timestamptz NULL`. No arbitrary client-supplied prices. Items with `price = 0` are never sold; they are only granted (starter, achievement, admin). The shop lists only items with `price > 0`.
+**catalog_items**: `id uuid PK`, `sku text UNIQUE`, `slot enum(hair,top,bottom,shoes,accessory,emote)`, `name text`, `price bigint CHECK(price>=0)`, `min_level int`, `asset_key text`, `compatible_body_presets text[] CHECK(cardinality >= 1)`, `rarity enum(common,rare,epic)`, `is_active bool`, `catalog_version int`, `available_from/available_until timestamptz NULL`. No arbitrary client-supplied prices. Items with `price = 0` are never sold; they are only granted (starter, achievement, admin). The shop lists only items with `price > 0`.
 
 **player_inventory**: `player_id uuid FK`, `item_id uuid FK`, `acquired_at`, `source enum(purchase,starter_grant,achievement_grant,admin_grant) NOT NULL`, `source_transaction_id uuid FK NULL`, `source_reference_id uuid NULL` (achievement id or admin audit log id), `CHECK((source = 'purchase') = (source_transaction_id IS NOT NULL))`, `PRIMARY KEY(player_id,item_id)` for non-stackable cosmetics. Starter items are granted at onboarding with `source = starter_grant` and no ledger row.
 
-**saved_outfits**: `id uuid PK`, `player_id uuid FK`, `name varchar(40)`, `equipped_json jsonb`, `created_at`, `updated_at`; max 3 per player in MVP; each item validated against ownership and slot compatibility.
+**saved_outfits**: `id uuid PK`, `player_id uuid FK`, `slot smallint CHECK(slot BETWEEN 1 AND 3)` with `UNIQUE(player_id,slot)` (enforces the limit), `name varchar(40)`, `equipped_json jsonb`, `created_at`, `updated_at`; max 3 per player in MVP; each item validated against ownership and slot compatibility.
 
 **wallets**: `player_id uuid PK/FK`, `balance bigint NOT NULL CHECK(balance>=0)`, `revision bigint NOT NULL DEFAULT 0`, `updated_at`.
 
-**wallet_transactions**: `id uuid PK`, `player_id uuid FK`, `delta bigint NOT NULL CHECK(delta<>0)`, `balance_after bigint NOT NULL`, `reason enum(game_reward,quest_reward,purchase,level_reward,challenge_reward,admin_adjustment)`, `reference_type text`, `reference_id uuid NULL`, `ledger_key text NOT NULL`, `created_at`; `UNIQUE(player_id,ledger_key)`; append-only permissions; indexes `(player_id,created_at DESC)`, `(reason,reference_id)`.
+**wallet_transactions**: `id uuid PK`, `player_id uuid FK`, `delta bigint NOT NULL CHECK(delta<>0)`, `balance_after bigint NOT NULL`, `reason enum(game_reward,quest_reward,purchase,level_reward,challenge_reward,admin_adjustment)`, `reference_type text`, `reference_id uuid NULL`, `ledger_key text NOT NULL`, `created_at`; `UNIQUE(player_id,ledger_key)`; append-only (trigger rejects UPDATE, DELETE, TRUNCATE); indexes `(player_id,created_at DESC)`, `(reason,reference_id)`.
 
 `ledger_key` is built by the server. Client input appears in it only as a validated UUID `Idempotency-Key` (purchase, admin adjustment). It is the database guarantee of "exactly once":
 
@@ -112,7 +112,7 @@ A unique violation on `ledger_key` means the effect already happened; the caller
 
 **game_input_traces**: `session_id uuid PK/FK`, `compressed_trace bytea`, `encoding text`, `event_count int`, `received_at`; size cap and retention policy.
 
-**challenges**: `id uuid PK`, `creator_player_id uuid FK`, `creator_session_id uuid FK UNIQUE` (one challenge per verified run), `recipient_player_id uuid FK NULL` (set on accept; preset for a rematch or a profile challenge), `invite_token_hash bytea UNIQUE` (token = base64url(HMAC-SHA256(server secret, challenge id)); only the hash is stored, and an idempotent replay rebuilds the share URL without storing the raw token), `ruleset_id text FK`, `status enum(open,accepted,completed,expired,cancelled)`, `created_at`, `accept_deadline`, `accepted_at NULL`, `complete_deadline NULL`, `recipient_session_id uuid FK UNIQUE NULL` (set by compare-and-swap when the recipient creates the session), `winner_player_id uuid FK NULL` (NULL on a `completed` challenge = tie), `rematch_of_challenge_id uuid FK NULL`, `suppressed bool NOT NULL DEFAULT false` (created against a player who blocked the creator; never shown to that recipient; expires normally), `resolved_at NULL`, `version bigint`; `CHECK(recipient_player_id IS NULL OR recipient_player_id <> creator_player_id)`; partial `UNIQUE(rematch_of_challenge_id, creator_player_id) WHERE rematch_of_challenge_id IS NOT NULL` (one rematch per participant per challenge); indexes `(creator_player_id,created_at DESC)`, `(recipient_player_id,status)`, `(status,accept_deadline)`.
+**challenges**: `id uuid PK`, `creator_player_id uuid FK`, `creator_session_id uuid FK UNIQUE` (one challenge per verified run), `recipient_player_id uuid FK NULL` (set on accept; preset for a rematch or a profile challenge), `invite_token_hash bytea UNIQUE` (token = base64url(HMAC-SHA256(server secret, challenge id)); only the hash is stored, and an idempotent replay rebuilds the share URL without storing the raw token), `ruleset_id text FK`, `status enum(open,accepted,completed,expired,cancelled)`, `created_at`, `accept_deadline`, `accepted_at NULL`, `complete_deadline NULL`, `recipient_session_id uuid FK UNIQUE NULL` (set by compare-and-swap when the recipient creates the session), `winner_player_id uuid NULL` (no FK: its check would lock the other player's row and deadlock crossed challenges; a CHECK limits it to the two participants; NULL on a `completed` challenge = tie), `rematch_of_challenge_id uuid FK NULL`, `suppressed bool NOT NULL DEFAULT false` (created against a player who blocked the creator; never shown to that recipient; expires normally), `resolved_at NULL`, `version bigint`; `CHECK(recipient_player_id IS NULL OR recipient_player_id <> creator_player_id)`; partial `UNIQUE(rematch_of_challenge_id, creator_player_id) WHERE rematch_of_challenge_id IS NOT NULL` (one rematch per participant per challenge); indexes `(creator_player_id,created_at DESC)`, `(recipient_player_id,status)`, `(status,accept_deadline)`.
 
 **quest_definitions**: `id uuid PK`, `code text`, `version int`, `period enum(daily,once)`, `criteria jsonb`, `target int NOT NULL CHECK(target > 0)`, `reward_coins bigint`, `reward_xp int`, `is_active bool`.
 
@@ -128,7 +128,7 @@ A unique violation on `ledger_key` means the effect already happened; the caller
 
 **player_reports**: `id uuid PK`, `reporter_player_id uuid FK`, `target_player_id uuid FK`, `reason enum(offensive_name,cheating,harassment,other)`, `details varchar(500) NULL`, `status enum(open,actioned,dismissed)`, `created_at`, `reviewed_at NULL`, `reviewed_by text NULL`; restricted access.
 
-**admin_audit_logs**: `id uuid PK`, `actor_subject text NOT NULL`, `actor_role enum(moderator,administrator) NOT NULL`, `action text NOT NULL`, `entity_type text NOT NULL`, `entity_id text NOT NULL`, `before_json jsonb NULL`, `after_json jsonb NULL`, `reason text NOT NULL`, `created_at timestamptz NOT NULL`; index `(entity_type,entity_id,created_at DESC)`, `(actor_subject,created_at DESC)`; append-only and restricted.
+**admin_audit_logs**: `id uuid PK`, `actor_subject text NOT NULL`, `actor_role enum(moderator,administrator) NOT NULL`, `action text NOT NULL`, `entity_type text NOT NULL`, `entity_id text NOT NULL`, `before_json jsonb NULL`, `after_json jsonb NULL`, `reason text NOT NULL`, `created_at timestamptz NOT NULL`; index `(entity_type,entity_id,created_at DESC)`, `(actor_subject,created_at DESC)`; append-only (trigger) and restricted.
 
 **data_export_requests**: `id uuid PK`, `player_id uuid FK`, `status enum(queued,running,ready,failed)`, `storage_key text NULL`, `download_expires_at timestamptz NULL`, `failure_code text NULL`, `created_at`, `completed_at NULL`; index `(player_id,created_at DESC)`. At most one `queued|running` request per player (partial UNIQUE).
 
@@ -138,8 +138,8 @@ A unique violation on `ledger_key` means the effect already happened; the caller
 
 **idempotency_records**: `actor_subject text` (player id, or admin auth subject), `operation text`, `key uuid`, `request_hash text`, `status enum(in_progress,completed)`, `locked_until timestamptz NULL`, `response_status int NULL`, `response_body jsonb NULL`, `created_at`, `expires_at` (created + 72 h), `PRIMARY KEY(actor_subject,operation,key)`. `Idempotency-Key` must be a UUID (422 `invalid_idempotency_key` otherwise). Protocol:
 1. In a short transaction: `INSERT … (status = in_progress, locked_until = now() + 30 s) ON CONFLICT DO NOTHING`.
-2. If a row already exists: different `request_hash` → 422 `idempotency_key_mismatch`; `completed` → return the stored response; `in_progress` with `locked_until > now()` → 409 `request_in_progress`; `in_progress` with an elapsed lock → take it over with `UPDATE … SET locked_until = now() + 30 s WHERE locked_until < now() RETURNING` (if no row returns, answer 409).
-3. Execute the operation and, **in the same transaction**, write `response_status`, `response_body` and `status = completed`. Exception: `createChallenge` and `createRematch` store the body without `shareUrl` and rebuild it on replay from the challenge id (the invite token is HMAC-derived), so no raw token is ever stored. Business outcomes (2xx and 4xx such as `insufficient_funds`) are stored and replayed. A 5xx or a crash stores nothing; the lock elapses and a retry takes over.
+2. If a row already exists: different `request_hash` → 422 `idempotency_key_mismatch`; `completed` → return the stored response; `in_progress` with `locked_until > now()` → 409 `request_in_progress`; `in_progress` with an elapsed lock → take it over with `UPDATE … SET locked_until = now() + 30 s WHERE status = 'in_progress' AND locked_until < now() RETURNING` (if no row returns, answer 409).
+3. Execute the operation and, **in the same transaction**, write `response_status`, `response_body`, `status = completed` and `locked_until = NULL` as a compare-and-swap on the caller's own lease (`WHERE status = 'in_progress' AND locked_until = :lease`; no row → another request took over, so roll back). `CHECK((status = 'in_progress') = (locked_until IS NOT NULL))`. Exception: `createChallenge` and `createRematch` store the body without `shareUrl` and rebuild it on replay from the challenge id (the invite token is HMAC-derived), so no raw token is ever stored. Business outcomes (2xx and 4xx such as `insufficient_funds`) are stored and replayed. A 5xx or a crash stores nothing; the lock elapses and a retry takes over.
 Clients must not reuse a key after 24 h. The ledger `UNIQUE(player_id,ledger_key)` remains the final guard if a record expired.
 
 ### Database invariants
@@ -147,12 +147,12 @@ Clients must not reuse a key after 24 h. The ledger `UNIQUE(player_id,ledger_key
 2. Wallet row locked (`SELECT ... FOR UPDATE`) for debits/credits; `CHECK(balance>=0)` as defense in depth.
 3. Rewards use the server-derived `ledger_key` (unique per player), never a client-supplied amount or raw client key.
 4. Equipping requires owned, active/usable and compatible item; one item per slot, and one per accessory attachment point (max 2).
-5. Challenge transitions use compare-and-swap version/status predicate to avoid double acceptance.
+5. Challenge transitions use compare-and-swap version/status predicate to avoid double acceptance. `version`/`revision` columns are incremented by a trigger on every UPDATE.
 6. Game sessions and rulesets are immutable after verification; audit corrections use compensating entries.
 7. Retention and cascade policies are explicitly tested before deletion features ship.
 8. Inserting a `player_blocks` row and cancelling the pair's `open`/`accepted` challenges commit in one DB transaction, under the pair lock of invariant 12.
-9. Challenge winner bonus uses ledger reason `challenge_reward` with `ledger_key = challenge:{challengeId}`; at most one per challenge.
-10. Run verification, daily counter update, reward ledger rows, XP/level update and the run's own quest progress commit in one DB transaction that locks rows of **one player only**. Work for the other participant of a challenge (winner bonus, challenge quest progress) runs in `outbox_jobs` (`job_key = challenge-resolved:{challengeId}:{playerId}`), one transaction per player. No transaction locks rows of two players, so crossed challenges cannot deadlock.
+9. Challenge winner bonus uses ledger reason `challenge_reward` with `ledger_key = challenge:{challengeId}`; at most one per challenge (partial unique index on `reference_id` where `reason = 'challenge_reward'`).
+10. Run verification, daily counter update, reward ledger rows, XP/level update and the run's own quest progress commit in one DB transaction that locks rows of **one player only** (player rows with `FOR NO KEY UPDATE`, never `FOR UPDATE`, so foreign-key checks from other transactions do not wait). Work for the other participant of a challenge (winner bonus, challenge quest progress) runs in `outbox_jobs` (`job_key = challenge-resolved:{challengeId}:{playerId}`), one transaction per player. No transaction locks rows of two players, so crossed challenges cannot deadlock.
 11. Quest progress uses one atomic statement; never read-modify-write:
     ```sql
     INSERT INTO player_quests (id, player_id, quest_id, period_start, target, progress, status, completed_at)
@@ -404,7 +404,7 @@ Frontend never directly writes wallet, inventory or scores. Query cache invalida
 - Browser: CSP, safe HTML escaping, dependency scans, no tokens in localStorage, secure cookies.
 - GDPR: data inventory, legal bases, retention, privacy notice, export/deletion workflow, processor agreements, breach process. Determine minors policy before launch; no unrestricted chat.
 - Abuse: username filtering, report/block, moderation review, audit logs, appeal channel.
-- Data retention defaults for review: raw game traces 30 days, operational logs 30 days, anti-fraud audit 90 days, account data until deletion request; final policy requires legal/privacy approval.
+- Data retention defaults for review: raw game traces 30 days, operational logs 30 days, anti-fraud audit 90 days (audit-log deletes only by the retention job, ADR 0002), account data until deletion request; final policy requires legal/privacy approval.
 
 ## 12. Observability and analytics
 
@@ -559,6 +559,16 @@ Test data created per run, isolated and deterministic; no production accounts. V
 5. **§5 deletion/export:** `requestId` = Idempotency-Key; 409 `export_in_progress` returns `exportId`.
 6. **§5 common codes:** 404 `player_not_found` for a Supabase identity without a player.
 7. **§5 caching:** `Cache-Control: private, no-store` on caller-dependent public responses.
+
+### v1.3.4 (2026-11-06) — database schema (ADR 0002)
+1. **§4 storage:** schema `vybe`; UUIDv7 keys; enum columns as `text` + CHECK.
+2. **§4 `saved_outfits`:** `slot` column (1–3) with `UNIQUE(player_id,slot)` enforces the 3-outfit limit.
+3. **§4 `catalog_items`:** at least one compatible body preset (§9).
+4. **§4 append-only / immutable:** enforced by triggers on `wallet_transactions`, `admin_audit_logs`, `game_rulesets` and finished `game_sessions`; audit-log retention deletes need `vybe.retention_delete`.
+5. **§4 invariants 5 and 9:** trigger-incremented `version`/`revision`; one `challenge_reward` per challenge.
+6. **§4 checks:** `handle_normalized = handle`; ledger key shape per reason; `equipped_json` shape.
+7. **§2 J4:** player deletion is anonymization with a `d_` pseudonym handle (prefix reserved).
+8. **§4 second schema review:** no FK on `challenges.winner_player_id` (deadlock); player locks use `FOR NO KEY UPDATE`; idempotency lease only while `in_progress` and a fenced completion; composite FKs tie challenge runs to their player, ruleset and challenge, and purchase grants to the buyer's ledger row for that item; a recipient run cannot create a challenge; derived-field CHECKs (`reward_day`, `auth_subject` by kind, `deleted_at`, export status fields); audit-log retention deletes only rows older than 90 days; the finished-session guard protects a fixed column list.
 
 ---
 

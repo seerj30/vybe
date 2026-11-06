@@ -1,8 +1,10 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Vybe.Data/Vybe.Data.csproj" />
     <Project Path="src/Vybe.GameRules/Vybe.GameRules.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Vybe.Data.Tests/Vybe.Data.Tests.csproj" />
     <Project Path="tests/Vybe.GameRules.Tests/Vybe.GameRules.Tests.csproj" />
   </Folder>
 </Solution>

@@ -14,6 +14,21 @@ docs/spec/             Product, game and technical specification
 docs/adr/              Architecture decision records
 ```
 
+Database (PostgreSQL, EF Core migrations in `services/api/src/Vybe.Data`):
+
+```bash
+dotnet tool restore --tool-manifest services/api/dotnet-tools.json
+dotnet test services/api/tests/Vybe.Data.Tests      # needs Docker
+```
+
+After a model change, add a migration and regenerate the review script:
+
+```bash
+cd services/api
+dotnet ef migrations add <Name> --project src/Vybe.Data --output-dir Migrations
+dotnet ef migrations script --project src/Vybe.Data --output db/schema.sql
+```
+
 After a contract change, lint it and regenerate the types:
 
 ```bash
