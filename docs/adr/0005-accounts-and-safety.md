@@ -1,14 +1,14 @@
-# ADR 0005: Account linking, profiles and safety
+# ADR 0005: Account linking, profiles, safety, outfits and privacy
 
 - Status: accepted
 - Date: 2026-11-06
-- Spec: [v1.3 §2 J3, §4 invariants 8 and 12, §5 Identity and Safety](../spec/VYBE_Technical_Specification_v1.3.md); contract: [ADR 0001](0001-openapi-contract.md)
+- Spec: [v1.3 §2 J3, §4 invariants 8 and 12, §5 Identity, Safety, outfits and account](../spec/VYBE_Technical_Specification_v1.3.md); contract: [ADR 0001](0001-openapi-contract.md)
 
 ## Context
 
-Stream B of `docs/roadmap.md` adds J3 account linking, public profiles, blocks and reports on top of
-the API slice (ADR 0003) and challenges (ADR 0004). This ADR records the decisions that the spec
-leaves open.
+Stream B of `docs/roadmap.md` adds J3 account linking, public profiles, blocks, reports, saved outfits
+and J4 data export and deletion on top of the API slice (ADR 0003) and challenges (ADR 0004). This
+ADR records the decisions that the spec leaves open.
 
 ## Decision
 
@@ -44,6 +44,33 @@ leaves open.
    spec §5). The count and the insert run under the reporter's player row lock, so concurrent reports
    cannot pass the limit. The limit is 429 `rate_limited`. A reporter has at most one `open` report per
    target: a repeat returns 202 with that report's id.
+6. **Saved outfits.** Save takes the player row lock, picks the lowest free slot (1–3) and copies the
+   current `equipped_json`; `UNIQUE(player_id, slot)` is the database guard (409 `outfit_limit_reached`).
+   An item is invalid when it is not owned, not active, in another slot than the outfit puts it, or not
+   compatible with the current body preset. Apply checks the avatar revision, then every item, and
+   writes nothing when one is invalid (422 `outfit_items_invalid` with `itemIds`); the revision trigger
+   makes the write a compare-and-swap.
+7. **Data export.** `POST /me/data-export` inserts a `queued` row; the partial unique index decides a
+   race (409 `export_in_progress` with `exportId`). `PrivacyProcessor` claims queued rows with
+   `FOR UPDATE SKIP LOCKED`, builds the JSON document (`PlayerDataExport`: the player's own data with the
+   block privacy rules; reports against the player stay restricted) and writes it through
+   `IExportStorage`. `LocalExportStorage` (a directory, `file:` URL, development only) is the default;
+   production object storage with signed URLs is stream D. The URL is valid for
+   `Privacy:ExportDownloadHours` (default 24, provisional) and is only returned to the owner.
+8. **Deletion request.** A bearer caller needs a newest `amr[].timestamp` at most 5 minutes old (403
+   `reauthentication_required`; a token without `amr` timestamps fails). The request runs through the
+   idempotency protocol; one transaction sets `status = deleting`, inserts the `deletion_requests` row
+   with `id = Idempotency-Key` and revokes the guest sessions; the response clears the cookie. A second
+   request with another key while one is pending answers 202 with the pending `requestId`.
+   `GET /deletion-requests/{requestId}` needs no authentication.
+9. **Anonymization** (ADR 0002 #11), one transaction per request in `PrivacyProcessor`: handle →
+   `d_` + 18 random `[a-z0-9]`, display name, auth subject and suspension fields cleared,
+   `status = deleted`, avatar reset to the default presets with no equipment, saved outfits and blocks
+   (both directions) deleted, report `details` cleared (reporter or target), the player's `open`/`accepted`
+   challenges cancelled, pending exports failed (`player_deleted`), guest sessions revoked. Export files
+   are deleted after the commit. The ledger, sessions and quests stay under the pseudonymous id. The
+   freed Supabase identity can link a new guest. `PrivacyWorker` runs the processor every
+   `Privacy:PollSeconds` (default 10) unless `Jobs:Enabled = false`.
 
 ## Consequences
 
@@ -51,3 +78,7 @@ leaves open.
   the deployment (stream D).
 - A linked player signs in with the bearer token; the old guest cookie is anonymous from then on.
 - Linking calls Supabase Auth once per request; an Auth outage makes linking fail with 500.
+- Supabase sessions of a deleted player are not revoked by the API; after anonymization the token has no
+  player (404 `player_not_found`). Revoking them with the Supabase admin API is a stream D task.
+- While `deleting`, a bearer caller can still use the other endpoints until the worker runs (seconds).
+- Retention of `deletion_requests` and of game traces of deleted players follows spec §11 (stream D).
