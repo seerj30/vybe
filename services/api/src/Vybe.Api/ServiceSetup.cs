@@ -39,6 +39,7 @@ public static class ServiceSetup
         services.AddScoped<Idempotency>();
         services.AddSingleton(configuration.GetSection(ChallengeOptions.Section).Get<ChallengeOptions>() ?? new ChallengeOptions());
         services.AddSingleton<ChallengeInvites>();
+        services.AddSingleton<ILinkProofVerifier, SupabaseLinkProofVerifier>();
         services.AddVybeJobs(configuration);
 
         // Spec §11 payload caps: every request body, not only the endpoints that read it manually.
@@ -70,6 +71,9 @@ public static class ServiceSetup
         EconomyEndpoints.Map(api);
         ChallengeEndpoints.Map(api);
         QuestEndpoints.Map(api);
+        AccountEndpoints.Map(api);
+        ProfileEndpoints.Map(api);
+        SafetyEndpoints.Map(api);
         return app;
     }
 
