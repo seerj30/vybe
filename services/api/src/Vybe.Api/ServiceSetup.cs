@@ -90,6 +90,7 @@ public static class ServiceSetup
         SafetyEndpoints.Map(api);
         OutfitEndpoints.Map(api);
         PrivacyEndpoints.Map(api);
+        AdminEndpoints.Map(api);
         return app;
     }
 

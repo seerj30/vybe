@@ -1,8 +1,8 @@
-# ADR 0005: Account linking, profiles, safety, outfits and privacy
+# ADR 0005: Account linking, profiles, safety, outfits, privacy and admin
 
 - Status: accepted
 - Date: 2026-11-06
-- Spec: [v1.3 §2 J3, §4 invariants 8 and 12, §5 Identity, Safety, outfits and account](../spec/VYBE_Technical_Specification_v1.3.md); contract: [ADR 0001](0001-openapi-contract.md)
+- Spec: [v1.3 §2 J3, §4 invariants 8 and 12, §5 Identity, Safety, outfits, account and Admin](../spec/VYBE_Technical_Specification_v1.3.md); contract: [ADR 0001](0001-openapi-contract.md)
 
 ## Context
 
@@ -75,6 +75,18 @@ ADR records the decisions that the spec leaves open.
    are deleted after the commit. The ledger, sessions and quests stay under the pseudonymous id. The
    freed Supabase identity can link a new guest. `PrivacyWorker` runs the processor every
    `Privacy:PollSeconds` (default 10) unless `Jobs:Enabled = false`.
+10. **Admin.** `/api/v1/admin/*` authenticates with the Supabase bearer scheme only. The role is
+    `app_metadata.vybe_role` (`moderator` or `administrator`): only the Supabase service role can
+    write `app_metadata`, while `user_metadata` is user-writable and is never read for roles. An
+    administrator may also do every moderator action; a moderator cannot adjust wallets, change the
+    catalog or read the audit log (spec §15). Every write checks `reason` (3–500 characters) and adds
+    the `admin_audit_logs` row in the same transaction (actor subject and role, action, entity,
+    before/after JSON). Reports are listed oldest first (a queue); the audit log newest first, with exact
+    filters. Suspension and lift lock the player row and refuse `deleting`/`deleted` players (404).
+    A wallet adjustment runs through the idempotency protocol (actor = admin subject) with ledger key
+    `admin:{Idempotency-Key}` and the audit row as the ledger reference; a negative result is 409
+    `insufficient_funds`; when only the ledger row survives an expired idempotency record, its outcome
+    is returned.
 
 ## Consequences
 
@@ -88,5 +100,6 @@ ADR records the decisions that the spec leaves open.
 - Retention of `deletion_requests` and of game traces of deleted players follows spec §11 (stream D).
 - Production export storage must delete objects after `Privacy:ExportDownloadHours` (for example a
   bucket lifecycle rule); `LocalExportStorage` keeps files until the player is deleted.
+- Admin roles are granted in Supabase (`app_metadata.vybe_role`, service role or dashboard), not by the API.
 - Accepted risk: deletion clears an active suspension, and the freed identity can link a new guest. A
   suspended player can already start over as a new guest; the admin audit log keeps the suspension.
