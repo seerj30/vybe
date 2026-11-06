@@ -1,5 +1,4 @@
-import { expect, test } from "@playwright/test";
-import { expectCharging, openStreetHoops, powerMeter, SHOT_RESULT, startRun } from "./street-hoops.ts";
+import { expect, expectCharging, openStreetHoops, powerMeter, SHOT_RESULT, startRun, test } from "./street-hoops.ts";
 
 test("touch: tap, hold and release on the court records a shot", async ({ page }) => {
   await openStreetHoops(page);
