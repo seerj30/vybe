@@ -35,6 +35,9 @@
       [class.cooling]="coolingDown()"
     >
       <div class="meter-fill" [style.height.%]="power() / 10"></div>
+      @for (guide of powerGuides; track guide) {
+        <div class="meter-tick" [style.bottom.%]="guide / 10"></div>
+      }
       <span class="meter-text">{{ coolingDown() ? "wait" : power() }}</span>
     </div>
   }

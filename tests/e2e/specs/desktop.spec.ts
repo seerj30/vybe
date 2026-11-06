@@ -30,6 +30,27 @@ test("keyboard: hold and release Space records a shot; a quick second release is
   await page.keyboard.up("Space");
 });
 
+test("the result shows when the ball reaches the rim, not at release", async ({ page }) => {
+  await page.clock.install();
+  await openStreetHoops(page);
+  await expect(page.getByRole("checkbox", { name: "Reduce motion" })).not.toBeChecked();
+  await startRun(page);
+
+  await page.keyboard.down("Space");
+  await expectCharging(page);
+  // Page time runs only when the test moves it, so slow CI frames cannot reach the 700 ms flight time.
+  const now = await page.evaluate(() => Date.now());
+  await page.clock.pauseAt(now + 50);
+  await page.keyboard.up("Space");
+  await page.clock.runFor(100);
+  // The meter reset proves the view updated after the release; the label still waits for the ball.
+  await expect(powerMeter(page)).toHaveAttribute("aria-valuenow", "0");
+  await expect(page.getByText(SHOT_RESULT)).toHaveCount(0);
+
+  await page.clock.runFor(700);
+  await expect(page.getByText(SHOT_RESULT)).toBeVisible();
+});
+
 test("keyboard: Enter also shoots", async ({ page }) => {
   await openStreetHoops(page);
   await startRun(page);
