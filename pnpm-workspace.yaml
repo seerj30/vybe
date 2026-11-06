@@ -1,4 +1,9 @@
 packages:
+  - "apps/*"
   - "packages/*"
 allowBuilds:
   esbuild: true
+  # Angular CLI deps ship prebuilt binaries; their install scripts are not needed.
+  "@parcel/watcher": false
+  lmdb: false
+  msgpackr-extract: false

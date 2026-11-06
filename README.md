@@ -7,6 +7,7 @@ Browser-based social arcade with customizable 3D cartoon avatars.
 ## Repository layout
 
 ```
+apps/web/              Street Hoops playable prototype (Angular + Three.js, client-only)
 packages/contracts/    OpenAPI 3.1 contract (source of truth for the API) and generated TS types
 packages/game-rules/   Street Hoops simulator (TypeScript reference) and golden fixtures
 services/api/          ASP.NET Core solution; Vybe.GameRules is the C# simulator

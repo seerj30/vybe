@@ -38,6 +38,12 @@ jobs:
       - name: Game rules tests
         run: pnpm --filter @vybe/game-rules test
 
+      - name: Web prototype tests
+        run: pnpm --filter @vybe/web test
+
+      - name: Web prototype build
+        run: pnpm --filter @vybe/web build
+
       - name: Lint OpenAPI contract
         run: pnpm --filter @vybe/contracts lint
 
