@@ -21,6 +21,7 @@ public sealed class OpsConfigurationTests
         ["Storage:Exports:AccessKeyId"] = "key-id",
         ["Storage:Exports:SecretAccessKey"] = "key-secret",
         ["Content:Root"] = "/app/content",
+        ["ReverseProxy:KnownNetworks:0"] = "10.0.0.0/8",
     };
 
     [Fact]
@@ -35,6 +36,7 @@ public sealed class OpsConfigurationTests
         {
             "ConnectionStrings:Vybe", "Auth:Supabase:Authority", "Auth:Supabase:ApiKey", "Challenges:InviteSecret",
             "Challenges:ShareBaseUrl", "Storage:Exports:Bucket", "Storage:Exports:Region", "Content:Root",
+            "ReverseProxy:KnownNetworks",
         })
         {
             Assert.Contains(name, problems, StringComparison.Ordinal);
@@ -46,6 +48,7 @@ public sealed class OpsConfigurationTests
     [InlineData("Challenges:InviteSecret", "not base64!")]
     [InlineData("Challenges:ShareBaseUrl", "http://vybe.example")]
     [InlineData("Storage:Exports:ServiceUrl", "ftp://storage.example")]
+    [InlineData("Storage:Exports:ServiceUrl", "http://storage.example")]
     [InlineData("Storage:Exports:SecretAccessKey", "")]
     public void InvalidValue_IsAProblem(string key, string value)
     {
@@ -67,9 +70,12 @@ public sealed class OpsConfigurationTests
         Assert.DoesNotContain("key-secret", error.Message, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void Validate_InStaging_Applies() =>
-        Assert.Throws<InvalidOperationException>(() => ProductionConfiguration.Validate(Build([]), Env(Environments.Staging)));
+    [Theory]
+    [InlineData("Staging")]
+    [InlineData("Prod")]
+    [InlineData("preview")]
+    public void Validate_EveryDeployedEnvironment_Applies(string environment) =>
+        Assert.Throws<InvalidOperationException>(() => ProductionConfiguration.Validate(Build([]), Env(environment)));
 
     [Theory]
     [InlineData("Development")]

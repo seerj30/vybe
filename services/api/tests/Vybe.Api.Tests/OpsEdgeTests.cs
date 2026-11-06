@@ -46,6 +46,27 @@ public sealed class OpsEdgeTests(OpsEdgeApiFactory api) : IClassFixture<OpsEdgeA
         Assert.Equal("DENY", Header(response, "X-Frame-Options"));
         Assert.Equal("no-referrer", Header(response, "Referrer-Policy"));
         Assert.Equal("max-age=31536000; includeSubDomains", Header(response, "Strict-Transport-Security"));
+        Assert.Contains("no-store", Header(response, "Cache-Control"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task EndpointCacheControl_IsKept()
+    {
+        using var client = api.CreateClient();
+
+        using var response = await client.GetAsync("/api/v1/games/rulesets/street-hoops-v1");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("public, max-age=31536000, immutable", Header(response, "Cache-Control"));
+    }
+
+    [Fact]
+    public async Task GuestCreation_IsNotCountedTwice()
+    {
+        for (var i = 0; i < OpsEdgeApiFactory.WritesPerMinute + 1; i++)
+        {
+            await Player.CreateGuestAsync(api);
+        }
     }
 
     [Fact]

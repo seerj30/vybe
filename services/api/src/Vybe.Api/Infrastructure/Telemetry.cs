@@ -19,6 +19,10 @@ public static class Telemetry
     public const string ServiceName = "vybe-api";
     public const string OtlpEndpointKey = "OTEL_EXPORTER_OTLP_ENDPOINT";
 
+    /// <summary>Span tags that identify the client (address, port, user agent).</summary>
+    public static readonly string[] PeerTags =
+        ["client.address", "client.port", "network.peer.address", "network.peer.port", "user_agent.original"];
+
     /// <summary>Outside Development the console writes one JSON object per line (<see cref="JsonLogFormatter"/>).</summary>
     public static void AddVybeLogging(this WebApplicationBuilder builder)
     {
@@ -67,9 +71,10 @@ public static class Telemetry
                 options.Release = builder.Configuration["Sentry:Release"];
                 options.SendDefaultPii = false;
                 options.MaxRequestBodySize = Sentry.Extensibility.RequestSize.None;
-                // Traces go to OpenTelemetry; Sentry gets errors only unless a rate is configured.
-                options.TracesSampleRate = builder.Configuration.GetValue("Sentry:TracesSampleRate", 0.0);
+                // Errors only: traces go to OpenTelemetry, so no Sentry transactions carry URLs.
+                options.TracesSampleRate = 0;
                 options.SetBeforeSend((sentryEvent, _) => Scrub(sentryEvent));
+                options.SetBeforeBreadcrumb((breadcrumb, _) => Scrub(breadcrumb));
             });
         }
     }
@@ -83,11 +88,16 @@ public static class Telemetry
         ArgumentNullException.ThrowIfNull(context);
         var route = (context.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText;
         activity.SetTag("url.path", route is null ? "(unmatched)" : "/" + route.TrimStart('/'));
-        activity.SetTag("client.address", null);
-        activity.SetTag("user_agent.original", null);
+        foreach (var tag in PeerTags)
+        {
+            activity.SetTag(tag, null);
+        }
     }
 
-    /// <summary>Sentry events keep the redacted URL only: no query, cookies, headers, body or user address.</summary>
+    /// <summary>
+    /// Sentry events keep the redacted URL only: no query, cookies, headers, body or user address; invite tokens
+    /// are redacted in the message, exception values, tags and extra data.
+    /// </summary>
     public static SentryEvent Scrub(SentryEvent sentryEvent)
     {
         ArgumentNullException.ThrowIfNull(sentryEvent);
@@ -106,6 +116,33 @@ public static class Telemetry
             message.Message = Redaction.Redact(message.Message);
         }
 
+        foreach (var exception in sentryEvent.SentryExceptions ?? [])
+        {
+            exception.Value = Redaction.Redact(exception.Value);
+        }
+
+        foreach (var (key, value) in sentryEvent.Tags.ToList())
+        {
+            sentryEvent.SetTag(key, Redaction.Redact(value) ?? string.Empty);
+        }
+
+        foreach (var (key, value) in sentryEvent.Extra.ToList())
+        {
+            if (value is string text)
+            {
+                sentryEvent.SetExtra(key, Redaction.Redact(text));
+            }
+        }
+
+        sentryEvent.TransactionName = Redaction.Redact(sentryEvent.TransactionName);
         return sentryEvent;
+    }
+
+    /// <summary>Breadcrumbs (from logs and HTTP calls) with invite tokens redacted in the message and data.</summary>
+    public static Breadcrumb Scrub(Breadcrumb breadcrumb)
+    {
+        ArgumentNullException.ThrowIfNull(breadcrumb);
+        var data = breadcrumb.Data?.ToDictionary(pair => pair.Key, pair => Redaction.Redact(pair.Value) ?? string.Empty);
+        return new Breadcrumb(Redaction.Redact(breadcrumb.Message) ?? string.Empty, breadcrumb.Type ?? string.Empty, data, breadcrumb.Category, breadcrumb.Level);
     }
 }

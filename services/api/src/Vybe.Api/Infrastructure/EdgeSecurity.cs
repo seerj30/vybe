@@ -7,7 +7,8 @@ namespace Vybe.Api.Infrastructure;
 
 /// <summary>
 /// Request edge (spec §11): forwarded headers from known proxies only, security headers on every response,
-/// CORS for configured origins only, and a per-player limit for authenticated writes.
+/// CORS for configured origins only, a per-player limit for authenticated writes and a per-address limit for
+/// unauthenticated writes.
 /// </summary>
 public static class EdgeSecurity
 {
@@ -89,6 +90,12 @@ public static class EdgeSecurity
                 headers.XFrameOptions = "DENY";
                 headers["Referrer-Policy"] = "no-referrer";
                 headers["Cross-Origin-Resource-Policy"] = "same-site";
+                // Personal data and presigned URLs must not stay in shared caches; endpoints that allow caching set their own value.
+                if (string.IsNullOrEmpty(headers.CacheControl))
+                {
+                    headers.CacheControl = "no-store";
+                }
+
                 if (hsts)
                 {
                     headers.StrictTransportSecurity = "max-age=31536000; includeSubDomains";
@@ -131,19 +138,35 @@ public static class EdgeSecurity
         return origins;
     }
 
-    /// <summary>The partition of an authenticated unsafe request: the guest's player id or the token subject.</summary>
+    /// <summary>
+    /// The partition of an unsafe request: the guest's player id or the token subject when authenticated, else the
+    /// client address (IPv6 per /64). Reads are not limited here; nor are anonymous endpoints with their own
+    /// policy (guest creation has its per-address limit).
+    /// </summary>
     public static string? WriterKey(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
         var method = context.Request.Method;
-        if (HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method)
-            || context.User.Identity?.IsAuthenticated != true)
+        if (HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method))
         {
             return null;
         }
 
-        return context.User.FindFirstValue(AuthSchemes.AuthKindClaim) == AuthSchemes.Guest
-            ? "guest:" + context.User.FindFirstValue(ClaimTypes.NameIdentifier)
-            : context.User.FindFirstValue("sub") is { Length: > 0 } subject ? "sub:" + subject : null;
+        if (context.User.Identity?.IsAuthenticated == true)
+        {
+            if (context.User.FindFirstValue(AuthSchemes.AuthKindClaim) == AuthSchemes.Guest)
+            {
+                return "guest:" + context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            }
+
+            if (context.User.FindFirstValue("sub") is { Length: > 0 } subject)
+            {
+                return "sub:" + subject;
+            }
+        }
+
+        return context.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>() is null
+            ? "ip:" + ClientAddress.RateLimitPartition(context.Connection.RemoteIpAddress)
+            : null;
     }
 }

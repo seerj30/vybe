@@ -1,16 +1,20 @@
 namespace Vybe.Api.Infrastructure;
 
 /// <summary>
-/// Fail-fast check of the settings that Production and Staging need (stream D). All problems are reported
+/// Fail-fast check of the settings that every deployed environment needs (stream D). All problems are reported
 /// together, by setting name only, so one failed deploy shows every missing secret and never a value.
 /// The feature code keeps its own checks; this check runs first and before any service starts.
+/// It applies to every environment except Development and <see cref="TestingEnvironment"/> (the integration
+/// tests), so a misspelled environment name such as "Prod" cannot skip it.
 /// </summary>
 public static class ProductionConfiguration
 {
+    public const string TestingEnvironment = "Testing";
+
     public static bool Applies(IHostEnvironment environment)
     {
         ArgumentNullException.ThrowIfNull(environment);
-        return environment.IsProduction() || environment.IsStaging();
+        return !environment.IsDevelopment() && !environment.IsEnvironment(TestingEnvironment);
     }
 
     public static IReadOnlyList<string> Problems(IConfiguration configuration)
@@ -45,6 +49,17 @@ public static class ProductionConfiguration
 
         var storage = configuration.GetSection(S3ExportStorageOptions.Section).Get<S3ExportStorageOptions>() ?? new S3ExportStorageOptions();
         problems.AddRange(storage.Problems());
+        if (Uri.TryCreate(storage.ServiceUrl, UriKind.Absolute, out var storageUrl) && storageUrl.Scheme == Uri.UriSchemeHttp)
+        {
+            // Presigned export URLs use the scheme of the endpoint: personal data must not travel in plain text.
+            problems.Add($"{S3ExportStorageOptions.Section}:ServiceUrl must be an https URL");
+        }
+
+        // Without it, behind a proxy every client has the proxy's address and shares one guest rate-limit bucket.
+        if (configuration.GetSection(EdgeSecurity.ProxySection).Get<string[]>() is not { Length: > 0 })
+        {
+            problems.Add($"{EdgeSecurity.ProxySection} is not configured (the proxy CIDR ranges; 127.0.0.1/32 when there is no proxy)");
+        }
 
         if (string.IsNullOrWhiteSpace(configuration["Content:Root"]))
         {
