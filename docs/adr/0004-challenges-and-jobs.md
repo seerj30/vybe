@@ -42,6 +42,15 @@ states, the invariants (5, 8–12) and the codes. This ADR records the decisions
    row `challenge:{id}` already exists, so a retried job never pays twice. A suspended, deleting or
    deleted player gets no bonus. The hosted `OutboxWorker` polls every `Jobs:OutboxPollSeconds`
    (default 5). `Jobs:Enabled = false` turns all workers off; the tests run the jobs directly.
+7. **Sweepers.** `Sweeper` runs every `Jobs:SweepSeconds` (default 30) in batches of 500. It claims
+   rows with `FOR UPDATE SKIP LOCKED`, so it never waits for a request, and every write is a status
+   compare-and-swap. Sessions: `created` after `start_deadline` and `active` after `submit_deadline`
+   become `expired`, and their `accepted` challenge becomes `expired` in the same statement.
+   Challenges: `open` at or after `accept_deadline`; `accepted` at or after `complete_deadline` only
+   without a recipient session or with a `created`/`rejected`/`expired` one. The recipient session is
+   read `FOR SHARE SKIP LOCKED`: when a start or submit holds it, the challenge waits for the next
+   sweep, so a run that becomes `active` is never cut off. Players: an elapsed suspension is reset to
+   `active` and its fields are cleared.
 
 ## Consequences
 
