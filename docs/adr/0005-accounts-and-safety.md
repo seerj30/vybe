@@ -56,12 +56,16 @@ ADR records the decisions that the spec leaves open.
    block privacy rules; reports against the player stay restricted) and writes it through
    `IExportStorage`. `LocalExportStorage` (a directory, `file:` URL, development only) is the default;
    production object storage with signed URLs is stream D. The URL is valid for
-   `Privacy:ExportDownloadHours` (default 24, provisional) and is only returned to the owner.
+   `Privacy:ExportDownloadHours` (default 24, provisional) and is only returned to the owner. A player
+   gets one ready export per rolling 24 hours (429 `rate_limited`), so repeated requests cannot fill
+   the storage. The processor reads the player row `FOR SHARE`, so it waits for a running
+   anonymization; an export of a `deleting` or `deleted` player fails with `player_deleted`.
 8. **Deletion request.** A bearer caller needs a newest `amr[].timestamp` at most 5 minutes old (403
    `reauthentication_required`; a token without `amr` timestamps fails). The request runs through the
    idempotency protocol; one transaction sets `status = deleting`, inserts the `deletion_requests` row
    with `id = Idempotency-Key` and revokes the guest sessions; the response clears the cookie. A second
-   request with another key while one is pending answers 202 with the pending `requestId`.
+   request with another key while one is pending answers 202 with the pending `requestId`. A key that
+   another player's request already uses as its id is 422 `idempotency_key_mismatch`.
    `GET /deletion-requests/{requestId}` needs no authentication.
 9. **Anonymization** (ADR 0002 #11), one transaction per request in `PrivacyProcessor`: handle →
    `d_` + 18 random `[a-z0-9]`, display name, auth subject and suspension fields cleared,
@@ -82,3 +86,7 @@ ADR records the decisions that the spec leaves open.
   player (404 `player_not_found`). Revoking them with the Supabase admin API is a stream D task.
 - While `deleting`, a bearer caller can still use the other endpoints until the worker runs (seconds).
 - Retention of `deletion_requests` and of game traces of deleted players follows spec §11 (stream D).
+- Production export storage must delete objects after `Privacy:ExportDownloadHours` (for example a
+  bucket lifecycle rule); `LocalExportStorage` keeps files until the player is deleted.
+- Accepted risk: deletion clears an active suspension, and the freed identity can link a new guest. A
+  suspended player can already start over as a new guest; the admin audit log keeps the suspension.

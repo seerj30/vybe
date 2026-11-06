@@ -22,6 +22,9 @@ public static class PrivacyEndpoints
     /// <summary>Provisional (spec §5): the newest sign-in of a registered player must be at most this old.</summary>
     public static readonly TimeSpan ReauthenticationWindow = TimeSpan.FromMinutes(5);
 
+    /// <summary>Provisional: a player gets at most one ready export per rolling 24 hours.</summary>
+    public static readonly TimeSpan ExportCooldown = TimeSpan.FromHours(24);
+
     public static void Map(RouteGroupBuilder api)
     {
         ArgumentNullException.ThrowIfNull(api);
@@ -37,12 +40,20 @@ public static class PrivacyEndpoints
         VybeDbContext db, CurrentPlayer current, TimeProvider clock, CancellationToken cancellationToken)
     {
         var playerId = await current.GetIdAsync(cancellationToken);
+        var now = clock.UtcNowForDb();
+        // Cooldown: one ready export per rolling 24 hours, so repeated requests cannot fill the storage.
+        var since = now - ExportCooldown;
+        if (await db.DataExportRequests.AnyAsync(x => x.PlayerId == playerId && x.Status == ExportStatus.Ready && x.CreatedAt > since, cancellationToken))
+        {
+            throw Problem.Of(429, "rate_limited");
+        }
+
         var export = new DataExportRequest
         {
             Id = Guid.CreateVersion7(),
             PlayerId = playerId,
             Status = ExportStatus.Queued,
-            CreatedAt = clock.UtcNowForDb(),
+            CreatedAt = now,
         };
         db.DataExportRequests.Add(export);
         try
@@ -109,7 +120,15 @@ public static class PrivacyEndpoints
             player.Status = PlayerStatus.Deleting;
             player.UpdatedAt = now;
             db.DeletionRequests.Add(new DeletionRequest { Id = key, PlayerId = playerId, Status = DeletionStatus.Queued, CreatedAt = now });
-            await db.SaveChangesAsync(ct);
+            try
+            {
+                await db.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException e) when (e.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+            {
+                throw Problem.Of(422, "idempotency_key_mismatch"); // another player's request already uses this key as its id
+            }
+
             await db.GuestSessions.Where(s => s.PlayerId == playerId && s.RevokedAt == null)
                 .ExecuteUpdateAsync(u => u.SetProperty(s => s.RevokedAt, now), ct);
             return new OperationResult(202, new DeletionRequested(key));

@@ -46,18 +46,31 @@ public sealed partial class PrivacyProcessor(
         }
 
         var now = clock.UtcNowForDb();
-        try
+        // FOR SHARE waits for a running anonymization (FOR NO KEY UPDATE), so no export file outlives a deletion.
+        var status = (await db.Players.FromSql($"SELECT * FROM vybe.players WHERE id = {export.PlayerId} FOR SHARE")
+            .AsNoTracking().SingleAsync(cancellationToken)).Status;
+        if (status is PlayerStatus.Deleting or PlayerStatus.Deleted)
         {
-            var document = await PlayerDataExport.BuildAsync(db, export.PlayerId, now, cancellationToken);
-            export.StorageKey = await storage.WriteAsync(export.Id, JsonSerializer.SerializeToUtf8Bytes(document, ApiJson.Options), cancellationToken);
-            export.Status = ExportStatus.Ready;
-            export.DownloadExpiresAt = now.AddHours(options.ExportDownloadHours);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            LogExportFailed(logger, exception, export.Id);
+            // Queued in the moment of a deletion: never export anonymized data or keep a file of it.
             export.Status = ExportStatus.Failed;
-            export.FailureCode = "export_failed";
+            export.FailureCode = "player_deleted";
+        }
+        else
+        {
+            try
+            {
+                var document = await PlayerDataExport.BuildAsync(db, export.PlayerId, now, cancellationToken);
+                export.StorageKey = await storage.WriteAsync(
+                    export.Id, JsonSerializer.SerializeToUtf8Bytes(document, ApiJson.Options), cancellationToken);
+                export.Status = ExportStatus.Ready;
+                export.DownloadExpiresAt = now.AddHours(options.ExportDownloadHours);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                LogExportFailed(logger, exception, export.Id);
+                export.Status = ExportStatus.Failed;
+                export.FailureCode = "export_failed";
+            }
         }
 
         export.CompletedAt = now;

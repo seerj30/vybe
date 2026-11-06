@@ -43,10 +43,11 @@ public sealed class PrivacyTests(ApiFactory api)
             Assert.Single(root.GetProperty("gameSessions").EnumerateArray());
         }
 
-        // A new export is possible once the previous one is finished; the link stops after its expiry.
-        await Contract.AssertAsync(await player.Http.PostAsync("/api/v1/me/data-export", null), HttpStatusCode.Accepted, "ExportRequested");
+        // One ready export per 24 hours; after that the link stops and a new export is possible.
+        await Contract.AssertProblemAsync(await player.Http.PostAsync("/api/v1/me/data-export", null), HttpStatusCode.TooManyRequests, "rate_limited");
         api.Clock.Advance(TimeSpan.FromHours(24));
         Assert.Equal(JsonValueKind.Null, (await GetExportAsync(player, exportId)).GetProperty("downloadUrl").ValueKind);
+        await Contract.AssertAsync(await player.Http.PostAsync("/api/v1/me/data-export", null), HttpStatusCode.Accepted, "ExportRequested");
     }
 
     [Fact]
@@ -117,12 +118,31 @@ public sealed class PrivacyTests(ApiFactory api)
         var other = await Contract.AssertAsync(await RequestDeletionAsync(fresh, Guid.NewGuid()), HttpStatusCode.Accepted, "DeletionRequested");
         Assert.Equal(key, other.GetProperty("requestId").GetGuid()); // the pending request, not a second one
         Assert.Equal("deleting", (await Contract.AssertAsync(await fresh.GetAsync("/api/v1/me"), HttpStatusCode.OK, "Me")).GetProperty("status").GetString());
+        var lateExport = (await Contract.AssertAsync(await fresh.PostAsync("/api/v1/me/data-export", null), HttpStatusCode.Accepted, "ExportRequested"))
+            .GetProperty("exportId").GetGuid();
 
         await RunPrivacyJobsAsync();
+        await using (var db = api.CreateDbContext())
+        {
+            var export = await db.DataExportRequests.SingleAsync(x => x.Id == lateExport);
+            Assert.Equal((ExportStatus.Failed, "player_deleted", null), (export.Status, export.FailureCode, export.StorageKey));
+        }
+
         await Contract.AssertProblemAsync(await fresh.GetAsync("/api/v1/me"), HttpStatusCode.NotFound, "player_not_found");
         var newGuest = await Player.CreateGuestAsync(api);
         await Contract.AssertAsync(
             await newGuest.Http.PostAsJsonAsync("/api/v1/accounts/link", new { linkProof = ApiFactory.RegisteredToken(subject) }), HttpStatusCode.OK, "AccountLinked");
+    }
+
+    [Fact]
+    public async Task DeletionKeyUsedByAnotherPlayer_IsAMismatch_AndChangesNothing()
+    {
+        var first = await Player.CreateGuestAsync(api);
+        var second = await Player.CreateGuestAsync(api);
+        var key = Guid.NewGuid();
+        await Contract.AssertAsync(await RequestDeletionAsync(first.Http, key), HttpStatusCode.Accepted, "DeletionRequested");
+        await Contract.AssertProblemAsync(await RequestDeletionAsync(second.Http, key), HttpStatusCode.UnprocessableEntity, "idempotency_key_mismatch");
+        Assert.Equal("active", (await second.MeAsync()).GetProperty("status").GetString());
     }
 
     private async Task RunPrivacyJobsAsync() =>
