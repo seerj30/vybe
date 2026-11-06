@@ -19,7 +19,7 @@ import {
   type StreetHoopsConfig,
   type Waypoint,
 } from "@vybe/game-rules";
-import { ballEndPoint, courtPoint, type CourtPoint } from "./court";
+import { ballEndPoint, courtPoint, POWER_GUIDES, type CourtPoint } from "./court";
 import { HoopsScene } from "./hoops-scene";
 import { aimFromFraction, chargePower, stepAim } from "./input";
 import { applyOverrides, loadRuleset, TUNABLE_KEYS, type Overrides, type RulesetFile, type TunableKey } from "./ruleset";
@@ -56,6 +56,13 @@ const GATE_MESSAGES: Record<Exclude<ShotGate, "ok">, string> = {
 
 const RESULT_LABELS: Record<ShotResult["result"], string> = { perfect: "Perfect", hit: "Hit", miss: "Miss" };
 
+/** A scored shot whose result the HUD shows when the ball reaches the rim. */
+interface PendingReveal {
+  atMs: number;
+  score: number;
+  shot: ShotResult;
+}
+
 interface ActiveRun extends LocalRun {
   waypoints: Waypoint[];
   startMs: number;
@@ -85,6 +92,7 @@ export class StreetHoops {
   protected readonly devMode = isDevMode();
   protected readonly tunableKeys = TUNABLE_KEYS;
   protected readonly labels = RESULT_LABELS;
+  protected readonly powerGuides = POWER_GUIDES;
 
   protected readonly phase = signal<Phase>("loading");
   protected readonly error = signal<string | null>(null);
@@ -139,6 +147,7 @@ export class StreetHoops {
   private scene: HoopsScene | null = null;
   private run: ActiveRun | null = null;
   private events: ShotEvent[] = [];
+  private pendingReveals: PendingReveal[] = [];
   private aimX = 0;
   private chargeStartMs: number | null = null;
   private readonly heldKeys = new Set<string>();
@@ -200,6 +209,7 @@ export class StreetHoops {
 
     this.run = { config, rulesetId: ruleset.id, seed, waypoints: generateWaypoints(config, seed), startMs: performance.now() };
     this.events = [];
+    this.pendingReveals = [];
     this.aimX = 0;
     this.chargeStartMs = null;
     this.scene.setThresholds(config);
@@ -218,7 +228,7 @@ export class StreetHoops {
   protected onPointerDown(event: PointerEvent): void {
     if (this.phase() !== "running" || !event.isPrimary) return;
     this.aimAtPointer(event);
-    this.startCharge(event.timeStamp);
+    this.startCharge(performance.now());
     // Keeps the release on the canvas when the finger leaves it. Synthetic test events have no active pointer.
     if (event.isTrusted) this.canvas().nativeElement.setPointerCapture(event.pointerId);
   }
@@ -228,7 +238,7 @@ export class StreetHoops {
   }
 
   protected onPointerUp(event: PointerEvent): void {
-    if (event.isPrimary) this.release(event.timeStamp);
+    if (event.isPrimary) this.release(performance.now());
   }
 
   protected onKeyDown(event: KeyboardEvent): void {
@@ -238,7 +248,7 @@ export class StreetHoops {
       event.preventDefault();
     } else if (SHOOT_KEYS.has(event.code)) {
       event.preventDefault();
-      if (!event.repeat) this.startCharge(event.timeStamp);
+      if (!event.repeat) this.startCharge(performance.now());
     }
   }
 
@@ -247,7 +257,7 @@ export class StreetHoops {
     if (SHOOT_KEYS.has(event.code) && this.phase() === "running") {
       // A checkbox toggles on the Space keyup, so keep the default on form fields.
       if (!this.isFormField(event.target)) event.preventDefault();
-      this.release(event.timeStamp);
+      this.release(performance.now());
     }
   }
 
@@ -289,6 +299,7 @@ export class StreetHoops {
     const dtMs = this.lastFrameMs === 0 ? 0 : now - this.lastFrameMs;
     this.lastFrameMs = now;
     this.countFrame(now);
+    this.revealDue(now);
 
     let reticle: CourtPoint | null = null;
     const run = this.run;
@@ -343,12 +354,12 @@ export class StreetHoops {
     }
     const shot = result.shots[result.shots.length - 1];
     if (shot === undefined) return;
-    this.score.set(result.score);
-    this.streak.set(shot.streak);
-    this.lastShot.set(shot);
 
     // The ball meets the basket where it is when the ball arrives; the simulator result decides in or out.
+    // The HUD shows the result at that moment, so the label never runs ahead of the ball.
     const flightMs = this.reducedMotion() ? 0 : FLIGHT_MS;
+    this.pendingReveals = [...this.pendingReveals, { atMs: nowMs + flightMs, score: result.score, shot }];
+    this.revealDue(nowMs);
     const arrival = targetAt(run.config, run.waypoints, Math.min(tMs + flightMs, run.config.durationMs - 1));
     const hoop = courtPoint(arrival.targetX, arrival.idealPower);
     const end = ballEndPoint(shot.result, courtPoint(shotEvent.aimX, shotEvent.power), hoop);
@@ -357,6 +368,7 @@ export class StreetHoops {
 
   private finish(run: ActiveRun): void {
     this.cancelInput();
+    this.revealDue(Number.POSITIVE_INFINITY);
     try {
       const result = evaluateTrace(run, this.events, run.config.durationMs);
       this.summary.set(result);
@@ -369,6 +381,17 @@ export class StreetHoops {
     this.secondsLeft.set(0);
     this.coolingDown.set(false);
     this.phase.set("finished");
+  }
+
+  /** Shows the latest result whose ball has reached the rim. */
+  private revealDue(nowMs: number): void {
+    const due = this.pendingReveals.filter((r) => r.atMs <= nowMs);
+    const latest = due[due.length - 1];
+    if (latest === undefined) return;
+    this.pendingReveals = this.pendingReveals.filter((r) => r.atMs > nowMs);
+    this.score.set(latest.score);
+    this.streak.set(latest.shot.streak);
+    this.lastShot.set(latest.shot);
   }
 
   private fail(message: string): void {

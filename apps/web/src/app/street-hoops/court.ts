@@ -8,6 +8,9 @@ export const RIM_HEIGHT = 3.05;
 export const RIM_RADIUS = 0.45;
 export const BALL_RADIUS = 0.24;
 
+/** Power values marked by floor lines and by matching ticks on the power meter. */
+export const POWER_GUIDES: readonly number[] = [200, 400, 600, 800];
+
 export interface CourtPoint {
   x: number;
   z: number;

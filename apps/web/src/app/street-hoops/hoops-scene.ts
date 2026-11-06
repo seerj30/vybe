@@ -5,10 +5,12 @@ import {
   COURT_HALF_WIDTH,
   FAR_Z,
   NEAR_Z,
+  POWER_GUIDES,
   RIM_HEIGHT,
   RIM_RADIUS,
   X_PER_UNIT,
   Z_PER_UNIT,
+  courtPoint,
   type CourtPoint,
 } from "./court";
 
@@ -70,7 +72,7 @@ export class HoopsScene {
     floor.rotation.x = -Math.PI / 2;
     floor.position.set(0, 0, (NEAR_Z + FAR_Z) / 2);
     this.scene.add(floor);
-    this.scene.add(this.courtLines());
+    this.scene.add(this.courtLines(), this.powerGuideLines());
 
     this.hitZone = this.zoneOutline(0x3ddc84);
     this.perfectZone = this.zoneOutline(0xffc83d);
@@ -223,6 +225,19 @@ export class HoopsScene {
       new THREE.Vector3(-1, 0, 1),
     ]);
     return new THREE.LineLoop(geometry, new THREE.LineBasicMaterial({ color }));
+  }
+
+  /** Faint lines across the court at the POWER_GUIDES depths; the power meter has matching ticks. */
+  private powerGuideLines(): THREE.LineSegments {
+    const w = COURT_HALF_WIDTH;
+    const points = POWER_GUIDES.flatMap((power) => {
+      const z = courtPoint(0, power).z;
+      return [new THREE.Vector3(-w, 0.004, z), new THREE.Vector3(w, 0.004, z)];
+    });
+    return new THREE.LineSegments(
+      new THREE.BufferGeometry().setFromPoints(points),
+      new THREE.LineBasicMaterial({ color: 0x5c6b99, transparent: true, opacity: 0.7 }),
+    );
   }
 
   private courtLines(): THREE.LineSegments {

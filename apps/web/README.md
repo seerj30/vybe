@@ -48,6 +48,13 @@ The white ring on the floor shows where the ball lands with the current aim and 
 The green rectangle under the basket is the hit zone (`hitDx` × `hitDp`). The gold
 rectangle is the perfect zone. A release with the ring inside a zone gets that result.
 
+Faint lines across the floor mark power 200, 400, 600 and 800. The power meter has ticks
+at the same values, so the player can read the basket's depth and charge to the matching
+tick without the landing ring.
+
+The result label, score and streak update when the ball reaches the rim (700 ms after the
+release), not at the release. With "Reduce motion" on, they update at once.
+
 A release less than `minGapMs` after the last shot is not recorded ("Too soon"), so the
 trace always passes the simulator checks.
 
@@ -72,7 +79,8 @@ simulator invariants (for example, `durationMs` must be a multiple of `segmentMs
 Client-only feel values (they do not change the score and are not ruleset values):
 
 - Charge cycle ms: time for power to go from 0 to 1000. Shorter = harder power timing.
-- Landing ring: turn off to test play without the aim aid.
+- Landing ring: turn off to test play without the aim aid. The floor lines and meter
+  ticks stay.
 - Seed: leave blank for a random basket path, or enter a `uint32` to replay a path.
 
 The panel also shows session stats for the current config: runs, shots, hit rate (perfects

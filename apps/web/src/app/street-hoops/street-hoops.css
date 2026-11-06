@@ -105,6 +105,14 @@ canvas:focus-visible {
   background: #ff6a1a;
 }
 
+.meter-tick {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px solid rgb(244 246 255 / 0.6);
+}
+
 .meter.cooling {
   border-style: dashed;
   opacity: 0.5;
