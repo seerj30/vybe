@@ -1,5 +1,4 @@
-import { expect, test } from "@playwright/test";
-import { expectCharging, openStreetHoops, powerMeter, SHOT_RESULT, startButton, startRun, TOO_SOON } from "./street-hoops.ts";
+import { expect, expectCharging, openStreetHoops, powerMeter, SHOT_RESULT, startButton, startRun, test, TOO_SOON } from "./street-hoops.ts";
 
 test("loads and verifies the ruleset, then enables Start", async ({ page }) => {
   await page.goto("/");

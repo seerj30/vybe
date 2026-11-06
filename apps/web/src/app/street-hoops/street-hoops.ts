@@ -292,7 +292,8 @@ export class StreetHoops {
     let reticle: CourtPoint | null = null;
     const run = this.run;
     if (this.phase() === "running" && run !== null) {
-      const elapsed = now - run.startMs;
+      // The rAF timestamp is the frame start, so the first frame after start() can be earlier than startMs.
+      const elapsed = Math.max(0, now - run.startMs);
       if (elapsed >= run.config.durationMs) {
         this.finish(run);
       } else {

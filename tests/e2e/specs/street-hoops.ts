@@ -1,4 +1,19 @@
-import { expect, type Locator, type Page } from "@playwright/test";
+import { test as base, expect, type Locator, type Page } from "@playwright/test";
+
+/** Playwright `test` that fails when the page throws an uncaught error (for example in a frame callback). */
+export const test = base.extend<{ failOnPageError: void }>({
+  failOnPageError: [
+    async ({ page }, use) => {
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await use();
+      expect(errors, "uncaught page errors").toEqual([]);
+    },
+    { auto: true },
+  ],
+});
+
+export { expect };
 
 /** The result label after a recorded shot, e.g. "Hit +100 · streak 1" or "Miss · streak 0". */
 export const SHOT_RESULT = /\b(Perfect|Hit|Miss)( \+\d+)? · streak \d+/;
