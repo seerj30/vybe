@@ -8,7 +8,8 @@ namespace Vybe.Api.Jobs;
 /// <summary>
 /// <c>challenge-resolved:{challengeId}:{playerId}</c> (spec §6 Challenge, §7 challenge rules, invariant 10):
 /// one transaction for one player. Grants the +50 winner bonus (ledger <c>challenge:{id}</c>, at most 5 per
-/// UTC day of <c>resolved_at</c> via <c>player_daily_counters.challenge_bonuses</c>).
+/// UTC day of <c>resolved_at</c> via <c>player_daily_counters.challenge_bonuses</c>) and adds
+/// <c>challenge_or_streak</c> progress on that day for both participants (target 1, so a retry cannot overcount).
 /// </summary>
 public static class ChallengeResolvedJob
 {
@@ -56,5 +57,7 @@ public static class ChallengeResolvedJob
                 await db.SaveChangesAsync(cancellationToken);
             }
         }
+
+        await QuestProgress.AddAsync(db, player.Id, QuestProgress.ChallengeOrStreak, day, 1, now, cancellationToken);
     }
 }

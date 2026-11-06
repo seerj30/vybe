@@ -69,6 +69,7 @@ public static class ServiceSetup
         GameplayEndpoints.Map(api);
         EconomyEndpoints.Map(api);
         ChallengeEndpoints.Map(api);
+        QuestEndpoints.Map(api);
         return app;
     }
 
@@ -87,6 +88,7 @@ public static class ServiceSetup
             content,
             scope.ServiceProvider.GetRequiredService<TimeProvider>(),
             CancellationToken.None);
+        await QuestSeeder.SeedAsync(scope.ServiceProvider.GetRequiredService<VybeDbContext>(), content.Options.Root, CancellationToken.None);
     }
 
     private static void AddAuthentication(IServiceCollection services, IConfiguration configuration, IHostEnvironment environment)

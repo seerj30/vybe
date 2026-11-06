@@ -275,7 +275,8 @@ public static class GameplayEndpoints
                 return await FinishRejectedAsync(db, session, now, Map(result.Reason!.Value), eventsJson, shots.Count, cancellationToken);
         }
 
-        var rewards = await RewardService.GrantForRunAsync(db, session, config, result.Score!.Value, shots.Count, now, cancellationToken);
+        var rewards = await RewardService.GrantForRunAsync(db, session, config, result.Score!.Value, shots.Count, result.MaxStreak ?? 0, now,
+            cancellationToken);
         session.Status = GameSessionStatus.Verified;
         session.SubmittedAt = now;
         session.VerifiedAt = now;
