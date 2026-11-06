@@ -40,6 +40,12 @@ public static class ServiceSetup
         services.AddSingleton(configuration.GetSection(ChallengeOptions.Section).Get<ChallengeOptions>() ?? new ChallengeOptions());
         services.AddSingleton<ChallengeInvites>();
         services.AddSingleton<ILinkProofVerifier, SupabaseLinkProofVerifier>();
+        services.AddHttpClient(SupabaseLinkProofVerifier.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(10));
+        var supabaseAuth = services.AddOptions<SupabaseAuthOptions>().Bind(configuration.GetSection(SupabaseAuthOptions.Section));
+        if (!environment.IsDevelopment())
+        {
+            supabaseAuth.Validate(o => !string.IsNullOrEmpty(o.ApiKey), "Auth:Supabase:ApiKey must be configured").ValidateOnStart();
+        }
         services.AddVybeJobs(configuration);
 
         // Spec §11 payload caps: every request body, not only the endpoints that read it manually.

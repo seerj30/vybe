@@ -43,20 +43,25 @@ public static class AccountEndpoints
         }
 
         // The guest session stays valid when only the proof is rejected (ADR 0001 #11).
-        var identity = await verifier.VerifyAsync(proof, cancellationToken) ?? throw Problem.Of(422, "invalid_link_proof");
+        var subject = await verifier.VerifyAsync(proof, cancellationToken) ?? throw Problem.Of(422, "invalid_link_proof");
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var player = await db.Players
             .FromSql($"SELECT * FROM vybe.players WHERE id = {playerId} FOR NO KEY UPDATE")
             .SingleAsync(cancellationToken);
+        if (player.Status is PlayerStatus.Deleting or PlayerStatus.Deleted)
+        {
+            throw Problem.Unauthenticated(); // a deletion request committed after this request authenticated
+        }
+
         // Never merge: an identity that already has a player is a conflict, even a deleting one (spec §2 J3).
-        if (player.Kind != PlayerKind.Guest || await db.Players.AnyAsync(p => p.AuthSubject == identity.Subject, cancellationToken))
+        if (player.Kind != PlayerKind.Guest || await db.Players.AnyAsync(p => p.AuthSubject == subject, cancellationToken))
         {
             throw Problem.Of(409, "identity_already_linked");
         }
 
         var now = clock.UtcNowForDb();
-        player.AuthSubject = identity.Subject;
+        player.AuthSubject = subject;
         player.Kind = PlayerKind.Registered;
         player.UpdatedAt = now;
         try

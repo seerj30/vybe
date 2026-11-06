@@ -185,15 +185,22 @@ public sealed class SafetyTests(ApiFactory api)
         await Contract.AssertProblemAsync(
             await ReportAsync(reporter, new { targetHandle = target, reason = "spam" }), HttpStatusCode.BadRequest, "malformed_request");
 
+        // A repeat against the same target returns the open report instead of a new one.
+        var repeat = await Contract.AssertAsync(
+            await ReportAsync(reporter, new { targetHandle = target, reason = "cheating" }), HttpStatusCode.Accepted, "ReportAccepted");
+        Assert.Equal(accepted.GetProperty("reportId").GetGuid(), repeat.GetProperty("reportId").GetGuid());
+
         for (var i = 1; i < 10; i++)
         {
-            Assert.Equal(HttpStatusCode.Accepted, (await ReportAsync(reporter, new { targetHandle = target, reason = "cheating" })).StatusCode);
+            var other = await HandleAsync(await Player.CreateGuestAsync(api));
+            Assert.Equal(HttpStatusCode.Accepted, (await ReportAsync(reporter, new { targetHandle = other, reason = "cheating" })).StatusCode);
         }
 
+        var eleventh = await HandleAsync(await Player.CreateGuestAsync(api));
         await Contract.AssertProblemAsync(
-            await ReportAsync(reporter, new { targetHandle = target, reason = "cheating" }), HttpStatusCode.TooManyRequests, "rate_limited");
+            await ReportAsync(reporter, new { targetHandle = eleventh, reason = "cheating" }), HttpStatusCode.TooManyRequests, "rate_limited");
         api.Clock.Advance(TimeSpan.FromDays(1));
-        Assert.Equal(HttpStatusCode.Accepted, (await ReportAsync(reporter, new { targetHandle = target, reason = "harassment" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, (await ReportAsync(reporter, new { targetHandle = eleventh, reason = "harassment" })).StatusCode);
     }
 
     private async Task AssertNoLiveChallengeAsync(Guid a, Guid b)

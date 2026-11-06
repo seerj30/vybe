@@ -143,6 +143,16 @@ public static class SafetyEndpoints
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         // The reporter's row lock serializes the count and the insert, so concurrent reports cannot pass the limit.
         await db.Database.ExecuteSqlAsync($"SELECT 1 FROM vybe.players WHERE id = {playerId} FOR NO KEY UPDATE", cancellationToken);
+        // One open report per reporter and target: a repeat returns it, so one player cannot flood the queue.
+        var open = await db.PlayerReports
+            .Where(r => r.ReporterPlayerId == playerId && r.TargetPlayerId == target.Id && r.Status == ReportStatus.Open)
+            .Select(r => (Guid?)r.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (open is { } existing)
+        {
+            return Results.Accepted(value: new ReportAccepted(existing));
+        }
+
         var since = now.AddDays(-1);
         if (await db.PlayerReports.CountAsync(r => r.ReporterPlayerId == playerId && r.CreatedAt > since, cancellationToken) >= ReportsPerDay)
         {

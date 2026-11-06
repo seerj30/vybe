@@ -72,7 +72,9 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         {
             ["is_anonymous"] = anonymous,
             ["email"] = $"{subject}@vybe.test",
-            ["user_metadata"] = new Dictionary<string, object> { ["email_verified"] = emailVerified },
+            // user_metadata is user-editable: the API must not trust it (FakeSupabaseAuth decides confirmation).
+            ["user_metadata"] = new Dictionary<string, object> { ["email_verified"] = true },
+            [FakeSupabaseAuth.EmailConfirmedClaim] = emailVerified,
             ["amr"] = new[] { new Dictionary<string, object> { ["method"] = "password", ["timestamp"] = (authenticatedAt ?? DateTimeOffset.UtcNow).ToUnixTimeSeconds() } },
         });
 
@@ -84,11 +86,14 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("Content:SeedOnStartup", "true");
         builder.UseSetting("Challenges:InviteSecret", Convert.ToBase64String(Encoding.UTF8.GetBytes("vybe-test-invite-secret-0123456789abcdef")));
         builder.UseSetting("Jobs:Enabled", "false"); // tests run the jobs directly
+        builder.UseSetting("Auth:Supabase:ApiKey", FakeSupabaseAuth.ApiKey);
         builder.UseSetting("RateLimits:GuestsPerIpPerMinute", GuestsPerMinute.ToString(System.Globalization.CultureInfo.InvariantCulture));
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(Clock);
+            services.AddHttpClient(Features.SupabaseLinkProofVerifier.HttpClientName)
+                .ConfigurePrimaryHttpMessageHandler(() => new FakeSupabaseAuth());
             services.PostConfigure<JwtBearerOptions>(AuthSchemes.Supabase, options =>
             {
                 options.Authority = null;

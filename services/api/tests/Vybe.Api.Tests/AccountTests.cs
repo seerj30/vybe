@@ -81,7 +81,7 @@ public sealed class AccountTests(ApiFactory api)
     {
         "not-a-jwt",
         ApiFactory.RegisteredToken(Guid.NewGuid().ToString(), anonymous: true),
-        ApiFactory.RegisteredToken(Guid.NewGuid().ToString(), emailVerified: false),
+        ApiFactory.RegisteredToken(Guid.NewGuid().ToString(), emailVerified: false), // user_metadata.email_verified is true here
         ApiFactory.SupabaseToken(Guid.NewGuid().ToString()), // no is_anonymous, email or user_metadata
         ApiFactory.SupabaseToken(
             Guid.NewGuid().ToString(),

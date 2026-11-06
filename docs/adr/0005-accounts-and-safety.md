@@ -14,16 +14,19 @@ leaves open.
 
 1. **Link proof.** `ILinkProofVerifier` checks the `linkProof`. The production implementation
    (`SupabaseLinkProofVerifier`) validates it as a Supabase access token with the bearer scheme's
-   issuer, audience, algorithms, clock skew and signing keys (from the issuer metadata). It rejects
-   the proof (422 `invalid_link_proof`) when the token is not valid, when `is_anonymous` is missing or
-   `true`, when `email` is empty, or when `user_metadata.email_verified` is not `true`. Supabase must
-   keep "Confirm email" on, so that it issues no session before the email is confirmed; the claim
-   check is the second guard. The tests use the real verifier with the test signing key of `ApiFactory`.
+   issuer, audience, algorithms, clock skew and signing keys (from the issuer metadata). Then it reads
+   the user record from the validated issuer's Auth endpoint (`GET {iss}/user`, with the proof and the
+   publishable key `Auth:Supabase:ApiKey`, required outside Development). The proof is rejected (422
+   `invalid_link_proof`) when the token is not valid, the record's `id` is not the token subject, the
+   user is anonymous, or the record has no `email` or no `email_confirmed_at`. Token claims such as
+   `user_metadata.email_verified` are not used: the user can change them. 401/403/404 from Auth reject
+   the proof; another error is a 500, so the client retries. The tests use the real verifier with the
+   test signing key of `ApiFactory` and a fake Auth endpoint (`FakeSupabaseAuth`).
 2. **Link transaction.** `POST /accounts/link` authenticates with the guest cookie only, and checks
    `X-Requested-With` itself (the CSRF middleware skips requests with a bearer header). One
    transaction locks the player row (`FOR NO KEY UPDATE`), refuses an identity that any player
    already has (409 `identity_already_linked`, also for a concurrent link: the unique index on
-   `auth_subject` decides), sets `auth_subject` and `kind = registered`, and revokes every guest
+   `auth_subject` decides), refuses a player whose deletion request committed meanwhile (401), sets `auth_subject` and `kind = registered`, and revokes every guest
    session of the player. The response clears `__Host-vybe_guest`. Nothing is merged.
 3. **Profiles.** `GET /profiles/{handle}` returns `handle`, `displayName`, `level` and the avatar
    presets and equipment. Deleting and deleted players are 404 `not_found`. A block does not change
@@ -39,10 +42,12 @@ leaves open.
    `DELETE /me/blocks/{handle}` is 204 also for an unknown handle and restores nothing.
 5. **Reports.** `POST /reports` allows 10 reports per reporter in a rolling 24 hours (provisional,
    spec §5). The count and the insert run under the reporter's player row lock, so concurrent reports
-   cannot pass the limit. The limit is 429 `rate_limited`.
+   cannot pass the limit. The limit is 429 `rate_limited`. A reporter has at most one `open` report per
+   target: a repeat returns 202 with that report's id.
 
 ## Consequences
 
 - The Supabase project settings ("Confirm email" on, anonymous sign-ins allowed or not) are part of
   the deployment (stream D).
 - A linked player signs in with the bearer token; the old guest cookie is anonymous from then on.
+- Linking calls Supabase Auth once per request; an Auth outage makes linking fail with 500.
