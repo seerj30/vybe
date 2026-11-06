@@ -1,4 +1,4 @@
-# ADR 0004: Challenges, outbox worker and background jobs
+# ADR 0004: Challenges, background jobs and daily quests
 
 - Status: accepted
 - Date: 2026-11-06
@@ -40,7 +40,7 @@ states, the invariants (5, 8–12) and the codes. This ADR records the decisions
    `last_error` and `run_after = now + 2^attempts s` (at most 1 h); after 10 attempts the job is
    `failed`. `challenge-resolved` locks one player row only. It skips the winner bonus when the ledger
    row `challenge:{id}` already exists, so a retried job never pays twice. A suspended, deleting or
-   deleted player gets no bonus. The hosted `OutboxWorker` polls every `Jobs:OutboxPollSeconds`
+   deleted player gets no bonus and no quest progress. The hosted `OutboxWorker` polls every `Jobs:OutboxPollSeconds`
    (default 5). `Jobs:Enabled = false` turns all workers off; the tests run the jobs directly.
 7. **Sweepers.** `Sweeper` runs every `Jobs:SweepSeconds` (default 30) in batches of 500. It claims
    rows with `FOR UPDATE SKIP LOCKED`, so it never waits for a request, and every write is a status
@@ -51,10 +51,21 @@ states, the invariants (5, 8–12) and the codes. This ADR records the decisions
    read `FOR SHARE SKIP LOCKED`: when a start or submit holds it, the challenge waits for the next
    sweep, so a run that becomes `active` is never cut off. Players: an elapsed suspension is reset to
    `active` and its fields are cleared.
+8. **Daily quests.** The three definitions are content in `assets/manifests/quests.v1.json`, seeded by
+   `QuestSeeder` like the catalog (Development, tests, deploy step); a definition that is not in the
+   file becomes inactive. The progress rules are code (`QuestProgress`); `criteria` documents them.
+   Every progress write is the upsert of invariant 11 for the newest active daily version of a code.
+   A reward-eligible run adds progress in the verification transaction on its `reward_day`; the
+   `challenge-resolved` job adds `challenge_or_streak` on the UTC date of `resolved_at` for both
+   participants (target 1, so a retry cannot overcount). `GET /me/quests` takes the player row lock,
+   like every other quest writer, then creates the day's rows. A claim locks the player row, then the
+   quest row; it pays coins (`quest:{id}`) and XP outside the daily gameplay cap, with level rewards.
+   `claimableUntil` = `period_start` 00:00 UTC + 7 days; a claim at or after it is 410.
 
 ## Consequences
 
 - The invite secret is a deploy-time secret (stream D). Rotating it breaks all open invite links.
+- The production deploy step must seed quests as well as rulesets and catalog.
 - Stream B (blocks) cancels `open`/`accepted` challenges under `PairLock`; the reads in this ADR already
   show those challenges as `expired`.
 - Known, not changed here: create-session (player row, then the old session row) and submit (session
