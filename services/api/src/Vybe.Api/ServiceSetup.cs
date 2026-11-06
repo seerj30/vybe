@@ -141,7 +141,7 @@ public static class ServiceSetup
                 await ProblemWriter.WriteAsync(context.HttpContext, 429, "rate_limited");
             };
             options.AddPolicy(GuestCreationPolicy, context => RateLimitPartition.GetFixedWindowLimiter(
-                context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                ClientAddress.RateLimitPartition(context.Connection.RemoteIpAddress),
                 _ => new FixedWindowRateLimiterOptions { PermitLimit = guestsPerMinute, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
         });
     }
