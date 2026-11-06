@@ -4,9 +4,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 
-name=vybe-e2e-pg
+# E2E_PG_NAME and E2E_PG_PORT let several worktrees each have their own database.
+name=${E2E_PG_NAME:-vybe-e2e-pg}
+port=${E2E_PG_PORT:-55432}
 docker rm -f "$name" >/dev/null 2>&1 || true
-docker run -d --name "$name" -e POSTGRES_USER=vybe -e POSTGRES_PASSWORD=vybe -e POSTGRES_DB=vybe -p 55432:5432 postgres:17.6-alpine >/dev/null
+docker run -d --name "$name" -e POSTGRES_USER=vybe -e POSTGRES_PASSWORD=vybe -e POSTGRES_DB=vybe -p "$port":5432 postgres:17.6-alpine >/dev/null
 until docker exec "$name" pg_isready -U vybe -d vybe >/dev/null 2>&1; do sleep 1; done
 docker exec -i "$name" psql -q -v ON_ERROR_STOP=1 -U vybe -d vybe < services/api/db/schema.sql
-echo "PostgreSQL ready: postgres://vybe:vybe@localhost:55432/vybe"
+echo "PostgreSQL ready: postgres://vybe:vybe@localhost:$port/vybe"
