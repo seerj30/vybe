@@ -1,6 +1,7 @@
 packages:
   - "apps/*"
   - "packages/*"
+  - "tests/e2e"
 allowBuilds:
   esbuild: true
   # Angular CLI deps ship prebuilt binaries; their install scripts are not needed.
