@@ -125,6 +125,12 @@ test("a failed session start shows the reason, and Start works again", async ({ 
   await startRun(page);
 });
 
+test("an online run has no tuning panel: the server's ruleset and seed apply", async ({ page }) => {
+  await newPlayer(page);
+  await openOnlineStreetHoops(page);
+  await expect(page.getByText("Tuning (dev)")).toHaveCount(0);
+});
+
 test("Street Hoops on the API needs a player", async ({ page }) => {
   await page.goto("/arcade/street-hoops");
   await expect(page).toHaveURL(/\/play$/);

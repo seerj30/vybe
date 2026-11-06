@@ -5,6 +5,8 @@ test("loads and verifies the ruleset, then enables Start", async ({ page }) => {
   await expect(startButton(page)).toBeEnabled();
   await expect(startButton(page)).toHaveText("Start 60 s run");
   await expect(page.getByRole("alert")).toHaveCount(0);
+  // The dev server build keeps the tuning panel in practice mode.
+  await expect(page.getByText("Tuning (dev)")).toBeVisible();
 });
 
 test("keyboard: hold and release Space records a shot; a quick second release is too soon", async ({ page }) => {

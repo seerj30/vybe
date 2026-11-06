@@ -17,7 +17,8 @@ export const routes: Routes = [
     path: "practice",
     loadComponent: () => import("./street-hoops/street-hoops").then((m) => m.StreetHoops),
     title: "Street Hoops practice · VYBE",
-    data: { layout: "fullscreen" },
+    // Route input binding sets inputs missing from the data to undefined, so the mode is always explicit.
+    data: { layout: "fullscreen", mode: "practice" },
   },
   {
     path: "arcade/street-hoops",
