@@ -17,14 +17,18 @@ test("keyboard: hold and release Space records a shot; a quick second release is
   await page.keyboard.down("Space");
   await expectCharging(page);
   await page.keyboard.up("Space");
-  await page.keyboard.up("ArrowLeft");
-  await expect(page.getByText(SHOT_RESULT)).toBeVisible();
-  await expect(powerMeter(page)).toHaveAttribute("aria-valuenow", "0");
-
-  // minGapMs is 650 ms in street-hoops-v1; this release follows at once.
+  // minGapMs is 650 ms in street-hoops-v1. Release again at once, before any assertion:
+  // slow CI renderers (~13 FPS) can spend more than 650 ms in a single expect.
   await page.keyboard.down("Space");
   await page.keyboard.up("Space");
+  await page.keyboard.up("ArrowLeft");
   await expect(page.getByText(TOO_SOON)).toBeVisible();
+  await expect(powerMeter(page)).toHaveAttribute("aria-valuenow", "0");
+
+  // A new charge clears the notice, and the label shows the first shot again: it was recorded.
+  await page.keyboard.down("Space");
+  await expect(page.getByText(SHOT_RESULT)).toBeVisible();
+  await page.keyboard.up("Space");
 });
 
 test("keyboard: Enter also shoots", async ({ page }) => {
