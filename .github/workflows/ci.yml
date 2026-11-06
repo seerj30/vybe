@@ -56,7 +56,25 @@ jobs:
   e2e:
     name: Browser tests (Playwright, Chromium)
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
+    env:
+      E2E_DATABASE_URL: postgres://vybe:vybe@localhost:55432/vybe
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_USER: vybe
+          POSTGRES_PASSWORD: vybe
+          POSTGRES_DB: vybe
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U vybe -d vybe"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -71,6 +89,16 @@ jobs:
 
       - name: Install
         run: pnpm install --frozen-lockfile
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Create the database schema
+        run: psql "$E2E_DATABASE_URL" -q -v ON_ERROR_STOP=1 -f services/api/db/schema.sql
+
+      - name: Build the API
+        run: dotnet build services/api/src/Vybe.Api
 
       - name: Install Chromium
         run: pnpm --filter @vybe/e2e exec playwright install --with-deps --only-shell chromium
