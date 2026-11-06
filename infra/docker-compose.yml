@@ -1,0 +1,63 @@
+# Local API + PostgreSQL, the same image and deploy steps as production.
+#   docker compose -f infra/docker-compose.yml up --build
+# Order: db (healthy) -> migrate -> seed -> api. API: http://localhost:8080 (probes: /health/live, /health/ready).
+# Local only: the password below is not a secret. Never put real secrets in this file; see docs/runbooks/.
+name: vybe
+
+x-api: &api
+  image: vybe-api:local
+  build:
+    context: ..
+    dockerfile: services/api/Dockerfile
+  read_only: true
+  # An init process as PID 1, so the runtime's crash signals end the container.
+  init: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: [/tmp]
+
+services:
+  db:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_USER: vybe
+      POSTGRES_PASSWORD: vybe-local-only
+      POSTGRES_DB: vybe
+    ports: ["127.0.0.1:55433:5432"]
+    volumes: [db-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vybe -d vybe"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  migrate:
+    <<: *api
+    command: ["migrate"]
+    environment:
+      ConnectionStrings__Migrations: Host=db;Database=vybe;Username=vybe;Password=vybe-local-only
+    depends_on:
+      db: { condition: service_healthy }
+
+  seed:
+    <<: *api
+    command: ["seed"]
+    environment:
+      ConnectionStrings__Migrations: Host=db;Database=vybe;Username=vybe;Password=vybe-local-only
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  api:
+    <<: *api
+    # Development: local export storage in /tmp and a random invite secret; no Supabase settings needed.
+    # Set the Production settings of docs/runbooks/deploy-and-rollback.md to try a production configuration.
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Vybe: Host=db;Database=vybe;Username=vybe;Password=vybe-local-only
+      Content__SeedOnStartup: "false"
+    ports: ["127.0.0.1:8080:8080"]
+    depends_on:
+      seed: { condition: service_completed_successfully }
+
+volumes:
+  db-data:
