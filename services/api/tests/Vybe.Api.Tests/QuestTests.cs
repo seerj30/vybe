@@ -37,7 +37,7 @@ public sealed class QuestTests(ApiFactory api)
     [Fact]
     public async Task VerifiedRuns_CompleteQuests_AndClaimPaysOnce()
     {
-        StartEarlyInADay();
+        StartEarlyInADay(api);
         var player = await Player.CreateGuestAsync(api);
         await ListAsync(player); // rows created by GET, then completed by the upsert
         await api.PlayRunAsync(player, 4); // below minShotsForRewards: no progress
@@ -97,30 +97,12 @@ public sealed class QuestTests(ApiFactory api)
     }
 
     [Fact]
-    public async Task CompletedQuest_IsClaimableForSevenDays()
-    {
-        StartEarlyInADay();
-        var player = await Player.CreateGuestAsync(api);
-        await player.PlayPerfectRunAsync();
-        var quest = Quest(await ListAsync(player), "score_1500");
-        var until = quest.GetProperty("claimableUntil").GetDateTime().ToUniversalTime();
-
-        api.Clock.Advance(until - api.Clock.GetUtcNow().UtcDateTime - TimeSpan.FromSeconds(1));
-        var listed = (await ListAsync(player)).GetProperty("quests").EnumerateArray();
-        Assert.Contains(listed, q => Id(q) == Id(quest)); // an earlier day's completed quest, still claimable
-
-        api.Clock.Advance(TimeSpan.FromSeconds(1));
-        Assert.DoesNotContain((await ListAsync(player)).GetProperty("quests").EnumerateArray(), q => Id(q) == Id(quest));
-        await Contract.AssertProblemAsync(await ClaimAsync(player, Id(quest)), HttpStatusCode.Gone, "quest_claim_expired");
-    }
-
-    [Fact]
     public async Task CompletedChallenge_CountsForBothParticipants_ThroughTheOutbox()
     {
-        StartEarlyInADay();
+        StartEarlyInADay(api);
         var creator = await Player.CreateGuestAsync(api);
         var recipient = await Player.CreateGuestAsync(api);
-        var run = await PlayShortStreakRunAsync(creator); // eligible, max streak 4: no streak progress
+        var run = await api.PlayShortStreakRunAsync(creator); // eligible, max streak 4: no streak progress
         var (challengeId, token) = await ChallengeTests.CreateOkAsync(creator, run);
         await ChallengeTests.AcceptAsync(recipient, token);
         await api.PlayRecipientRunAsync(recipient, challengeId, 0);
@@ -132,6 +114,23 @@ public sealed class QuestTests(ApiFactory api)
         {
             Assert.Equal("completed", Quest(await ListAsync(participant), "challenge_or_streak").GetProperty("status").GetString());
         }
+    }
+
+    [Fact]
+    public async Task ConcurrentClaims_WithTwoKeys_PayOnce()
+    {
+        StartEarlyInADay(api);
+        var player = await Player.CreateGuestAsync(api);
+        await player.PlayPerfectRunAsync();
+        var quest = Id(Quest(await ListAsync(player), "score_1500"));
+
+        var responses = await Task.WhenAll(ClaimAsync(player, quest), ClaimAsync(player, quest));
+
+        await Contract.AssertAsync(Assert.Single(responses, r => r.StatusCode == HttpStatusCode.OK), HttpStatusCode.OK, "QuestClaimed");
+        await Contract.AssertProblemAsync(
+            Assert.Single(responses, r => r.StatusCode != HttpStatusCode.OK), HttpStatusCode.Conflict, "quest_already_claimed");
+        await using var db = api.CreateDbContext();
+        Assert.Equal(1, await db.WalletTransactions.CountAsync(t => t.PlayerId == player.Id && t.LedgerKey == $"quest:{quest}"));
     }
 
     [Fact]
@@ -153,41 +152,24 @@ public sealed class QuestTests(ApiFactory api)
     }
 
     /// <summary>Quest days are UTC dates: move the shared clock to 01:00 UTC so a test never crosses midnight.</summary>
-    private void StartEarlyInADay()
+    internal static void StartEarlyInADay(ApiFactory api)
     {
         var now = api.Clock.GetUtcNow();
         api.Clock.Advance(new DateTimeOffset(now.UtcDateTime.Date.AddDays(1).AddHours(1), TimeSpan.Zero) - now);
     }
 
-    private static Guid Id(JsonElement quest) => quest.GetProperty("playerQuestId").GetGuid();
+    internal static Guid Id(JsonElement quest) => quest.GetProperty("playerQuestId").GetGuid();
 
-    private static JsonElement Quest(JsonElement list, string code) =>
+    internal static JsonElement Quest(JsonElement list, string code) =>
         list.GetProperty("quests").EnumerateArray().First(q => q.GetProperty("code").GetString() == code);
 
-    private static async Task<JsonElement> ListAsync(Player player) =>
+    internal static async Task<JsonElement> ListAsync(Player player) =>
         await Contract.AssertAsync(await player.Http.GetAsync("/api/v1/me/quests"), HttpStatusCode.OK, "QuestList");
 
-    private static async Task<HttpResponseMessage> ClaimAsync(Player player, Guid playerQuestId, Guid? key = null)
+    internal static async Task<HttpResponseMessage> ClaimAsync(Player player, Guid playerQuestId, Guid? key = null)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/me/quests/{playerQuestId}/claim");
         request.Headers.Add("Idempotency-Key", (key ?? Guid.NewGuid()).ToString());
         return await player.Http.SendAsync(request);
-    }
-
-    /// <summary>Six shots: four perfect, one miss, one perfect (max streak 4, below the quest's 5).</summary>
-    private async Task<Guid> PlayShortStreakRunAsync(Player player)
-    {
-        var (sessionId, seed, config, rulesetId) = await player.StartRunAsync();
-        var waypoints = StreetHoopsSimulator.GenerateWaypoints(config, seed);
-        var events = Enumerable.Range(0, 6).Select(i =>
-        {
-            var t = i * 650;
-            var (x, p) = StreetHoopsSimulator.TargetAt(config, waypoints, t);
-            return (object)new { tMs = t, aimX = i == 4 ? (x > 0 ? -1000 : 1000) : x, power = p };
-        }).ToArray();
-        api.Clock.Advance(TimeSpan.FromMilliseconds(config.DurationMs + 100));
-        var body = await Contract.AssertAsync(await player.SubmitAsync(sessionId, rulesetId, events), HttpStatusCode.OK, "SubmitResult");
-        Assert.Equal("verified", body.GetProperty("status").GetString());
-        return sessionId;
     }
 }

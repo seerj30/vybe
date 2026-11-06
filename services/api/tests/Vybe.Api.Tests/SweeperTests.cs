@@ -91,6 +91,38 @@ public sealed class SweeperTests(ApiFactory api)
     }
 
     [Fact]
+    public async Task Sweep_SkipsRowsARequestHolds_AndCatchesUpLater()
+    {
+        var creator = await Player.CreateGuestAsync(api);
+        var recipient = await Player.CreateGuestAsync(api);
+        var (challengeId, token) = await ChallengeTests.CreateOkAsync(creator, await api.PlayRunAsync(creator, 10));
+        await ChallengeTests.AcceptAsync(recipient, token);
+        api.Clock.Advance(Features.ChallengeEndpoints.CompleteWindow - TimeSpan.FromSeconds(5));
+        var recipientSession = (await Contract.AssertAsync(
+            await recipient.Http.PostAsync("/api/v1/games/street-hoops/sessions", Json($$"""{"challengeId":"{{challengeId}}"}""")),
+            HttpStatusCode.Created, "SessionCreated")).GetProperty("sessionId").GetGuid();
+        var solo = await Player.CreateGuestAsync(api);
+        var (soloSession, _, config, _) = await solo.StartRunAsync();
+        api.Clock.Advance(TimeSpan.FromMilliseconds(config.DurationMs + config.GraceMs + 1)); // both deadlines passed
+
+        // Another connection holds both session rows, like a start or submit in progress.
+        await using (var holder = api.CreateDbContext())
+        {
+            await using var transaction = await holder.Database.BeginTransactionAsync();
+            await holder.Database.ExecuteSqlAsync(
+                $"SELECT 1 FROM vybe.game_sessions WHERE id IN ({recipientSession}, {soloSession}) FOR UPDATE");
+            await SweepAsync();
+            Assert.Equal(GameSessionStatus.Active, await StatusAsync(soloSession));
+            Assert.Equal(ChallengeStatus.Accepted, await ChallengeStatusAsync(challengeId));
+            await transaction.RollbackAsync();
+        }
+
+        await SweepAsync();
+        Assert.Equal(GameSessionStatus.Expired, await StatusAsync(soloSession));
+        Assert.Equal(ChallengeStatus.Expired, await ChallengeStatusAsync(challengeId)); // its recipient session never started
+    }
+
+    [Fact]
     public async Task ElapsedSuspension_IsReset_IndefiniteOneStays()
     {
         var elapsed = await Player.CreateGuestAsync(api);

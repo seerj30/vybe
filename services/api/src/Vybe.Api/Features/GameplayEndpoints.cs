@@ -217,6 +217,10 @@ public static class GameplayEndpoints
         VybeDbContext db, TimeProvider clock, Guid playerId, Guid sessionId, string submittedRulesetId, JsonElement events,
         CancellationToken cancellationToken)
     {
+        // Lock order player row, then session row: the same order as create-session, which locks the
+        // player and then expires the open session. The opposite order deadlocks the two.
+        await db.Database.ExecuteSqlAsync(
+            $"SELECT 1 FROM vybe.players WHERE id = {playerId} FOR NO KEY UPDATE", cancellationToken);
         var session = await db.GameSessions
             .FromSql($"SELECT * FROM vybe.game_sessions WHERE id = {sessionId} AND player_id = {playerId} FOR UPDATE")
             .SingleOrDefaultAsync(cancellationToken)

@@ -12,8 +12,11 @@ public sealed class ChallengeOptions
     /// <summary>Base64 HMAC key for invite tokens (at least 32 bytes). Required outside Development.</summary>
     public string? InviteSecret { get; init; }
 
-    /// <summary>Web origin for share links: <c>{ShareBaseUrl}/challenge/{token}</c> (spec §3 route).</summary>
-    public string ShareBaseUrl { get; init; } = "https://vybe.invalid";
+    /// <summary>
+    /// Web origin for share links: <c>{ShareBaseUrl}/challenge/{token}</c> (spec §3 route). Required outside
+    /// Development, as an absolute https URL.
+    /// </summary>
+    public string? ShareBaseUrl { get; init; }
 }
 
 /// <summary>
@@ -29,7 +32,7 @@ public sealed partial class ChallengeInvites
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(environment);
-        _shareBaseUrl = options.ShareBaseUrl.TrimEnd('/');
+        _shareBaseUrl = ShareBase(options.ShareBaseUrl, environment);
         if (!string.IsNullOrEmpty(options.InviteSecret))
         {
             _secret = Convert.FromBase64String(options.InviteSecret);
@@ -48,6 +51,21 @@ public sealed partial class ChallengeInvites
         {
             throw new InvalidOperationException("Challenges:InviteSecret is not configured");
         }
+    }
+
+    private static string ShareBase(string? configured, IHostEnvironment environment)
+    {
+        if (string.IsNullOrEmpty(configured) && environment.IsDevelopment())
+        {
+            return "https://vybe.invalid";
+        }
+
+        // Share links leave the API in messages and chats: outside Development only an absolute https origin.
+        var valid = Uri.TryCreate(configured, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttps || (environment.IsDevelopment() && uri.Scheme == Uri.UriSchemeHttp));
+        return valid
+            ? configured!.TrimEnd('/')
+            : throw new InvalidOperationException("Challenges:ShareBaseUrl must be an absolute https URL");
     }
 
     public string Token(Guid challengeId) =>
