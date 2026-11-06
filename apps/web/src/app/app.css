@@ -81,7 +81,7 @@ main:focus {
     font-size: 13px;
   }
 
-  /* Five items fill a phone width; the hub and the wallet show the balance. */
+  /* Six items fill a 375 px phone width; the hub and the wallet show the balance. */
   .coins {
     display: none;
   }

@@ -33,8 +33,9 @@ export class OnlineSessions {
     private readonly sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   ) {}
 
-  async prepare(): Promise<OnlineRun> {
-    const created = await this.api.createStreetHoopsSession();
+  /** With `challengeId`, the recipient run of an accepted challenge (the creator run's seed and ruleset). */
+  async prepare(challengeId?: string): Promise<OnlineRun> {
+    const created = await this.api.createStreetHoopsSession(challengeId === undefined ? {} : { challengeId });
     const ruleset = await this.ruleset(created.rulesetId, created.rulesetChecksum);
     const started = await this.api.startSession(created.sessionId);
     return { sessionId: created.sessionId, ruleset, seed: started.seed, submitKey: newIdempotencyKey() };

@@ -6,6 +6,7 @@ import { API } from "../api/api";
 import { errorMessage } from "../api/messages";
 import { AvatarPortrait } from "../avatar/avatar-portrait";
 import { pickPresets, presetLabel } from "../avatar/presets";
+import { OutfitsPanel } from "../outfits/outfits-panel";
 import { ItemThumb } from "../ui/item-thumb";
 import { SLOT_LABELS, SLOTS } from "../ui/labels";
 
@@ -32,11 +33,11 @@ const ACCESSORY: readonly Place[] = [
 
 /**
  * `/wardrobe` (spec §3): owned items per slot; equip and unequip with the avatar revision.
- * Items that do not fit the body preset are shown but cannot be equipped.
+ * Items that do not fit the body preset are shown but cannot be equipped. Saved outfits follow the items.
  */
 @Component({
   selector: "vybe-wardrobe",
-  imports: [AvatarPortrait, ItemThumb, RouterLink],
+  imports: [AvatarPortrait, ItemThumb, OutfitsPanel, RouterLink],
   template: `
     <section class="page">
       <h1>Wardrobe</h1>
@@ -93,6 +94,7 @@ const ACCESSORY: readonly Place[] = [
                 </ul>
               </section>
             }
+            <vybe-outfits-panel [revision]="avatar.revision" [locked]="busy()" [itemNames]="itemNames()" (applied)="outfitApplied($event)" (stale)="load()" (working)="busy.set($event)" />
           </div>
         </div>
       } @else {
@@ -132,6 +134,7 @@ export class Wardrobe {
     return avatar === null ? null : pickPresets(avatar);
   });
   protected readonly bodyLabel = computed(() => presetLabel("bodyPresetId", this.avatar()?.bodyPresetId ?? ""));
+  protected readonly itemNames = computed(() => new Map(this.inventory().map((item) => [item.itemId, item.name])));
   protected readonly groups = computed((): SlotGroup[] =>
     SLOTS.map((slot) => ({ slot, items: this.inventory().filter((item) => item.slot === slot) })).filter((g) => g.items.length > 0),
   );
@@ -149,6 +152,11 @@ export class Wardrobe {
     } catch (error: unknown) {
       this.loadError.set(errorMessage(error));
     }
+  }
+
+  protected outfitApplied(updated: Schemas["EquipmentUpdated"]): void {
+    const avatar = this.avatar();
+    if (avatar !== null) this.avatar.set({ ...avatar, revision: updated.revision, equipped: updated.equipped });
   }
 
   protected places(slot: ItemSlot): readonly Place[] {
