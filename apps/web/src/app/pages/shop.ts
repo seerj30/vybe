@@ -11,8 +11,10 @@ import { SLOT_LABELS, SLOTS } from "../ui/labels";
 type CatalogItem = Schemas["CatalogItem"];
 type ItemSlot = Schemas["ItemSlot"];
 
-/** Per-item purchase state. `unknown`: the answer was lost, so the result is not known yet. */
-type Purchase = { kind: "confirming" } | { kind: "buying" } | { kind: "unknown" } | { kind: "failed"; message: string };
+/** Per-item purchase state. `unknown`: the answer was lost or delayed, so the result is not known yet. */
+type Purchase = { kind: "confirming" } | { kind: "buying" } | { kind: "unknown"; message: string } | { kind: "failed"; message: string };
+
+const LOST = "The connection was lost.";
 
 const PAGE_SIZE = 24;
 
@@ -75,7 +77,7 @@ const PAGE_SIZE = 24;
                   <button type="button" class="button" disabled>Buying…</button>
                 }
                 @case ("unknown") {
-                  <p class="error" role="alert">The connection was lost. The purchase may or may not have gone through.</p>
+                  <p class="error" role="alert">{{ failure(item) }} The purchase may or may not have gone through.</p>
                   <button type="button" class="button" (click)="checkAndRetry(item)">Check and retry</button>
                 }
                 @default {
@@ -128,6 +130,7 @@ export class Shop {
   protected readonly purchases = signal<Partial<Record<string, Purchase>>>({});
   protected readonly announcement = signal("");
   private readonly keys = new ActionKeys<string>();
+  private list = 0;
   private readonly balance = computed(() => this.player.me()?.walletBalance ?? 0);
   private readonly level = computed(() => this.player.me()?.level ?? 1);
 
@@ -146,7 +149,7 @@ export class Shop {
 
   protected failure(item: CatalogItem): string {
     const state = this.purchases()[item.id];
-    return state?.kind === "failed" ? state.message : "";
+    return state?.kind === "failed" || state?.kind === "unknown" ? state.message : "";
   }
 
   protected filter(event: Event): void {
@@ -175,7 +178,7 @@ export class Shop {
       if (isApiError(error, "already_owned")) {
         this.bought(item);
       } else if (isApiError(error) && error.retryable) {
-        this.setPurchase(item.id, { kind: "unknown" });
+        this.setPurchase(item.id, { kind: "unknown", message: unknownText(error) });
       } else {
         this.setPurchase(item.id, { kind: "failed", message: errorMessage(error) });
       }
@@ -194,13 +197,17 @@ export class Shop {
         return;
       }
     } catch (error: unknown) {
-      this.setPurchase(item.id, isApiError(error) && error.retryable ? { kind: "unknown" } : { kind: "failed", message: errorMessage(error) });
+      this.setPurchase(
+        item.id,
+        isApiError(error) && error.retryable ? { kind: "unknown", message: unknownText(error) } : { kind: "failed", message: errorMessage(error) },
+      );
       return;
     }
     await this.buy(item);
   }
 
   protected async reload(): Promise<void> {
+    this.list++;
     this.items.set([]);
     this.nextCursor.set(null);
     await this.loadPage(undefined);
@@ -210,14 +217,18 @@ export class Shop {
     return this.loadPage(this.nextCursor() ?? undefined);
   }
 
+  /** Pages of an older list (another filter) are dropped, so a slow answer never mixes lists. */
   private async loadPage(cursor: string | undefined): Promise<void> {
+    const list = this.list;
     this.loading.set(true);
     this.loadError.set(null);
     try {
       const page = await this.api.listCatalog({ slot: this.slotFilter() ?? undefined, cursor, limit: PAGE_SIZE });
+      if (list !== this.list) return;
       this.items.update((items) => [...items, ...page.items]);
       this.nextCursor.set(page.nextCursor);
     } catch (error: unknown) {
+      if (list !== this.list) return;
       this.loadError.set(errorMessage(error));
     }
     this.loading.set(false);
@@ -232,4 +243,8 @@ export class Shop {
   private setPurchase(itemId: string, state: Purchase | undefined): void {
     this.purchases.update((purchases) => ({ ...purchases, [itemId]: state }));
   }
+}
+
+function unknownText(error: unknown): string {
+  return isApiError(error, "network_error") ? LOST : errorMessage(error);
 }
