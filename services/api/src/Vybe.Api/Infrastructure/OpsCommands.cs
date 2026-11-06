@@ -23,6 +23,7 @@ public static partial class OpsCommands
     {
         ArgumentNullException.ThrowIfNull(args);
         var builder = WebApplication.CreateBuilder(args[1..]);
+        builder.AddVybeLogging();
         await using var app = builder.Build();
         var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(OpsCommands));
         using var stop = new CancellationTokenSource();

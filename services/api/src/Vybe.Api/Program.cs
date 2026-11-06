@@ -15,6 +15,7 @@ try
     builder.AddVybeOperations();
 
     var app = builder.Build();
+    app.UseVybeEdge(); // before UseVybeApi: forwarded headers, security headers and CORS come first
     app.UseVybeApi();
     app.MapVybeHealth();
     await app.SeedContentIfConfiguredAsync();

@@ -1,0 +1,18 @@
+using System.Text.RegularExpressions;
+
+namespace Vybe.Api.Infrastructure;
+
+/// <summary>
+/// Removes secrets that can appear in request paths before text leaves the process (logs, traces, Sentry).
+/// Invite tokens are bearer secrets in <c>/api/v1/invites/{token}</c> (spec §11).
+/// </summary>
+public static partial class Redaction
+{
+    public const string Replacement = "[redacted]";
+
+    public static string? Redact(string? text) =>
+        string.IsNullOrEmpty(text) ? text : InviteToken().Replace(text, "${prefix}" + Replacement);
+
+    [GeneratedRegex(@"(?<prefix>/invites/)[^/?#\s""]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex InviteToken();
+}
