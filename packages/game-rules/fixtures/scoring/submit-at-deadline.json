@@ -1,0 +1,296 @@
+{
+  "name": "submit-at-deadline",
+  "description": "Submitted exactly at submitDeadlineMs: still verified.",
+  "waypoints": [
+    {
+      "x": 202,
+      "p": 679
+    },
+    {
+      "x": 574,
+      "p": 642
+    },
+    {
+      "x": 611,
+      "p": 819
+    },
+    {
+      "x": -508,
+      "p": 308
+    },
+    {
+      "x": -102,
+      "p": 415
+    },
+    {
+      "x": 635,
+      "p": 798
+    },
+    {
+      "x": 661,
+      "p": 667
+    },
+    {
+      "x": 320,
+      "p": 629
+    },
+    {
+      "x": 37,
+      "p": 617
+    },
+    {
+      "x": 491,
+      "p": 357
+    },
+    {
+      "x": -645,
+      "p": 829
+    },
+    {
+      "x": 106,
+      "p": 375
+    },
+    {
+      "x": 456,
+      "p": 637
+    },
+    {
+      "x": -569,
+      "p": 500
+    },
+    {
+      "x": 553,
+      "p": 595
+    },
+    {
+      "x": 692,
+      "p": 879
+    }
+  ],
+  "input": {
+    "config": {
+      "streamId": 54,
+      "durationMs": 60000,
+      "graceMs": 5000,
+      "earlyToleranceMs": 2000,
+      "segmentMs": 4000,
+      "xMin": -700,
+      "xMax": 700,
+      "pMin": 300,
+      "pMax": 900,
+      "hitDx": 160,
+      "hitDp": 120,
+      "perfectDx": 50,
+      "perfectDp": 50,
+      "hitPoints": 100,
+      "perfectPoints": 150,
+      "streakStart": 3,
+      "streakStep": 25,
+      "streakMax": 100,
+      "minGapMs": 650,
+      "maxEvents": 93,
+      "minShotsForRewards": 5
+    },
+    "rulesetId": "street-hoops-v1",
+    "seed": 5,
+    "session": {
+      "status": "active",
+      "startedAtMs": 1000,
+      "submitDeadlineMs": 66000
+    },
+    "submission": {
+      "rulesetId": "street-hoops-v1",
+      "submittedAtMs": 66000,
+      "events": [
+        {
+          "tMs": 0,
+          "aimX": 202,
+          "power": 679
+        },
+        {
+          "tMs": 5000,
+          "aimX": 583,
+          "power": 686
+        },
+        {
+          "tMs": 10000,
+          "aimX": 52,
+          "power": 564
+        },
+        {
+          "tMs": 15000,
+          "aimX": -204,
+          "power": 388
+        },
+        {
+          "tMs": 20000,
+          "aimX": 635,
+          "power": 798
+        },
+        {
+          "tMs": 25000,
+          "aimX": 576,
+          "power": 658
+        },
+        {
+          "tMs": 30000,
+          "aimX": 179,
+          "power": 623
+        },
+        {
+          "tMs": 35000,
+          "aimX": 377,
+          "power": 422
+        },
+        {
+          "tMs": 40000,
+          "aimX": -645,
+          "power": 829
+        },
+        {
+          "tMs": 45000,
+          "aimX": 193,
+          "power": 440
+        },
+        {
+          "tMs": 50000,
+          "aimX": -56,
+          "power": 569
+        },
+        {
+          "tMs": 55000,
+          "aimX": 272,
+          "power": 571
+        }
+      ]
+    }
+  },
+  "expected": {
+    "outcome": "verified",
+    "score": 2650,
+    "eventCount": 12,
+    "maxStreak": 12,
+    "shots": [
+      {
+        "tMs": 0,
+        "targetX": 202,
+        "idealPower": 679,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 150,
+        "streak": 1
+      },
+      {
+        "tMs": 5000,
+        "targetX": 583,
+        "idealPower": 686,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 150,
+        "streak": 2
+      },
+      {
+        "tMs": 10000,
+        "targetX": 52,
+        "idealPower": 564,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 175,
+        "streak": 3
+      },
+      {
+        "tMs": 15000,
+        "targetX": -204,
+        "idealPower": 388,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 200,
+        "streak": 4
+      },
+      {
+        "tMs": 20000,
+        "targetX": 635,
+        "idealPower": 798,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 225,
+        "streak": 5
+      },
+      {
+        "tMs": 25000,
+        "targetX": 576,
+        "idealPower": 658,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 6
+      },
+      {
+        "tMs": 30000,
+        "targetX": 179,
+        "idealPower": 623,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 7
+      },
+      {
+        "tMs": 35000,
+        "targetX": 377,
+        "idealPower": 422,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 8
+      },
+      {
+        "tMs": 40000,
+        "targetX": -645,
+        "idealPower": 829,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 9
+      },
+      {
+        "tMs": 45000,
+        "targetX": 193,
+        "idealPower": 440,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 10
+      },
+      {
+        "tMs": 50000,
+        "targetX": -56,
+        "idealPower": 569,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 11
+      },
+      {
+        "tMs": 55000,
+        "targetX": 272,
+        "idealPower": 571,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 12
+      }
+    ]
+  }
+}

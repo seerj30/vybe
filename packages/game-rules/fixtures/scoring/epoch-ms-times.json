@@ -1,0 +1,566 @@
+{
+  "name": "epoch-ms-times",
+  "description": "Production-size epoch-millisecond times (above int32).",
+  "waypoints": [
+    {
+      "x": 337,
+      "p": 452
+    },
+    {
+      "x": 162,
+      "p": 812
+    },
+    {
+      "x": 413,
+      "p": 629
+    },
+    {
+      "x": -135,
+      "p": 491
+    },
+    {
+      "x": -528,
+      "p": 800
+    },
+    {
+      "x": -237,
+      "p": 487
+    },
+    {
+      "x": 539,
+      "p": 658
+    },
+    {
+      "x": 666,
+      "p": 570
+    },
+    {
+      "x": 438,
+      "p": 690
+    },
+    {
+      "x": -204,
+      "p": 863
+    },
+    {
+      "x": 22,
+      "p": 516
+    },
+    {
+      "x": 206,
+      "p": 552
+    },
+    {
+      "x": -95,
+      "p": 662
+    },
+    {
+      "x": -8,
+      "p": 304
+    },
+    {
+      "x": -361,
+      "p": 495
+    },
+    {
+      "x": -663,
+      "p": 370
+    }
+  ],
+  "input": {
+    "config": {
+      "streamId": 54,
+      "durationMs": 60000,
+      "graceMs": 5000,
+      "earlyToleranceMs": 2000,
+      "segmentMs": 4000,
+      "xMin": -700,
+      "xMax": 700,
+      "pMin": 300,
+      "pMax": 900,
+      "hitDx": 160,
+      "hitDp": 120,
+      "perfectDx": 50,
+      "perfectDp": 50,
+      "hitPoints": 100,
+      "perfectPoints": 150,
+      "streakStart": 3,
+      "streakStep": 25,
+      "streakMax": 100,
+      "minGapMs": 650,
+      "maxEvents": 93,
+      "minShotsForRewards": 5
+    },
+    "rulesetId": "street-hoops-v1",
+    "seed": 31,
+    "session": {
+      "status": "active",
+      "startedAtMs": 1760000000000,
+      "submitDeadlineMs": 1760000065000
+    },
+    "submission": {
+      "rulesetId": "street-hoops-v1",
+      "submittedAtMs": 1760000060500,
+      "events": [
+        {
+          "tMs": 0,
+          "aimX": 337,
+          "power": 452
+        },
+        {
+          "tMs": 2000,
+          "aimX": 250,
+          "power": 632
+        },
+        {
+          "tMs": 4000,
+          "aimX": 162,
+          "power": 812
+        },
+        {
+          "tMs": 6000,
+          "aimX": 287,
+          "power": 721
+        },
+        {
+          "tMs": 8000,
+          "aimX": 413,
+          "power": 629
+        },
+        {
+          "tMs": 10000,
+          "aimX": 139,
+          "power": 560
+        },
+        {
+          "tMs": 12000,
+          "aimX": -135,
+          "power": 491
+        },
+        {
+          "tMs": 14000,
+          "aimX": -331,
+          "power": 645
+        },
+        {
+          "tMs": 16000,
+          "aimX": -528,
+          "power": 800
+        },
+        {
+          "tMs": 18000,
+          "aimX": -383,
+          "power": 644
+        },
+        {
+          "tMs": 20000,
+          "aimX": -237,
+          "power": 487
+        },
+        {
+          "tMs": 22000,
+          "aimX": 151,
+          "power": 572
+        },
+        {
+          "tMs": 24000,
+          "aimX": 539,
+          "power": 658
+        },
+        {
+          "tMs": 26000,
+          "aimX": 602,
+          "power": 614
+        },
+        {
+          "tMs": 28000,
+          "aimX": 666,
+          "power": 570
+        },
+        {
+          "tMs": 30000,
+          "aimX": 552,
+          "power": 630
+        },
+        {
+          "tMs": 32000,
+          "aimX": 438,
+          "power": 690
+        },
+        {
+          "tMs": 34000,
+          "aimX": 117,
+          "power": 776
+        },
+        {
+          "tMs": 36000,
+          "aimX": -204,
+          "power": 863
+        },
+        {
+          "tMs": 38000,
+          "aimX": -91,
+          "power": 690
+        },
+        {
+          "tMs": 40000,
+          "aimX": 22,
+          "power": 516
+        },
+        {
+          "tMs": 42000,
+          "aimX": 114,
+          "power": 534
+        },
+        {
+          "tMs": 44000,
+          "aimX": 206,
+          "power": 552
+        },
+        {
+          "tMs": 46000,
+          "aimX": 56,
+          "power": 607
+        },
+        {
+          "tMs": 48000,
+          "aimX": -95,
+          "power": 662
+        },
+        {
+          "tMs": 50000,
+          "aimX": -52,
+          "power": 483
+        },
+        {
+          "tMs": 52000,
+          "aimX": -8,
+          "power": 304
+        },
+        {
+          "tMs": 54000,
+          "aimX": -184,
+          "power": 399
+        },
+        {
+          "tMs": 56000,
+          "aimX": -361,
+          "power": 495
+        },
+        {
+          "tMs": 58000,
+          "aimX": -512,
+          "power": 433
+        }
+      ]
+    }
+  },
+  "expected": {
+    "outcome": "verified",
+    "score": 7150,
+    "eventCount": 30,
+    "maxStreak": 30,
+    "shots": [
+      {
+        "tMs": 0,
+        "targetX": 337,
+        "idealPower": 452,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 150,
+        "streak": 1
+      },
+      {
+        "tMs": 2000,
+        "targetX": 250,
+        "idealPower": 632,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 150,
+        "streak": 2
+      },
+      {
+        "tMs": 4000,
+        "targetX": 162,
+        "idealPower": 812,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 175,
+        "streak": 3
+      },
+      {
+        "tMs": 6000,
+        "targetX": 287,
+        "idealPower": 721,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 200,
+        "streak": 4
+      },
+      {
+        "tMs": 8000,
+        "targetX": 413,
+        "idealPower": 629,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 225,
+        "streak": 5
+      },
+      {
+        "tMs": 10000,
+        "targetX": 139,
+        "idealPower": 560,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 6
+      },
+      {
+        "tMs": 12000,
+        "targetX": -135,
+        "idealPower": 491,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 7
+      },
+      {
+        "tMs": 14000,
+        "targetX": -331,
+        "idealPower": 645,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 8
+      },
+      {
+        "tMs": 16000,
+        "targetX": -528,
+        "idealPower": 800,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 9
+      },
+      {
+        "tMs": 18000,
+        "targetX": -383,
+        "idealPower": 644,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 10
+      },
+      {
+        "tMs": 20000,
+        "targetX": -237,
+        "idealPower": 487,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 11
+      },
+      {
+        "tMs": 22000,
+        "targetX": 151,
+        "idealPower": 572,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 12
+      },
+      {
+        "tMs": 24000,
+        "targetX": 539,
+        "idealPower": 658,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 13
+      },
+      {
+        "tMs": 26000,
+        "targetX": 602,
+        "idealPower": 614,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 14
+      },
+      {
+        "tMs": 28000,
+        "targetX": 666,
+        "idealPower": 570,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 15
+      },
+      {
+        "tMs": 30000,
+        "targetX": 552,
+        "idealPower": 630,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 16
+      },
+      {
+        "tMs": 32000,
+        "targetX": 438,
+        "idealPower": 690,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 17
+      },
+      {
+        "tMs": 34000,
+        "targetX": 117,
+        "idealPower": 776,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 18
+      },
+      {
+        "tMs": 36000,
+        "targetX": -204,
+        "idealPower": 863,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 19
+      },
+      {
+        "tMs": 38000,
+        "targetX": -91,
+        "idealPower": 690,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 20
+      },
+      {
+        "tMs": 40000,
+        "targetX": 22,
+        "idealPower": 516,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 21
+      },
+      {
+        "tMs": 42000,
+        "targetX": 114,
+        "idealPower": 534,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 22
+      },
+      {
+        "tMs": 44000,
+        "targetX": 206,
+        "idealPower": 552,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 23
+      },
+      {
+        "tMs": 46000,
+        "targetX": 56,
+        "idealPower": 607,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 24
+      },
+      {
+        "tMs": 48000,
+        "targetX": -95,
+        "idealPower": 662,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 25
+      },
+      {
+        "tMs": 50000,
+        "targetX": -52,
+        "idealPower": 483,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 26
+      },
+      {
+        "tMs": 52000,
+        "targetX": -8,
+        "idealPower": 304,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 27
+      },
+      {
+        "tMs": 54000,
+        "targetX": -184,
+        "idealPower": 399,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 28
+      },
+      {
+        "tMs": 56000,
+        "targetX": -361,
+        "idealPower": 495,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 29
+      },
+      {
+        "tMs": 58000,
+        "targetX": -512,
+        "idealPower": 433,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 250,
+        "streak": 30
+      }
+    ]
+  }
+}

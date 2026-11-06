@@ -1,0 +1,251 @@
+{
+  "name": "stream-id-max-uint32",
+  "description": "Same rules with streamId 4,294,967,295.",
+  "waypoints": [
+    {
+      "x": -302,
+      "p": 349
+    },
+    {
+      "x": -443,
+      "p": 482
+    },
+    {
+      "x": 177,
+      "p": 622
+    },
+    {
+      "x": 136,
+      "p": 643
+    },
+    {
+      "x": -474,
+      "p": 474
+    },
+    {
+      "x": -272,
+      "p": 576
+    },
+    {
+      "x": 115,
+      "p": 819
+    },
+    {
+      "x": -202,
+      "p": 503
+    },
+    {
+      "x": -116,
+      "p": 755
+    },
+    {
+      "x": 161,
+      "p": 383
+    },
+    {
+      "x": -256,
+      "p": 429
+    },
+    {
+      "x": 224,
+      "p": 892
+    },
+    {
+      "x": 181,
+      "p": 381
+    },
+    {
+      "x": -60,
+      "p": 375
+    },
+    {
+      "x": -202,
+      "p": 835
+    },
+    {
+      "x": 425,
+      "p": 769
+    }
+  ],
+  "input": {
+    "config": {
+      "streamId": 4294967295,
+      "durationMs": 60000,
+      "graceMs": 5000,
+      "earlyToleranceMs": 2000,
+      "segmentMs": 4000,
+      "xMin": -700,
+      "xMax": 700,
+      "pMin": 300,
+      "pMax": 900,
+      "hitDx": 160,
+      "hitDp": 120,
+      "perfectDx": 50,
+      "perfectDp": 50,
+      "hitPoints": 100,
+      "perfectPoints": 150,
+      "streakStart": 3,
+      "streakStep": 25,
+      "streakMax": 100,
+      "minGapMs": 650,
+      "maxEvents": 93,
+      "minShotsForRewards": 5
+    },
+    "rulesetId": "street-hoops-v1",
+    "seed": 12345,
+    "session": {
+      "status": "active",
+      "startedAtMs": 1000,
+      "submitDeadlineMs": 66000
+    },
+    "submission": {
+      "rulesetId": "street-hoops-v1",
+      "submittedAtMs": 61500,
+      "events": [
+        {
+          "tMs": 0,
+          "aimX": -302,
+          "power": 349
+        },
+        {
+          "tMs": 650,
+          "aimX": -294,
+          "power": 330
+        },
+        {
+          "tMs": 3999,
+          "aimX": -562,
+          "power": 481
+        },
+        {
+          "tMs": 7999,
+          "aimX": 176,
+          "power": 521
+        },
+        {
+          "tMs": 12000,
+          "aimX": 306,
+          "power": 643
+        },
+        {
+          "tMs": 31337,
+          "aimX": -131,
+          "power": 713
+        },
+        {
+          "tMs": 47999,
+          "aimX": 212,
+          "power": 342
+        },
+        {
+          "tMs": 52000,
+          "aimX": -180,
+          "power": 375
+        },
+        {
+          "tMs": 59999,
+          "aimX": 424,
+          "power": 670
+        }
+      ]
+    }
+  },
+  "expected": {
+    "outcome": "verified",
+    "score": 1150,
+    "eventCount": 9,
+    "maxStreak": 4,
+    "shots": [
+      {
+        "tMs": 0,
+        "targetX": -302,
+        "idealPower": 349,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 150,
+        "streak": 1
+      },
+      {
+        "tMs": 650,
+        "targetX": -324,
+        "idealPower": 370,
+        "dx": 30,
+        "dp": 40,
+        "result": "perfect",
+        "points": 150,
+        "streak": 2
+      },
+      {
+        "tMs": 3999,
+        "targetX": -442,
+        "idealPower": 481,
+        "dx": 120,
+        "dp": 0,
+        "result": "hit",
+        "points": 125,
+        "streak": 3
+      },
+      {
+        "tMs": 7999,
+        "targetX": 176,
+        "idealPower": 621,
+        "dx": 0,
+        "dp": 100,
+        "result": "hit",
+        "points": 150,
+        "streak": 4
+      },
+      {
+        "tMs": 12000,
+        "targetX": 136,
+        "idealPower": 643,
+        "dx": 170,
+        "dp": 0,
+        "result": "miss",
+        "points": 0,
+        "streak": 0
+      },
+      {
+        "tMs": 31337,
+        "targetX": -131,
+        "idealPower": 713,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 150,
+        "streak": 1
+      },
+      {
+        "tMs": 47999,
+        "targetX": 182,
+        "idealPower": 382,
+        "dx": 30,
+        "dp": 40,
+        "result": "perfect",
+        "points": 150,
+        "streak": 2
+      },
+      {
+        "tMs": 52000,
+        "targetX": -60,
+        "idealPower": 375,
+        "dx": 120,
+        "dp": 0,
+        "result": "hit",
+        "points": 125,
+        "streak": 3
+      },
+      {
+        "tMs": 59999,
+        "targetX": 424,
+        "idealPower": 770,
+        "dx": 0,
+        "dp": 100,
+        "result": "hit",
+        "points": 150,
+        "streak": 4
+      }
+    ]
+  }
+}

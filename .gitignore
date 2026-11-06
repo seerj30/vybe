@@ -1,0 +1,18 @@
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# .NET
+bin/
+obj/
+TestResults/
+*.user
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+
+# Secrets
+.env*.local

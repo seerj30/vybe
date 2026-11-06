@@ -1,0 +1,131 @@
+{
+  "name": "submit-early-boundary",
+  "description": "Submitted exactly at startedAt + maxT - earlyTolerance: verified.",
+  "waypoints": [
+    {
+      "x": 202,
+      "p": 679
+    },
+    {
+      "x": 574,
+      "p": 642
+    },
+    {
+      "x": 611,
+      "p": 819
+    },
+    {
+      "x": -508,
+      "p": 308
+    },
+    {
+      "x": -102,
+      "p": 415
+    },
+    {
+      "x": 635,
+      "p": 798
+    },
+    {
+      "x": 661,
+      "p": 667
+    },
+    {
+      "x": 320,
+      "p": 629
+    },
+    {
+      "x": 37,
+      "p": 617
+    },
+    {
+      "x": 491,
+      "p": 357
+    },
+    {
+      "x": -645,
+      "p": 829
+    },
+    {
+      "x": 106,
+      "p": 375
+    },
+    {
+      "x": 456,
+      "p": 637
+    },
+    {
+      "x": -569,
+      "p": 500
+    },
+    {
+      "x": 553,
+      "p": 595
+    },
+    {
+      "x": 692,
+      "p": 879
+    }
+  ],
+  "input": {
+    "config": {
+      "streamId": 54,
+      "durationMs": 60000,
+      "graceMs": 5000,
+      "earlyToleranceMs": 2000,
+      "segmentMs": 4000,
+      "xMin": -700,
+      "xMax": 700,
+      "pMin": 300,
+      "pMax": 900,
+      "hitDx": 160,
+      "hitDp": 120,
+      "perfectDx": 50,
+      "perfectDp": 50,
+      "hitPoints": 100,
+      "perfectPoints": 150,
+      "streakStart": 3,
+      "streakStep": 25,
+      "streakMax": 100,
+      "minGapMs": 650,
+      "maxEvents": 93,
+      "minShotsForRewards": 5
+    },
+    "rulesetId": "street-hoops-v1",
+    "seed": 5,
+    "session": {
+      "status": "active",
+      "startedAtMs": 1000,
+      "submitDeadlineMs": 66000
+    },
+    "submission": {
+      "rulesetId": "street-hoops-v1",
+      "submittedAtMs": 58800,
+      "events": [
+        {
+          "tMs": 59800,
+          "aimX": 685,
+          "power": 864
+        }
+      ]
+    }
+  },
+  "expected": {
+    "outcome": "verified",
+    "score": 150,
+    "eventCount": 1,
+    "maxStreak": 1,
+    "shots": [
+      {
+        "tMs": 59800,
+        "targetX": 685,
+        "idealPower": 864,
+        "dx": 0,
+        "dp": 0,
+        "result": "perfect",
+        "points": 150,
+        "streak": 1
+      }
+    ]
+  }
+}

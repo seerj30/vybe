@@ -1,0 +1,716 @@
+{
+  "name": "mixed-random-offsets",
+  "description": "40 shots every 1,400 ms with varied offsets.",
+  "waypoints": [
+    {
+      "x": 285,
+      "p": 652
+    },
+    {
+      "x": 334,
+      "p": 775
+    },
+    {
+      "x": -250,
+      "p": 402
+    },
+    {
+      "x": -406,
+      "p": 503
+    },
+    {
+      "x": 556,
+      "p": 332
+    },
+    {
+      "x": 210,
+      "p": 498
+    },
+    {
+      "x": 441,
+      "p": 755
+    },
+    {
+      "x": -289,
+      "p": 519
+    },
+    {
+      "x": 668,
+      "p": 700
+    },
+    {
+      "x": 591,
+      "p": 574
+    },
+    {
+      "x": -444,
+      "p": 810
+    },
+    {
+      "x": 206,
+      "p": 835
+    },
+    {
+      "x": -11,
+      "p": 689
+    },
+    {
+      "x": -167,
+      "p": 365
+    },
+    {
+      "x": -403,
+      "p": 832
+    },
+    {
+      "x": -307,
+      "p": 326
+    }
+  ],
+  "input": {
+    "config": {
+      "streamId": 54,
+      "durationMs": 60000,
+      "graceMs": 5000,
+      "earlyToleranceMs": 2000,
+      "segmentMs": 4000,
+      "xMin": -700,
+      "xMax": 700,
+      "pMin": 300,
+      "pMax": 900,
+      "hitDx": 160,
+      "hitDp": 120,
+      "perfectDx": 50,
+      "perfectDp": 50,
+      "hitPoints": 100,
+      "perfectPoints": 150,
+      "streakStart": 3,
+      "streakStep": 25,
+      "streakMax": 100,
+      "minGapMs": 650,
+      "maxEvents": 93,
+      "minShotsForRewards": 5
+    },
+    "rulesetId": "street-hoops-v1",
+    "seed": 99,
+    "session": {
+      "status": "active",
+      "startedAtMs": 1000,
+      "submitDeadlineMs": 66000
+    },
+    "submission": {
+      "rulesetId": "street-hoops-v1",
+      "submittedAtMs": 61500,
+      "events": [
+        {
+          "tMs": 0,
+          "aimX": 152,
+          "power": 527
+        },
+        {
+          "tMs": 1400,
+          "aimX": 332,
+          "power": 605
+        },
+        {
+          "tMs": 2800,
+          "aimX": 234,
+          "power": 686
+        },
+        {
+          "tMs": 4200,
+          "aimX": 167,
+          "power": 766
+        },
+        {
+          "tMs": 5600,
+          "aimX": 126,
+          "power": 720
+        },
+        {
+          "tMs": 7000,
+          "aimX": -197,
+          "power": 508
+        },
+        {
+          "tMs": 8400,
+          "aimX": -442,
+          "power": 382
+        },
+        {
+          "tMs": 9800,
+          "aimX": -271,
+          "power": 463
+        },
+        {
+          "tMs": 11200,
+          "aimX": -384,
+          "power": 378
+        },
+        {
+          "tMs": 12600,
+          "aimX": -398,
+          "power": 389
+        },
+        {
+          "tMs": 14000,
+          "aimX": 243,
+          "power": 400
+        },
+        {
+          "tMs": 15400,
+          "aimX": 303,
+          "power": 325
+        },
+        {
+          "tMs": 16800,
+          "aimX": 676,
+          "power": 390
+        },
+        {
+          "tMs": 18200,
+          "aimX": 551,
+          "power": 491
+        },
+        {
+          "tMs": 19600,
+          "aimX": 65,
+          "power": 497
+        },
+        {
+          "tMs": 21000,
+          "aimX": 79,
+          "power": 566
+        },
+        {
+          "tMs": 22400,
+          "aimX": 280,
+          "power": 748
+        },
+        {
+          "tMs": 23800,
+          "aimX": 537,
+          "power": 688
+        },
+        {
+          "tMs": 25200,
+          "aimX": 364,
+          "power": 599
+        },
+        {
+          "tMs": 26600,
+          "aimX": 151,
+          "power": 637
+        },
+        {
+          "tMs": 28000,
+          "aimX": -298,
+          "power": 377
+        },
+        {
+          "tMs": 29400,
+          "aimX": 33,
+          "power": 584
+        },
+        {
+          "tMs": 30800,
+          "aimX": 509,
+          "power": 525
+        },
+        {
+          "tMs": 32200,
+          "aimX": 682,
+          "power": 619
+        },
+        {
+          "tMs": 33600,
+          "aimX": 818,
+          "power": 502
+        },
+        {
+          "tMs": 35000,
+          "aimX": 677,
+          "power": 693
+        },
+        {
+          "tMs": 36400,
+          "aimX": 672,
+          "power": 670
+        },
+        {
+          "tMs": 37800,
+          "aimX": 56,
+          "power": 668
+        },
+        {
+          "tMs": 39200,
+          "aimX": -171,
+          "power": 622
+        },
+        {
+          "tMs": 40600,
+          "aimX": -386,
+          "power": 751
+        },
+        {
+          "tMs": 42000,
+          "aimX": -246,
+          "power": 732
+        },
+        {
+          "tMs": 43400,
+          "aimX": -17,
+          "power": 760
+        },
+        {
+          "tMs": 44800,
+          "aimX": -16,
+          "power": 833
+        },
+        {
+          "tMs": 46200,
+          "aimX": 69,
+          "power": 736
+        },
+        {
+          "tMs": 47600,
+          "aimX": -120,
+          "power": 702
+        },
+        {
+          "tMs": 49000,
+          "aimX": -206,
+          "power": 467
+        },
+        {
+          "tMs": 50400,
+          "aimX": -92,
+          "power": 382
+        },
+        {
+          "tMs": 51800,
+          "aimX": -350,
+          "power": 474
+        },
+        {
+          "tMs": 53200,
+          "aimX": -357,
+          "power": 462
+        },
+        {
+          "tMs": 54600,
+          "aimX": -477,
+          "power": 674
+        }
+      ]
+    }
+  },
+  "expected": {
+    "outcome": "verified",
+    "score": 2900,
+    "eventCount": 40,
+    "maxStreak": 5,
+    "shots": [
+      {
+        "tMs": 0,
+        "targetX": 285,
+        "idealPower": 652,
+        "dx": 133,
+        "dp": 125,
+        "result": "miss",
+        "points": 0,
+        "streak": 0
+      },
+      {
+        "tMs": 1400,
+        "targetX": 302,
+        "idealPower": 695,
+        "dx": 30,
+        "dp": 90,
+        "result": "hit",
+        "points": 100,
+        "streak": 1
+      },
+      {
+        "tMs": 2800,
+        "targetX": 319,
+        "idealPower": 738,
+        "dx": 85,
+        "dp": 52,
+        "result": "hit",
+        "points": 100,
+        "streak": 2
+      },
+      {
+        "tMs": 4200,
+        "targetX": 305,
+        "idealPower": 757,
+        "dx": 138,
+        "dp": 9,
+        "result": "hit",
+        "points": 125,
+        "streak": 3
+      },
+      {
+        "tMs": 5600,
+        "targetX": 101,
+        "idealPower": 626,
+        "dx": 25,
+        "dp": 94,
+        "result": "hit",
+        "points": 150,
+        "streak": 4
+      },
+      {
+        "tMs": 7000,
+        "targetX": -104,
+        "idealPower": 496,
+        "dx": 93,
+        "dp": 12,
+        "result": "hit",
+        "points": 175,
+        "streak": 5
+      },
+      {
+        "tMs": 8400,
+        "targetX": -265,
+        "idealPower": 412,
+        "dx": 177,
+        "dp": 30,
+        "result": "miss",
+        "points": 0,
+        "streak": 0
+      },
+      {
+        "tMs": 9800,
+        "targetX": -320,
+        "idealPower": 447,
+        "dx": 49,
+        "dp": 16,
+        "result": "perfect",
+        "points": 150,
+        "streak": 1
+      },
+      {
+        "tMs": 11200,
+        "targetX": -374,
+        "idealPower": 482,
+        "dx": 10,
+        "dp": 104,
+        "result": "hit",
+        "points": 100,
+        "streak": 2
+      },
+      {
+        "tMs": 12600,
+        "targetX": -262,
+        "idealPower": 478,
+        "dx": 136,
+        "dp": 89,
+        "result": "hit",
+        "points": 125,
+        "streak": 3
+      },
+      {
+        "tMs": 14000,
+        "targetX": 75,
+        "idealPower": 418,
+        "dx": 168,
+        "dp": 18,
+        "result": "miss",
+        "points": 0,
+        "streak": 0
+      },
+      {
+        "tMs": 15400,
+        "targetX": 411,
+        "idealPower": 358,
+        "dx": 108,
+        "dp": 33,
+        "result": "hit",
+        "points": 100,
+        "streak": 1
+      },
+      {
+        "tMs": 16800,
+        "targetX": 487,
+        "idealPower": 365,
+        "dx": 189,
+        "dp": 25,
+        "result": "miss",
+        "points": 0,
+        "streak": 0
+      },
+      {
+        "tMs": 18200,
+        "targetX": 366,
+        "idealPower": 423,
+        "dx": 185,
+        "dp": 68,
+        "result": "miss",
+        "points": 0,
+        "streak": 0
+      },
+      {
+        "tMs": 19600,
+        "targetX": 245,
+        "idealPower": 481,
+        "dx": 180,
+        "dp": 16,
+        "result": "miss",
+        "points": 0,
+        "streak": 0
+      },
+      {
+        "tMs": 21000,
+        "targetX": 267,
+        "idealPower": 562,
+        "dx": 188,
+        "dp": 4,
+        "result": "miss",
+        "points": 0,
+        "streak": 0
+      },
+      {
+        "tMs": 22400,
+        "targetX": 348,
+        "idealPower": 652,
+        "dx": 68,
+        "dp": 96,
+        "result": "hit",
+        "points": 100,
+        "streak": 1
+      },
+      {
+        "tMs": 23800,
+        "targetX": 429,
+        "idealPower": 742,
+        "dx": 108,
+        "dp": 54,
+        "result": "hit",
+        "points": 100,
+        "streak": 2
+      },
+      {
+        "tMs": 25200,
+        "targetX": 222,
+        "idealPower": 685,
+        "dx": 142,
+        "dp": 86,
+        "result": "hit",
+        "points": 125,
+        "streak": 3
+      },
+      {
+        "tMs": 26600,
+        "targetX": -33,
+        "idealPower": 602,
+        "dx": 184,
+        "dp": 35,
+        "result": "miss",
+        "points": 0,
+        "streak": 0
+      },
+      {
+        "tMs": 28000,
+        "targetX": -289,
+        "idealPower": 519,
+        "dx": 9,
+        "dp": 142,
+        "result": "miss",
+        "points": 0,
+        "streak": 0
+      },
+      {
+        "tMs": 29400,
+        "targetX": 45,
+        "idealPower": 582,
+        "dx": 12,
+        "dp": 2,
+        "result": "perfect",
+        "points": 150,
+        "streak": 1
+      },
+      {
+        "tMs": 30800,
+        "targetX": 380,
+        "idealPower": 645,
+        "dx": 129,
+        "dp": 120,
+        "result": "hit",
+        "points": 100,
+        "streak": 2
+      },
+      {
+        "tMs": 32200,
+        "targetX": 665,
+        "idealPower": 694,
+        "dx": 17,
+        "dp": 75,
+        "result": "hit",
+        "points": 125,
+        "streak": 3
+      },
+      {
+        "tMs": 33600,
+        "targetX": 638,
+        "idealPower": 650,
+        "dx": 180,
+        "dp": 148,
+        "result": "miss",
+        "points": 0,
+        "streak": 0
+      },
+      {
+        "tMs": 35000,
+        "targetX": 611,
+        "idealPower": 606,
+        "dx": 66,
+        "dp": 87,
+        "result": "hit",
+        "points": 100,
+        "streak": 1
+      },
+      {
+        "tMs": 36400,
+        "targetX": 488,
+        "idealPower": 597,
+        "dx": 184,
+        "dp": 73,
+        "result": "miss",
+        "points": 0,
+        "streak": 0
+      },
+      {
+        "tMs": 37800,
+        "targetX": 126,
+        "idealPower": 680,
+        "dx": 70,
+        "dp": 12,
+        "result": "hit",
+        "points": 100,
+        "streak": 1
+      },
+      {
+        "tMs": 39200,
+        "targetX": -237,
+        "idealPower": 762,
+        "dx": 66,
+        "dp": 140,
+        "result": "miss",
+        "points": 0,
+        "streak": 0
+      },
+      {
+        "tMs": 40600,
+        "targetX": -347,
+        "idealPower": 813,
+        "dx": 39,
+        "dp": 62,
+        "result": "hit",
+        "points": 100,
+        "streak": 1
+      },
+      {
+        "tMs": 42000,
+        "targetX": -119,
+        "idealPower": 822,
+        "dx": 127,
+        "dp": 90,
+        "result": "hit",
+        "points": 100,
+        "streak": 2
+      },
+      {
+        "tMs": 43400,
+        "targetX": 108,
+        "idealPower": 831,
+        "dx": 125,
+        "dp": 71,
+        "result": "hit",
+        "points": 125,
+        "streak": 3
+      },
+      {
+        "tMs": 44800,
+        "targetX": 163,
+        "idealPower": 806,
+        "dx": 179,
+        "dp": 27,
+        "result": "miss",
+        "points": 0,
+        "streak": 0
+      },
+      {
+        "tMs": 46200,
+        "targetX": 87,
+        "idealPower": 755,
+        "dx": 18,
+        "dp": 19,
+        "result": "perfect",
+        "points": 150,
+        "streak": 1
+      },
+      {
+        "tMs": 47600,
+        "targetX": 11,
+        "idealPower": 704,
+        "dx": 131,
+        "dp": 2,
+        "result": "hit",
+        "points": 100,
+        "streak": 2
+      },
+      {
+        "tMs": 49000,
+        "targetX": -50,
+        "idealPower": 608,
+        "dx": 156,
+        "dp": 141,
+        "result": "miss",
+        "points": 0,
+        "streak": 0
+      },
+      {
+        "tMs": 50400,
+        "targetX": -104,
+        "idealPower": 495,
+        "dx": 12,
+        "dp": 113,
+        "result": "hit",
+        "points": 100,
+        "streak": 1
+      },
+      {
+        "tMs": 51800,
+        "targetX": -159,
+        "idealPower": 382,
+        "dx": 191,
+        "dp": 92,
+        "result": "miss",
+        "points": 0,
+        "streak": 0
+      },
+      {
+        "tMs": 53200,
+        "targetX": -237,
+        "idealPower": 505,
+        "dx": 120,
+        "dp": 43,
+        "result": "hit",
+        "points": 100,
+        "streak": 1
+      },
+      {
+        "tMs": 54600,
+        "targetX": -320,
+        "idealPower": 668,
+        "dx": 157,
+        "dp": 6,
+        "result": "hit",
+        "points": 100,
+        "streak": 2
+      }
+    ]
+  }
+}

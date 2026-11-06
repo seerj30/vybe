@@ -1,0 +1,136 @@
+{
+  "name": "expired-status",
+  "description": "Session already expired: outcome expired.",
+  "waypoints": [
+    {
+      "x": -471,
+      "p": 759
+    },
+    {
+      "x": -483,
+      "p": 676
+    },
+    {
+      "x": 440,
+      "p": 748
+    },
+    {
+      "x": 423,
+      "p": 311
+    },
+    {
+      "x": -547,
+      "p": 306
+    },
+    {
+      "x": 647,
+      "p": 645
+    },
+    {
+      "x": -485,
+      "p": 442
+    },
+    {
+      "x": 287,
+      "p": 482
+    },
+    {
+      "x": -129,
+      "p": 352
+    },
+    {
+      "x": 394,
+      "p": 392
+    },
+    {
+      "x": -303,
+      "p": 672
+    },
+    {
+      "x": 59,
+      "p": 712
+    },
+    {
+      "x": 580,
+      "p": 834
+    },
+    {
+      "x": 287,
+      "p": 601
+    },
+    {
+      "x": 360,
+      "p": 417
+    },
+    {
+      "x": -637,
+      "p": 872
+    }
+  ],
+  "input": {
+    "config": {
+      "streamId": 54,
+      "durationMs": 60000,
+      "graceMs": 5000,
+      "earlyToleranceMs": 2000,
+      "segmentMs": 4000,
+      "xMin": -700,
+      "xMax": 700,
+      "pMin": 300,
+      "pMax": 900,
+      "hitDx": 160,
+      "hitDp": 120,
+      "perfectDx": 50,
+      "perfectDp": 50,
+      "hitPoints": 100,
+      "perfectPoints": 150,
+      "streakStart": 3,
+      "streakStep": 25,
+      "streakMax": 100,
+      "minGapMs": 650,
+      "maxEvents": 93,
+      "minShotsForRewards": 5
+    },
+    "rulesetId": "street-hoops-v1",
+    "seed": 12345,
+    "session": {
+      "status": "expired",
+      "startedAtMs": 1000,
+      "submitDeadlineMs": 66000
+    },
+    "submission": {
+      "rulesetId": "street-hoops-v1",
+      "submittedAtMs": 61500,
+      "events": [
+        {
+          "tMs": 0,
+          "aimX": -471,
+          "power": 759
+        },
+        {
+          "tMs": 1000,
+          "aimX": -474,
+          "power": 739
+        },
+        {
+          "tMs": 2000,
+          "aimX": -477,
+          "power": 718
+        },
+        {
+          "tMs": 3000,
+          "aimX": -480,
+          "power": 697
+        },
+        {
+          "tMs": 4000,
+          "aimX": -483,
+          "power": 676
+        }
+      ]
+    }
+  },
+  "expected": {
+    "outcome": "expired"
+  }
+}

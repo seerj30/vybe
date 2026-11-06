@@ -1,0 +1,582 @@
+{
+  "name": "too-many-events",
+  "description": "94 events (600 ms gap): too_many_events before cadence.",
+  "waypoints": [
+    {
+      "x": -471,
+      "p": 759
+    },
+    {
+      "x": -483,
+      "p": 676
+    },
+    {
+      "x": 440,
+      "p": 748
+    },
+    {
+      "x": 423,
+      "p": 311
+    },
+    {
+      "x": -547,
+      "p": 306
+    },
+    {
+      "x": 647,
+      "p": 645
+    },
+    {
+      "x": -485,
+      "p": 442
+    },
+    {
+      "x": 287,
+      "p": 482
+    },
+    {
+      "x": -129,
+      "p": 352
+    },
+    {
+      "x": 394,
+      "p": 392
+    },
+    {
+      "x": -303,
+      "p": 672
+    },
+    {
+      "x": 59,
+      "p": 712
+    },
+    {
+      "x": 580,
+      "p": 834
+    },
+    {
+      "x": 287,
+      "p": 601
+    },
+    {
+      "x": 360,
+      "p": 417
+    },
+    {
+      "x": -637,
+      "p": 872
+    }
+  ],
+  "input": {
+    "config": {
+      "streamId": 54,
+      "durationMs": 60000,
+      "graceMs": 5000,
+      "earlyToleranceMs": 2000,
+      "segmentMs": 4000,
+      "xMin": -700,
+      "xMax": 700,
+      "pMin": 300,
+      "pMax": 900,
+      "hitDx": 160,
+      "hitDp": 120,
+      "perfectDx": 50,
+      "perfectDp": 50,
+      "hitPoints": 100,
+      "perfectPoints": 150,
+      "streakStart": 3,
+      "streakStep": 25,
+      "streakMax": 100,
+      "minGapMs": 650,
+      "maxEvents": 93,
+      "minShotsForRewards": 5
+    },
+    "rulesetId": "street-hoops-v1",
+    "seed": 12345,
+    "session": {
+      "status": "active",
+      "startedAtMs": 1000,
+      "submitDeadlineMs": 66000
+    },
+    "submission": {
+      "rulesetId": "street-hoops-v1",
+      "submittedAtMs": 61500,
+      "events": [
+        {
+          "tMs": 0,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 600,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 1200,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 1800,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 2400,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 3000,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 3600,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 4200,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 4800,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 5400,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 6000,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 6600,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 7200,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 7800,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 8400,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 9000,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 9600,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 10200,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 10800,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 11400,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 12000,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 12600,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 13200,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 13800,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 14400,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 15000,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 15600,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 16200,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 16800,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 17400,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 18000,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 18600,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 19200,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 19800,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 20400,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 21000,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 21600,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 22200,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 22800,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 23400,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 24000,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 24600,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 25200,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 25800,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 26400,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 27000,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 27600,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 28200,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 28800,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 29400,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 30000,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 30600,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 31200,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 31800,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 32400,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 33000,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 33600,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 34200,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 34800,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 35400,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 36000,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 36600,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 37200,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 37800,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 38400,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 39000,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 39600,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 40200,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 40800,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 41400,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 42000,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 42600,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 43200,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 43800,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 44400,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 45000,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 45600,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 46200,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 46800,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 47400,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 48000,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 48600,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 49200,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 49800,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 50400,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 51000,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 51600,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 52200,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 52800,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 53400,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 54000,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 54600,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 55200,
+          "aimX": 0,
+          "power": 500
+        },
+        {
+          "tMs": 55800,
+          "aimX": 0,
+          "power": 500
+        }
+      ]
+    }
+  },
+  "expected": {
+    "outcome": "rejected",
+    "reason": "too_many_events"
+  }
+}
