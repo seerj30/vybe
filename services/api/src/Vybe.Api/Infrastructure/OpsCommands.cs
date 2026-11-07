@@ -9,22 +9,48 @@ namespace Vybe.Api.Infrastructure;
 /// Deploy steps that run as their own process, never at API start-up:
 /// <c>migrate</c> applies the EF Core migrations; <c>seed</c> loads rulesets, catalog and quests
 /// (idempotent). Both use <c>ConnectionStrings:Migrations</c> (a direct or session-mode connection with the
-/// owner role), else <c>ConnectionStrings:Vybe</c>. Usage: <c>dotnet Vybe.Api.dll migrate|seed</c>.
+/// owner role), else <c>ConnectionStrings:Vybe</c>. <c>replay-deletions</c> runs after a database restore and
+/// before the API takes traffic: it applies the deletion log again (<see cref="DeletionReplay"/>) with the
+/// API's own settings. Usage: <c>dotnet Vybe.Api.dll migrate|seed|replay-deletions</c>.
 /// </summary>
 public static partial class OpsCommands
 {
     public const string Migrate = "migrate";
     public const string Seed = "seed";
+    public const string ReplayDeletions = "replay-deletions";
 
-    public static bool IsCommand(string[] args) => args is [Migrate or Seed, ..];
+    public static bool IsCommand(string[] args) => args is [Migrate or Seed or ReplayDeletions, ..];
 
     /// <summary>Entry point from <c>Program</c>: the same configuration sources as the API (appsettings, environment, arguments).</summary>
     public static async Task<int> RunAsync(string[] args)
     {
         ArgumentNullException.ThrowIfNull(args);
-        var builder = WebApplication.CreateBuilder(args[1..]);
-        builder.AddVybeLogging();
-        await using var app = builder.Build();
+        WebApplication app;
+        WebApplicationBuilder builder;
+        var replay = args[0] == ReplayDeletions;
+        try
+        {
+            builder = WebApplication.CreateBuilder(args[1..]);
+            if (replay)
+            {
+                // The full API services (privacy processor, export storage, deletion log); the host never starts.
+                builder.Services.AddVybeApi(builder.Configuration, builder.Environment);
+                builder.AddVybeOperations();
+            }
+            else
+            {
+                builder.AddVybeLogging();
+            }
+
+            app = builder.Build();
+        }
+        catch (Exception exception) when (exception is not HostAbortedException)
+        {
+            await Console.Error.WriteLineAsync($"The {args[0]} command could not start: {exception.Message}");
+            return 1;
+        }
+
+        await using var disposeApp = app;
         var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(OpsCommands));
         using var stop = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) =>
@@ -35,6 +61,14 @@ public static partial class OpsCommands
 
         try
         {
+            if (replay)
+            {
+                _ = app.Services.GetService<IDeletionLog>()
+                    ?? throw new InvalidOperationException($"{S3ExportStorageOptions.Section} is not configured: the deletion log is in the export bucket");
+                var result = await app.Services.GetRequiredService<DeletionReplay>().RunAsync(stop.Token);
+                return result.StillQueued == 0 ? 0 : 1;
+            }
+
             await RunAsync(args[0], builder.Configuration, logger, stop.Token);
             return 0;
         }

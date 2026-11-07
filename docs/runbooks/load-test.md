@@ -35,6 +35,10 @@ Thresholds (the run fails when one is not met):
 
 Challenge acceptance is not in the script yet (it needs two players and an invite link per iteration).
 
+The script imports nothing from the network (only k6 built-in modules). `BASE_URL` must have the form
+`http(s)://host[:port][/path]`; a URL with user info (`http://localhost@other.example`), a query or a fragment
+is refused.
+
 ## Run it locally
 
 1. Start the stack with a high guest limit (the load test creates many guests from one address):

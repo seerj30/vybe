@@ -84,6 +84,12 @@ public sealed class S3ExportStorage : IExportStorage, IDisposable
 
         _options = options;
         _clock = clock;
+        _client = CreateClient(options, out _protocol);
+    }
+
+    /// <summary>A client for any S3-compatible store; also used by <see cref="S3DeletionLog"/>.</summary>
+    internal static AmazonS3Client CreateClient(S3ExportStorageOptions options, out Protocol protocol)
+    {
         var config = new AmazonS3Config
         {
             ForcePathStyle = options.ForcePathStyle,
@@ -96,15 +102,15 @@ public sealed class S3ExportStorage : IExportStorage, IDisposable
         if (string.IsNullOrEmpty(options.ServiceUrl))
         {
             config.RegionEndpoint = Amazon.RegionEndpoint.GetBySystemName(options.Region);
-            _protocol = Protocol.HTTPS;
+            protocol = Protocol.HTTPS;
         }
         else
         {
             config.ServiceURL = options.ServiceUrl;
-            _protocol = new Uri(options.ServiceUrl).Scheme == Uri.UriSchemeHttp ? Protocol.HTTP : Protocol.HTTPS;
+            protocol = new Uri(options.ServiceUrl).Scheme == Uri.UriSchemeHttp ? Protocol.HTTP : Protocol.HTTPS;
         }
 
-        _client = string.IsNullOrEmpty(options.AccessKeyId)
+        return string.IsNullOrEmpty(options.AccessKeyId)
             ? new AmazonS3Client(config)
             : new AmazonS3Client(new BasicAWSCredentials(options.AccessKeyId, options.SecretAccessKey), config);
     }
