@@ -23,7 +23,8 @@ public sealed class OpsRetryTests(OpsRetryApiFactory api) : IClassFixture<OpsRet
     {
         var player = await Player.CreateGuestAsync(api);
         var catalog = await player.Http.GetFromJsonAsync<System.Text.Json.JsonElement>("/api/v1/catalog/items");
-        // A priced item that a level 1 guest may buy (the catalog order is not fixed; level_too_low would come first).
+        // A priced item that a new player may buy: the catalog is ordered by UUIDv7 id, so the first priced
+        // item can need a higher level (403 level_too_low) depending on the seed order.
         var itemId = catalog.GetProperty("items").EnumerateArray()
             .First(i => i.GetProperty("price").GetInt64() > 0 && i.GetProperty("minLevel").GetInt32() <= 1)
             .GetProperty("id").GetGuid();
