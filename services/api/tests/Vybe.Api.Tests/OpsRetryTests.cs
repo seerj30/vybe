@@ -23,7 +23,10 @@ public sealed class OpsRetryTests(OpsRetryApiFactory api) : IClassFixture<OpsRet
     {
         var player = await Player.CreateGuestAsync(api);
         var catalog = await player.Http.GetFromJsonAsync<System.Text.Json.JsonElement>("/api/v1/catalog/items");
-        var itemId = catalog.GetProperty("items").EnumerateArray().First(i => i.GetProperty("price").GetInt64() > 0).GetProperty("id").GetGuid();
+        // A priced item that a level 1 guest may buy (the catalog order is not fixed; level_too_low would come first).
+        var itemId = catalog.GetProperty("items").EnumerateArray()
+            .First(i => i.GetProperty("price").GetInt64() > 0 && i.GetProperty("minLevel").GetInt32() <= 1)
+            .GetProperty("id").GetGuid();
         var key = Guid.NewGuid();
         api.Clock.Advance(TimeSpan.FromMinutes(1)); // a new window for this player
         Assert.NotEqual(HttpStatusCode.TooManyRequests, (await player.PurchaseAsync(itemId)).StatusCode); // uses the window's write
