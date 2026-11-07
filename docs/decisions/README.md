@@ -63,7 +63,7 @@ Fill one row per decision. A decision without a signed row is still open.
 
 | # | Option chosen | Changes to the recommendation | Signed by | Date |
 |---|---|---|---|---|
-| 1 | A — adults only (18+ or local age of majority), neutral age gate before guest creation; teen access later as a separate project | none | product owner (Sergiu Molnar); counsel and DPO: country list and gate wording pending | 2026-11-07 |
+| 1 | A — adults only (18+ or local age of majority), neutral age gate before guest creation; teen access later as a separate project | gate asks birth month and year (a year alone admits some 17-year-olds); runs before any Supabase sign-up | product owner (Sergiu Molnar); counsel and DPO: country list and gate wording pending | 2026-11-07 |
 | 2 | C — sliding 30 days of inactivity, absolute cap 90 days; no support transfer of guest progress | none | product owner (Sergiu Molnar); engineering lead | 2026-11-07 |
 | 3 | A — contractor or studio under work-for-hire, one in-house pipeline owner; licensed packs only for neutral props; no AI-generated items | none (proposed style brief accepted as the starting brief) | product owner (Sergiu Molnar); art lead and counsel (contract) pending | 2026-11-07 |
 | 4 | Keep v1 gameplay values and deadlines; low-effort fix D (full-length run for reward eligibility and score ≥ 500 for base coins); build `review_flags` with the starting thresholds | none | product owner (Sergiu Molnar); engineering lead | 2026-11-07 |
