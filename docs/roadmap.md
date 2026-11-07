@@ -37,7 +37,7 @@ branch and opens PRs. The orchestrator session reviews, tests and merges them.
 | Security review | Independent reviews of streams A, B, D, G, H; all findings fixed (#17, #23, #29, #30, #31) |
 | Telemetry, backup/restore, incident runbook | Merged (stream D, `docs/runbooks/`, ADR 0006) |
 | Privacy policy and age policy | Signed 2026-11-07 (decisions 1, 6, 8; spec v1.4). Code: stream J. Open: counsel country list and final notice |
-| Hosting, deployment, production secrets | Signed 2026-11-07 (decision 7: Supabase Pro + always-on container). Open: container host provider, region, accounts and secrets (people), then deploy with `docs/runbooks/deploy-and-rollback.md` |
+| Hosting, deployment, production secrets | Signed 2026-11-07 (decision 7: Supabase Pro + always-on container). Container host: Fly.io (stream K prepares the config). Open: region, accounts and secrets (people), then deploy with `docs/runbooks/deploy-and-rollback.md` |
 | 3D avatar art | Signed 2026-11-07 (decision 3: contractor work-for-hire). Open: contract and production (people); the 2D fallback is in use |
 | Low-effort run fix, review flags, catalog prices (decisions 4, 5) | Signed 2026-11-07. Code: stream I |
 | Guest lifetime, age gate, profile visibility, Auth user deletion (decisions 1, 2, 6, 8) | Signed 2026-11-07. Code: stream J |
