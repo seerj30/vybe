@@ -55,15 +55,19 @@ depend on them.
 
 ## Sign-off record
 
+Product sign-off of all eight recommendations: 2026-11-07. Items marked "pending" still need the named
+reviewer: the counsel-approved country list (decision 1) and the draft privacy notice (decision 8) before the
+closed beta; the rest before public launch.
+
 Fill one row per decision. A decision without a signed row is still open.
 
 | # | Option chosen | Changes to the recommendation | Signed by | Date |
 |---|---|---|---|---|
-| 1 | | | | |
-| 2 | | | | |
-| 3 | | | | |
-| 4 | | | | |
-| 5 | | | | |
-| 6 | | | | |
-| 7 | | | | |
-| 8 | | | | |
+| 1 | A — adults only (18+ or local age of majority), neutral age gate before guest creation; teen access later as a separate project | none | product owner (Sergiu Molnar); counsel and DPO: country list and gate wording pending | 2026-11-07 |
+| 2 | C — sliding 30 days of inactivity, absolute cap 90 days; no support transfer of guest progress | none | product owner (Sergiu Molnar); engineering lead | 2026-11-07 |
+| 3 | A — contractor or studio under work-for-hire, one in-house pipeline owner; licensed packs only for neutral props; no AI-generated items | none (proposed style brief accepted as the starting brief) | product owner (Sergiu Molnar); art lead and counsel (contract) pending | 2026-11-07 |
+| 4 | Keep v1 gameplay values and deadlines; low-effort fix D (full-length run for reward eligibility and score ≥ 500 for base coins); build `review_flags` with the starting thresholds | none | product owner (Sergiu Molnar); engineering lead | 2026-11-07 |
+| 5 | A + C — keep earn formulas; reprice and grow the catalog (common 300–800, rare 1,500–3,000, epic 6,000–10,000; ≥ 30 items at beta); low-effort fix of decision 4; review after 2 weeks of beta data | none | product owner (Sergiu Molnar) | 2026-11-07 |
+| 6 | B — signed-in players (guest or registered) only by default; "private" toggle in `/settings`; `noindex` and `no-store` on profile responses | none | product owner (Sergiu Molnar); counsel pending | 2026-11-07 |
+| 7 | A — Supabase Pro + one always-on API container in the same region, same-origin `/api` behind a CDN; beta ceiling USD 150/month; on-call model 2 (named primary and backup, business hours) | provider of the container host and the region still to choose | product owner (Sergiu Molnar); engineering lead | 2026-11-07 |
+| 8 | Ledger A (pseudonymized ledger kept without a time limit, if counsel accepts; else B); retention table as the draft; support A (email and web form, 3 business days); conservative wording | none | product owner (Sergiu Molnar); counsel and DPO: final wording pending | 2026-11-07 |

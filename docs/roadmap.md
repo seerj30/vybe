@@ -36,9 +36,11 @@ branch and opens PRs. The orchestrator session reviews, tests and merges them.
 | Load review | Local 5-minute k6 run passed (`docs/runbooks/load-test.md`); repeat on the chosen hosting |
 | Security review | Independent reviews of streams A, B, D, G, H; all findings fixed (#17, #23, #29, #30, #31) |
 | Telemetry, backup/restore, incident runbook | Merged (stream D, `docs/runbooks/`, ADR 0006) |
-| Privacy policy and age policy | Open: needs sign-off of `docs/decisions/` 1, 6, 8 (human decision) |
-| Hosting, deployment, production secrets | Open: needs sign-off of decision 7; then deploy with `docs/runbooks/deploy-and-rollback.md` |
-| 3D avatar art | Open: needs sign-off of decision 3; the 2D fallback is in use |
+| Privacy policy and age policy | Signed 2026-11-07 (decisions 1, 6, 8; spec v1.4). Code: stream J. Open: counsel country list and final notice |
+| Hosting, deployment, production secrets | Signed 2026-11-07 (decision 7: Supabase Pro + always-on container). Open: container host provider, region, accounts and secrets (people), then deploy with `docs/runbooks/deploy-and-rollback.md` |
+| 3D avatar art | Signed 2026-11-07 (decision 3: contractor work-for-hire). Open: contract and production (people); the 2D fallback is in use |
+| Low-effort run fix, review flags, catalog prices (decisions 4, 5) | Signed 2026-11-07. Code: stream I |
+| Guest lifetime, age gate, profile visibility, Auth user deletion (decisions 1, 2, 6, 8) | Signed 2026-11-07. Code: stream J |
 
 ## Streams
 
@@ -51,6 +53,8 @@ branch and opens PRs. The orchestrator session reviews, tests and merges them.
 | **E. Sign-off pack** | Options and recommendations for every §17 decision (age policy, guest lifetime, art, tuning, economy, profile visibility, hosting, legal wording) | `docs/decisions/` | — | merged; waiting for sign-off (record in `docs/decisions/README.md`) |
 | **G. Web social** | `/challenges`, `/challenge/:token`, daily quests on `/hub`, `/profile/:handle` (challenge, report, block), saved outfits in `/wardrobe`; browser E2E | `apps/web/src/app/{challenges,quests,profiles,outfits}/`, `pages/{challenges,invite,profile,hub,wardrobe}.ts`, `api/social-api.ts`, small hooks in `street-hoops/`, its specs | E04, E07, quest claim in a browser | merged (review fixes in #29) |
 | **H. Web account** | Supabase sign-in, J3 linking, `/settings` (blocks, export, deletion), deletion status, `/admin`; fake Supabase Auth for E2E | `apps/web/src/app/{auth,settings,admin}/`, `pages/{landing,settings,admin,deletion-status}.ts`, `api/account-api.ts`, bearer hook in `api-client.ts`, `tests/e2e/fake-auth/`, its specs and config lines | E03, E08, E12 in a browser | merged (two security reviews, fixes in #30) |
+| **I. Rewards and economy (decisions 4, 5)** | `minRunMsForRewards` and score floor for coins (TS + C# simulator config, fixtures, checksum, contract, API check), `review_flags` writer, catalog repricing, web messages | `packages/game-rules`, `services/api/src/Vybe.GameRules`, `Features/{Rewards,RewardService,GameplayEndpoints}*`, `assets/manifests/catalog.v1.json`, `apps/web/src/app/street-hoops/` | reward and parity tests, E2E gameplay | in progress |
+| **J. Account policies (decisions 1, 2, 6, 8)** | Age gate before guest creation, sliding guest lifetime and cleanup, `guestExpiresAt`, profile visibility and private toggle, J4 deletes the Supabase Auth user | `Infrastructure/Authentication.cs`, `Features/{IdentityEndpoints,Profile,Privacy}*`, `Jobs/` (guest cleanup), `Vybe.Data` (migration), web landing/onboarding/hub/settings | E01, E03, E12, profile tests | in progress |
 | **F. API extras from PR #7** | IPv6 /64 rate-limit grouping; midnight and multi-level reward tests | `ServiceSetup.cs` (rate limiter only), `tests/Vybe.Api.Tests` | — | merged |
 
 ## Rules for every stream

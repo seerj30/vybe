@@ -1,6 +1,6 @@
-# VYBE — Product, Game & Technical Specification v1.3
+# VYBE — Product, Game & Technical Specification v1.4
 
-**Status:** implementation baseline / proposed decisions, not deployed or tested. v1.1, v1.2 and v1.3 close the gaps found in the v1.0, v1.1 and v1.2 reviews; see §18 Changelog. Values marked *provisional* need prototype validation (§17 item 4).  
+**Status:** implementation baseline / proposed decisions, not deployed or tested. v1.1, v1.2 and v1.3 close the gaps found in the v1.0, v1.1 and v1.2 reviews; v1.4 applies the signed §17 decisions; see §18 Changelog. Values marked *provisional* need prototype validation (§17 item 4).  
 **Product:** browser-based social arcade with customizable 3D cartoon avatars.  
 **MVP:** guest onboarding, avatar, Street Hoops, virtual currency, shop, wardrobe, asynchronous challenges, account linking, daily quests, public profile, minimal moderation and admin.  
 **Deferred:** live multiplayer, open world, chat, player trading, paid currency, My Room, second mini-game.
@@ -475,16 +475,20 @@ Test data created per run, isolated and deterministic; no production accounts. V
 
 **P2:** real-time spaces, chat (only with comprehensive moderation), trading (only after economic abuse controls), monetization (requires separate legal/design review).
 
-## 17. Open decisions requiring sign-off
+## 17. Decisions requiring sign-off
 
-1. Final age eligibility, minors handling and countries supported.
-2. Whether guest sessions survive 30 or 90 days; account recovery limitations.
-3. Exact 3D art direction, licensing and asset production ownership.
-4. Street Hoops feel/physics tuning after a playable prototype; deterministic ruleset values in §7 (units, all `config` values incl. `minShotsForRewards` and `earlyToleranceMs`) and anti-automation thresholds are provisional. Also provisional: session `start_deadline` 10 min, quest claim window 7 days, report rate limit 10/day.
-5. Currency earning/spending balance after beta telemetry.
-6. Whether public profiles default public or restricted, and privacy controls.
-7. Hosting budget, target concurrency and on-call ownership.
-8. Final support/retention/deletion legal wording.
+Product sign-off on 2026-11-07 (record and reasons: `docs/decisions/`). v1.4 (§18) applies them. Open items stay listed.
+
+| # | Decision | Signed option | Still open |
+|---|---|---|---|
+| 1 | Age eligibility, minors, countries | Adults only (18+ or local age of majority), neutral age gate before guest creation | Country list and gate wording (counsel, DPO) |
+| 2 | Guest lifetime, recovery | Sliding 30 days of inactivity, cap 90 days; no support transfer | — |
+| 3 | 3D art direction, licensing, ownership | Contractor or studio under work-for-hire; one in-house pipeline owner | Contract (counsel); final style guide (art lead) |
+| 4 | Street Hoops tuning, thresholds | v1 gameplay values and deadlines kept; full-length run and score floor for rewards; `review_flags` starting thresholds | Re-tune after 2 weeks of beta data |
+| 5 | Economy balance | Earn formulas kept; catalog repriced and grown (≥ 30 items at beta) | Review after 2 weeks of beta data |
+| 6 | Profile visibility | Signed-in players only by default; "private" toggle | Counsel review |
+| 7 | Hosting, concurrency, on-call | Supabase Pro + one always-on API container, same region, same-origin `/api`; USD 150/month beta ceiling; named primary and backup on-call | Container host provider and region; on-call names |
+| 8 | Support, retention, deletion wording | Pseudonymized ledger kept (if counsel accepts); retention draft; email support (3 business days) | Final notice and terms (counsel, DPO) |
 
 **Definition of Done:** documented acceptance criteria; schema migration; authorization and validation; success/error/retry states; unit+integration tests; E2E for critical path; telemetry; accessibility and device checks; security review; rollout and rollback instructions.
 
@@ -569,6 +573,17 @@ Test data created per run, isolated and deterministic; no production accounts. V
 6. **§4 checks:** `handle_normalized = handle`; ledger key shape per reason; `equipped_json` shape.
 7. **§2 J4:** player deletion is anonymization with a `d_` pseudonym handle (prefix reserved).
 8. **§4 second schema review:** no FK on `challenges.winner_player_id` (deadlock); player locks use `FOR NO KEY UPDATE`; idempotency lease only while `in_progress` and a fenced completion; composite FKs tie challenge runs to their player, ruleset and challenge, and purchase grants to the buyer's ledger row for that item; a recipient run cannot create a challenge; derived-field CHECKs (`reward_day`, `auth_subject` by kind, `deleted_at`, export status fields); audit-log retention deletes only rows older than 90 days; the finished-session guard protects a fixed column list.
+
+### v1.4 (2026-11-07) — signed §17 decisions
+
+1. **§2 J1, §11 age (decision 1):** VYBE is for adults (18+ or the local age of majority). A neutral age gate (self-declared birth year, no hint of the accepted answer) comes before `POST /guests`. An under-age answer creates no player and no cookie. The API stores only the gate result (`age_confirmed_at`, policy version, self-declared band), never the birth date. Linking (J3) keeps the result. Countries: the counsel-approved list only.
+2. **§2 J1, §4 `guest_sessions` (decision 2):** a guest session expires 30 days after its last use, renewed at most once per UTC day, and never later than 90 days after the guest player was created. `GET /me` returns `guestExpiresAt` for guests. The hub shows a link prompt when fewer than 14 days remain. A guest player whose last guest session expired 30 days ago is anonymized like J4. Support never transfers guest progress.
+3. **§9 art (decision 3):** catalog items, bodies and emotes come from one contractor or studio under work-for-hire with full rights assignment; licensed packs only for neutral props with a license record; no AI-generated catalog items without counsel's written view. The team owns the manifest pipeline.
+4. **§7 rewards (decision 4):** new ruleset config `minRunMsForRewards` (v1: `durationMs − earlyToleranceMs` = 58000). A run is reward-eligible only when it also has `submittedAt − startedAt ≥ minRunMsForRewards`; a shorter verified run gets 0 coins, 0 XP, no quest progress and no challenge eligibility. Base coins need `score ≥ 500` (`minScoreForCoins`). Other v1 values, `start_deadline` 10 min, quest claim window 7 days and report limit 10/day stay. The server writes `review_flags` with the starting thresholds of decision 4 (flags only, no automatic action).
+5. **§8 economy (decision 5):** earn formulas unchanged. Price bands: common 300–800, rare 1,500–3,000, epic 6,000–10,000; at least 30 priced items at beta. No time-limited items in MVP.
+6. **§3, §5 profiles (decision 6):** `GET /profiles/{handle}` answers only signed-in callers (guest or registered); anonymous callers get the same 404 as an unknown handle. A player can set the profile to "private" in `/settings`; a private profile answers 404 to everybody except its owner. Profile responses carry `X-Robots-Tag: noindex` and `Cache-Control: private, no-store`.
+7. **§13 hosting (decision 7):** Supabase Pro (PostgreSQL + Auth) and one always-on API container in the same region (a second instance before the social beta), API through the transaction pooler, `/api` and the web app on one origin behind a CDN; beta budget ceiling USD 150 per month; named primary and backup on-call in business hours.
+8. **§2 J4, §11 retention (decision 8):** the pseudonymized ledger stays without a time limit if counsel accepts it (otherwise a fixed period). J4 also deletes the Supabase Auth user. Support: email and web form, response target 3 business days. Notices say "anonymize", state the backup window and never promise immediate total erasure.
 
 ---
 
