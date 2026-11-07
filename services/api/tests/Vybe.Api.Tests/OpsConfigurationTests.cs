@@ -54,12 +54,37 @@ public sealed class OpsConfigurationTests
     [InlineData("Auth:Supabase:MetadataAddress", "http://ref.supabase.co/auth/v1/.well-known/openid-configuration")]
     [InlineData("Auth:Supabase:Issuer", "http://ref.supabase.co/auth/v1")]
     [InlineData("Auth:Supabase:Authority", "ref.supabase.co/auth/v1")]
+    [InlineData("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector.example:4318")]
+    [InlineData("OTEL_EXPORTER_OTLP_ENDPOINT", "not a url")]
     public void InvalidValue_IsAProblem(string key, string value)
     {
         var settings = new Dictionary<string, string?>(Complete) { [key] = value };
 
         Assert.Single(ProductionConfiguration.Problems(Build(settings)));
     }
+
+    [Theory]
+    [InlineData("https://collector.example:4318")]
+    [InlineData("http://localhost:4318")]
+    [InlineData("http://127.0.0.1:4317")]
+    public void OtlpEndpoint_HttpsOrLocalCollector_IsAccepted(string endpoint) =>
+        Assert.Empty(ProductionConfiguration.Problems(Build(new Dictionary<string, string?>(Complete) { ["OTEL_EXPORTER_OTLP_ENDPOINT"] = endpoint })));
+
+    [Theory]
+    [InlineData("0.0.0.0/0")]
+    [InlineData("::/0")]
+    public void ProxyNetworks_AnyHop_NeedsTheExplicitSwitch(string network)
+    {
+        var settings = new Dictionary<string, string?> { [$"{EdgeSecurity.ProxySection}:0"] = network };
+
+        Assert.Throws<InvalidOperationException>(() => EdgeSecurity.ProxyNetworks(Build(settings)));
+        settings[EdgeSecurity.TrustAnyHopKey] = "true";
+        Assert.Single(EdgeSecurity.ProxyNetworks(Build(settings)));
+    }
+
+    [Fact]
+    public void ProxyNetworks_NotACidr_Throws() =>
+        Assert.Throws<InvalidOperationException>(() => EdgeSecurity.ProxyNetworks(Build(new() { [$"{EdgeSecurity.ProxySection}:0"] = "10.0.0.1/33" })));
 
     [Fact]
     public void Validate_InProduction_ThrowsWithNamesButNoValues()
@@ -80,6 +105,25 @@ public sealed class OpsConfigurationTests
     [InlineData("preview")]
     public void Validate_EveryDeployedEnvironment_Applies(string environment) =>
         Assert.Throws<InvalidOperationException>(() => ProductionConfiguration.Validate(Build([]), Env(environment)));
+
+    [Fact]
+    public async Task Development_WithoutObjectStorage_BuildsWithServiceValidation()
+    {
+        // Development validates every registration at build time (the integration tests run as Testing).
+        var builder = Microsoft.AspNetCore.Builder.WebApplication.CreateBuilder(
+            new Microsoft.AspNetCore.Builder.WebApplicationOptions { EnvironmentName = Environments.Development });
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:Vybe"] = "Host=127.0.0.1;Port=1",
+            ["Content:Root"] = ApiFactory.RepoRoot,
+        });
+        builder.Services.AddVybeApi(builder.Configuration, builder.Environment);
+        builder.AddVybeOperations();
+
+        await using var app = builder.Build();
+
+        Assert.Null(app.Services.GetService(typeof(IDeletionLog)));
+    }
 
     [Theory]
     [InlineData("Development")]

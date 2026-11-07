@@ -9,12 +9,15 @@ change.
 | `/` | Landing: start as guest, continue, "unavailable" state |
 | `/play` | Guest onboarding: create a guest, resume, lost-guest notice |
 | `/avatar/create` | Avatar creator with a 2D fallback portrait (until the 3D art exists) |
-| `/hub` | Avatar, level, XP, wallet |
+| `/hub` | Avatar, level, XP, wallet, daily quests (progress and claim) |
 | `/arcade` | Game list |
 | `/arcade/street-hoops` | Street Hoops on an API session: server-verified score and rewards |
 | `/shop` | Catalog with slot filter; purchase with confirmation |
-| `/wardrobe` | Owned items per slot; wear and take off (two accessory points) |
+| `/wardrobe` | Owned items per slot; wear and take off (two accessory points); saved outfits |
 | `/wallet` | Balance and V-Coin ledger |
+| `/challenges` | My challenges; creates a challenge or rematch from a verified run (`?session=`) |
+| `/challenge/:token` | Invite: preview without a player, accept (creates a guest if necessary), result |
+| `/profile/:handle` | Public profile: challenge, report, block and unblock |
 | `/practice` | Client-only Street Hoops prototype (no API, no rewards, dev tuning panel) |
 | `/settings` | Account state and linking, blocked players, data export, account deletion |
 | `/deletion/:requestId` | Status of a deletion request (no session needed: the id is the access key) |
@@ -100,6 +103,34 @@ server's ruleset.
   sends the same key again only when the item is not owned yet (spec §2 J1, E09).
 - Item pictures that do not load show a placeholder and a notice; equipment does not change (spec §9).
 - Equip sends the avatar revision; a `revision_conflict` reloads the wardrobe.
+
+## Challenges (spec §2 J2)
+
+1. After a verified online run with at least `minShotsForRewards` shots, the gameplay screen shows
+   "Challenge a friend with this run". It opens `/challenges?session={sessionId}`.
+2. `/challenges` creates the challenge. The `Idempotency-Key` is kept per request body (run,
+   recipient, rematch) in `sessionStorage`, so a reload or retry gets the same share link (ADR 0004 #2).
+   A known failure forgets the key. The page shows the link to copy.
+3. The share link is `{ShareBaseUrl}/challenge/{token}`. The app opens the token on its own origin.
+4. `index.html` sets `<meta name="referrer" content="no-referrer">`, so the token in the path never goes
+   out in a `Referer` header (spec §11). `/challenge/:token` shows the preview. A visitor without a player can start as a guest and accept
+   in one step. An unknown token, a block and a wrong recipient show the same "not available" state.
+5. "Refresh" and a return to the tab read the challenge again, so the creator sees the accept and
+   the result without a reload. The recipient plays at `/arcade/street-hoops?challenge={challengeId}`: one run on the creator's
+   seed and ruleset, without "Play again". The result shows in `/challenges` and on the invite page.
+6. A rematch (`?rematchOf=`) and a profile challenge (`?to=`) also start with a run. The gameplay
+   screen passes the value on to `/challenges`.
+
+## Quests, profiles and saved outfits
+
+- Daily quests on `/hub` show progress. "Claim" sends one `Idempotency-Key` per quest until the
+  outcome is known. Then the hub loads the quests and `/me` again.
+- The API answers 404 for a missing, deleted or private profile. The profile screen shows one
+  "not available" state for all of them.
+- Block asks for a confirmation. The block list (`GET /me/blocks`) tells if the caller blocked the
+  profile. The API never tells a player who blocked them.
+- Saved outfits (maximum 3) save the current equipment. An outfit with an item that is no longer
+  owned, active or compatible shows that item and cannot be worn. Apply sends the avatar revision.
 
 ## Run
 
@@ -206,6 +237,11 @@ README). Do not edit `street-hoops-v1.json` in place.
 |---|---|
 | `src/app/api/api-client.ts` | Typed API client, `ApiError`, idempotency keys |
 | `src/app/api/messages.ts` | Player-facing text for problem codes |
+| `src/app/api/social-api.ts` | Challenges, quests, profiles, blocks, reports and saved outfits on the same client |
+| `src/app/challenges/*.ts` | Challenge view helpers (side, result, invite token) and create keys |
+| `src/app/quests/quests-card.ts` | Daily quests card on the hub |
+| `src/app/profiles/*.ts` | Player names, report reasons, block lookup |
+| `src/app/outfits/outfits-panel.ts` | Saved outfits in the wardrobe |
 | `src/app/player/player-store.ts` | The calling player (`/me`) as a signal; lost-guest hint |
 | `src/app/player/guards.ts` | Route guard: no player → `/play` (or `/` after a signed-in session); API down → `/` |
 | `src/app/api/account-api.ts` | Linking, blocks, export, deletion and admin operations |

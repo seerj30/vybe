@@ -102,6 +102,10 @@ function randomSeed(): number {
 export class StreetHoops implements OnInit {
   /** Bound from the route data. */
   readonly mode = input<Mode>("practice");
+  /** Query parameters (online mode): `challenge` plays the recipient run; `rematchOf` and `to` go to the challenge made from the run. */
+  readonly challenge = input<string | undefined>();
+  readonly rematchOf = input<string | undefined>();
+  readonly to = input<string | undefined>();
 
   protected readonly devMode = isDevMode();
   protected readonly tunableKeys = TUNABLE_KEYS;
@@ -126,6 +130,21 @@ export class StreetHoops implements OnInit {
   protected readonly onlineError = signal<string | null>(null);
   protected readonly canRetrySubmit = signal(false);
   protected readonly rejectionText = rejectionText;
+  /** Query parameters for `/challenges` when the last run can start a challenge (spec §2 J2), else null. */
+  protected readonly challengeParams = computed((): Record<string, string> | null => {
+    const outcome = this.outcome();
+    const sessionId = this.verifiedSessionId();
+    const minShots = this.ruleset()?.config.minShotsForRewards;
+    if (this.challenge() !== undefined || outcome?.status !== "verified" || sessionId === null || minShots === undefined) return null;
+    if ((this.summary()?.eventCount ?? 0) < minShots) return null;
+    const params: Record<string, string> = { session: sessionId };
+    const rematchOf = this.rematchOf();
+    const to = this.to();
+    if (rematchOf !== undefined) params["rematchOf"] = rematchOf;
+    else if (to !== undefined) params["to"] = to;
+    return params;
+  });
+  private readonly verifiedSessionId = signal<string | null>(null);
 
   // Dev tuning panel.
   protected readonly panelOpen = matchMedia("(min-width: 768px)").matches;
@@ -270,9 +289,10 @@ export class StreetHoops implements OnInit {
     this.onlineError.set(null);
     this.canRetrySubmit.set(false);
     this.summary.set(null);
+    this.verifiedSessionId.set(null);
     let online: OnlineRun;
     try {
-      online = await this.sessions.prepare();
+      online = await this.sessions.prepare(this.challenge());
     } catch (error: unknown) {
       this.onlineError.set(isApiError(error) ? playerMessage(error) : errorMessage(error));
       this.phase.set("ready");
@@ -484,6 +504,7 @@ export class StreetHoops implements OnInit {
       this.canRetrySubmit.set(true);
     } else {
       this.outcome.set(outcome);
+      this.verifiedSessionId.set(outcome.status === "verified" ? (this.onlineRun?.sessionId ?? null) : null);
       // Wallet, XP and level come from the server, never from local arithmetic (spec §10).
       void this.player.refresh().catch(() => undefined);
     }

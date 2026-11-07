@@ -5,11 +5,12 @@ import { errorMessage } from "../api/messages";
 import { AvatarPortrait } from "../avatar/avatar-portrait";
 import { type AvatarPresets, DEFAULT_PRESETS, pickPresets } from "../avatar/presets";
 import { PlayerStore } from "../player/player-store";
+import { QuestsCard } from "../quests/quests-card";
 
-/** `/hub` (spec §3): avatar, level, wallet and the way to play. A failed avatar load is a partial load. */
+/** `/hub` (spec §3): avatar, level, wallet, quests and the way to play. A failed avatar or quest load is a partial load. */
 @Component({
   selector: "vybe-hub",
-  imports: [AvatarPortrait, RouterLink],
+  imports: [AvatarPortrait, QuestsCard, RouterLink],
   template: `
     <section class="page">
       <h1>Hub</h1>
@@ -34,8 +35,12 @@ import { PlayerStore } from "../player/player-store";
           <div class="card play">
             <h2>Street Hoops</h2>
             <p class="muted">Sixty seconds, one moving basket. Score points to earn V-Coins and XP.</p>
-            <a class="button" routerLink="/arcade/street-hoops">Play Street Hoops</a>
+            <div class="actions">
+              <a class="button" routerLink="/arcade/street-hoops">Play Street Hoops</a>
+              <a class="button secondary" routerLink="/challenges">My challenges</a>
+            </div>
           </div>
+          <vybe-quests-card class="quests" />
         </div>
       }
     </section>
@@ -46,7 +51,7 @@ import { PlayerStore } from "../player/player-store";
     .handle { font-size: 20px; font-weight: 700; margin: 0; }
     h2 { margin: 0 0 8px; font-size: 18px; }
     .balance { font-size: 28px; font-weight: 800; margin: 0; color: #ffc83d; font-variant-numeric: tabular-nums; }
-    @media (min-width: 768px) { .grid { grid-template-columns: 2fr 1fr; } .play { grid-column: 1 / -1; } }
+    @media (min-width: 768px) { .grid { grid-template-columns: 2fr 1fr; } .play, .quests { grid-column: 1 / -1; } }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

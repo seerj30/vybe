@@ -86,7 +86,8 @@ public static class Telemetry
     {
         ArgumentNullException.ThrowIfNull(activity);
         ArgumentNullException.ThrowIfNull(context);
-        var route = (context.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText;
+        // The exception handler clears the endpoint, so error responses use the route saved by EdgeSecurity.
+        var route = (context.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText ?? context.Items[EdgeSecurity.RouteItem] as string;
         activity.SetTag("url.path", route is null ? "(unmatched)" : "/" + route.TrimStart('/'));
         foreach (var tag in PeerTags)
         {

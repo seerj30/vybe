@@ -18,6 +18,16 @@ public static class Operations
         {
             builder.Services.AddSingleton(storage);
             builder.Services.AddSingleton<IExportStorage, S3ExportStorage>();
+            builder.Services.AddSingleton<IDeletionLog, S3DeletionLog>();
+        }
+
+        // Factories: without a deletion log (Development, no object storage) they are never resolved, and the
+        // start-up validation of Development does not reject them.
+        builder.Services.AddSingleton(sp => ActivatorUtilities.CreateInstance<DeletionLogExporter>(sp));
+        builder.Services.AddSingleton(sp => ActivatorUtilities.CreateInstance<DeletionReplay>(sp));
+        if (builder.Configuration.GetValue(DeletionLogWorker.IntervalKey, 300) < 1)
+        {
+            throw new InvalidOperationException($"{DeletionLogWorker.IntervalKey} must be at least 1");
         }
 
         builder.Services.AddSingleton<IdempotencyCleanup>();
@@ -29,6 +39,10 @@ public static class Operations
         if (builder.Configuration.GetValue("Jobs:Enabled", true))
         {
             builder.Services.AddHostedService<IdempotencyCleanupWorker>();
+            if (storage is { IsConfigured: true })
+            {
+                builder.Services.AddHostedService<DeletionLogWorker>();
+            }
         }
 
         builder.Services.AddVybeHealth();

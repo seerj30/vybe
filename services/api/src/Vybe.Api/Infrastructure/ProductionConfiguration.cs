@@ -70,6 +70,14 @@ public static class ProductionConfiguration
             problems.Add($"{EdgeSecurity.ProxySection} is not configured (the proxy CIDR ranges; 127.0.0.1/32 when there is no proxy)");
         }
 
+        // Telemetry can carry route names, trace ids and error text: plain http only to a collector on the same host.
+        if (configuration[Telemetry.OtlpEndpointKey] is { Length: > 0 } otlp
+            && !(Uri.TryCreate(otlp, UriKind.Absolute, out var otlpUrl)
+                 && (otlpUrl.Scheme == Uri.UriSchemeHttps || (otlpUrl.Scheme == Uri.UriSchemeHttp && otlpUrl.IsLoopback))))
+        {
+            problems.Add($"{Telemetry.OtlpEndpointKey} must be an https URL (http only to a collector on localhost)");
+        }
+
         if (string.IsNullOrWhiteSpace(configuration["Content:Root"]))
         {
             problems.Add("Content:Root is not configured");
