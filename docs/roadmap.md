@@ -20,6 +20,9 @@ branch and opens PRs. The orchestrator session reviews, tests and merges them.
 | Stream A review fixes: jobs, start-up checks, lock order | #17 |
 | Stream E: sign-off pack for the §17 decisions (not signed yet) | #20 (`docs/decisions/`) |
 | Stream B: J3 account linking, profiles, blocks, reports, saved outfits, J4 export and deletion, admin (E03, E08, E12) | #18, #19, #21 (ADR 0005) |
+| Stream B security review fixes | #23 |
+| Configurable E2E ports and database for parallel worktrees | #25 |
+| Stream D: container image, migrate/seed commands, production configuration check, S3 export storage, health checks, OpenTelemetry, logs, Sentry, CORS, security headers, per-player limits, idempotency cleanup, runbooks, k6 load test | #24, #26, #27 (ADR 0006) |
 
 ## Streams
 
@@ -28,8 +31,10 @@ branch and opens PRs. The orchestrator session reviews, tests and merges them.
 | **A. Challenges and quests** | J2 challenges: create, invite preview, accept, recipient session, completion, rematch, `/me/challenges`; outbox worker (`challenge-resolved`); sweepers (sessions, challenges, elapsed suspensions); daily quests: progress in the verification transaction, `/me/quests`, claim | `Features/Challenge*`, `Features/Quest*`, `Features/GameplayEndpoints.cs`, `Features/RewardService.cs`, `Jobs/` | E04, E07, quest claim | merged (review fixes in #17) |
 | **B. Accounts and safety** | J3 account linking (Supabase); public profiles; blocks (cancel challenges under `PairLock`) and reports; saved outfits; J4 data export and deletion (anonymization, ADR 0002 #11); admin endpoints | `Features/IdentityEndpoints.cs`, `Features/{Account,Profile,Safety,Outfit,Privacy,Admin}*` | E03, E08, E12 | merged (security review fixes in #23) |
 | **C. Web app on the API** | App shell and routes (§3), guest onboarding, avatar creator (2D fallback until 3D art), hub, Street Hoops on API sessions, shop, wardrobe, wallet; typed client from `packages/contracts`; browser E2E against the real API and PostgreSQL in CI | `apps/web`, `tests/e2e`, the e2e job in `.github/workflows/ci.yml` | E01, E02, E05, E06, E09, E10 in a browser | merged |
-| **D. Operations** | Container image, deployment (hosting-agnostic until §17 #7), OpenTelemetry, structured logs, Sentry, CORS and security headers, per-player rate limits, idempotency cleanup, backup/restore and incident runbooks, load test | `services/api/Dockerfile`, `infra/`, `docs/runbooks/`, hosting hooks in `ServiceSetup.cs` | load/security review | next: ready to start (A and B merged); also sets `Auth:Supabase:ApiKey`, `Challenges:InviteSecret`, `ShareBaseUrl`, production export storage and content seeding |
+| **D. Operations** | Container image, deployment (hosting-agnostic until §17 #7), OpenTelemetry, structured logs, Sentry, CORS and security headers, per-player rate limits, idempotency cleanup, backup/restore and incident runbooks, load test | `services/api/Dockerfile`, `infra/`, `docs/runbooks/`, hosting hooks in `ServiceSetup.cs` | load/security review | merged; follow-up PR for security review findings in progress |
 | **E. Sign-off pack** | Options and recommendations for every §17 decision (age policy, guest lifetime, art, tuning, economy, profile visibility, hosting, legal wording) | `docs/decisions/` | — | merged; waiting for sign-off (record in `docs/decisions/README.md`) |
+| **G. Web social** | `/challenges`, `/challenge/:token`, daily quests on `/hub`, `/profile/:handle` (challenge, report, block), saved outfits in `/wardrobe`; browser E2E | `apps/web/src/app/{challenges,quests,profiles,outfits}/`, `pages/{challenges,invite,profile,hub,wardrobe}.ts`, `api/social-api.ts`, small hooks in `street-hoops/`, its specs | E04, E07, quest claim in a browser | proposed (waiting for the user to start it) |
+| **H. Web account** | Supabase sign-in, J3 linking, `/settings` (blocks, export, deletion), deletion status, `/admin`; fake Supabase Auth for E2E | `apps/web/src/app/{auth,settings,admin}/`, `pages/{landing,settings,admin,deletion-status}.ts`, `api/account-api.ts`, bearer hook in `api-client.ts`, `tests/e2e/fake-auth/`, its specs and config lines | E03, E08, E12 in a browser | proposed (waiting for the user to start it) |
 | **F. API extras from PR #7** | IPv6 /64 rate-limit grouping; midnight and multi-level reward tests | `ServiceSetup.cs` (rate limiter only), `tests/Vybe.Api.Tests` | — | merged |
 
 ## Rules for every stream
@@ -44,5 +49,8 @@ branch and opens PRs. The orchestrator session reviews, tests and merges them.
 - Use `PairLock` (`services/api/src/Vybe.Api/Infrastructure/PairLock.cs`) for spec invariant 12.
 - Before opening a PR: `dotnet build services/api -c Release`, `dotnet format services/api/Vybe.slnx --verify-no-changes`,
   `dotnet test services/api`, `pnpm -r typecheck`, `pnpm -r test`.
+- Browser E2E in parallel worktrees: use your own `E2E_WEB_PORT`, `E2E_API_PORT`, `E2E_PG_PORT` and
+  `E2E_PG_NAME` (G: 4331/5256/55433/vybe-e2e-g, H: 4341/5266/55434/vybe-e2e-h, D: 4351/5276/55435/vybe-e2e-d).
+  Never stop or remove another stream's containers.
 - Pushing: if `git push` hangs, the macOS keychain has no GitHub credentials; push with
   `git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push -u origin HEAD`.

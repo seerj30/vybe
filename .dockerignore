@@ -1,0 +1,11 @@
+# Allowlist: the API image needs only the API sources and the content files.
+*
+!services/api/Directory.Build.props
+!services/api/.editorconfig
+!services/api/src/
+!assets/manifests/
+!packages/game-rules/fixtures/rulesets/
+**/bin/
+**/obj/
+**/*.user
+**/.env*
