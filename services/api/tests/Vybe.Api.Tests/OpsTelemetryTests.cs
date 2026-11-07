@@ -17,10 +17,13 @@ public sealed class OpsTelemetryTests
 
     [Theory]
     [InlineData("/api/v1/invites/" + Token, "/api/v1/invites/[redacted]")]
-    [InlineData("GET /api/v1/invites/" + Token + "/accept?x=1", "GET /api/v1/invites/[redacted]/accept?x=1")]
+    [InlineData("GET /api/v1/invites/" + Token + "/accept?x=1", "GET /api/v1/invites/[redacted]/accept")]
     [InlineData("/api/v1/deletion-requests/0198f0a4-0000-7000-8000-000000000000", "/api/v1/deletion-requests/[redacted]")]
     [InlineData("POST /api/v1/me/deletion-requests", "POST /api/v1/me/deletion-requests")]
     [InlineData("/api/v1/me", "/api/v1/me")]
+    [InlineData("GET http://x/api/v1/invites/" + Token + "?code=SECRET - 500", "GET http://x/api/v1/invites/[redacted] - 500")]
+    [InlineData("https://x/api/v1/catalog/items?page=2&q=secret", "https://x/api/v1/catalog/items")]
+    [InlineData("Is it ready? Yes", "Is it ready? Yes")]
     [InlineData(null, null)]
     public void Redact_RemovesInviteTokens(string? text, string? expected) => Assert.Equal(expected, Redaction.Redact(text));
 
@@ -72,6 +75,18 @@ public sealed class OpsTelemetryTests
     }
 
     [Fact]
+    public void ServerSpan_AfterTheExceptionHandler_UsesTheSavedRoute()
+    {
+        using var activity = new Activity("GET");
+        var context = new DefaultHttpContext();
+        context.Items[EdgeSecurity.RouteItem] = "/api/v1/invites/{token}";
+
+        Telemetry.ScrubServerSpan(activity, context);
+
+        Assert.Equal("/api/v1/invites/{token}", activity.GetTagItem("url.path"));
+    }
+
+    [Fact]
     public void ServerSpan_Unmatched_HasNoPath()
     {
         using var activity = new Activity("GET");
@@ -117,7 +132,9 @@ public sealed class OpsTelemetryTests
     [Fact]
     public void SentryBreadcrumb_IsRedacted()
     {
-        var breadcrumb = new Breadcrumb("GET /api/v1/invites/" + Token, "http", new Dictionary<string, string> { ["url"] = "https://x/api/v1/invites/" + Token }, "http", BreadcrumbLevel.Info);
+        var breadcrumb = new Breadcrumb(
+            "GET /api/v1/invites/" + Token + "?code=QUERYSECRET", "http",
+            new Dictionary<string, string> { ["url"] = "https://x/api/v1/invites/" + Token + "?code=QUERYSECRET" }, "http", BreadcrumbLevel.Info);
 
         var scrubbed = Telemetry.Scrub(breadcrumb);
 

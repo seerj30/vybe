@@ -95,6 +95,24 @@ public sealed class OpsExportStorageTests : IAsyncLifetime, IDisposable
         Assert.Throws<ArgumentException>(() => _storage!.DownloadUrl(key, DateTime.UtcNow.AddMinutes(5)));
 
     [Fact]
+    public async Task DeletionLog_WritesListsAndReadsEntries_NotSeenAsExports()
+    {
+        using var log = new S3DeletionLog(Options());
+        var entry = new DeletionLogEntry(Guid.NewGuid(), Guid.NewGuid(), new DateTime(2026, 11, 6, 12, 0, 0, DateTimeKind.Utc));
+
+        await log.WriteAsync(entry, CancellationToken.None);
+        await log.WriteAsync(entry, CancellationToken.None);
+        var entries = new List<DeletionLogEntry>();
+        await foreach (var read in log.ReadAllAsync(CancellationToken.None))
+        {
+            entries.Add(read);
+        }
+
+        Assert.Equal(entry, Assert.Single(entries, e => e.RequestId == entry.RequestId));
+        Assert.DoesNotContain(await ListAsync(), e => e.ExportId == entry.RequestId);
+    }
+
+    [Fact]
     public void IncompleteOptions_FailOnConstruction() =>
         Assert.Throws<InvalidOperationException>(() => new S3ExportStorage(new S3ExportStorageOptions { Bucket = Bucket }, _clock));
 

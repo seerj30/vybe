@@ -39,13 +39,17 @@ The image sets `ASPNETCORE_ENVIRONMENT=Production`; set `Staging` on staging.
 | `Content__Root` | set in the image | no | `/app/content`. |
 | `Cors__AllowedOrigins__0` … | only for a cross-origin web app | no | Absolute `https` origins. Same-origin `/api` needs none. |
 | `ReverseProxy__KnownNetworks__0` … | yes | no | CIDR of the proxy. See "Forwarded headers". `127.0.0.1/32` when there is no proxy. |
-| `RateLimits__WritesPerPlayerPerMinute` | no (default 120) | no | Authenticated writes per player. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | no | no | Turns on OTLP export of traces and metrics. |
+| `ReverseProxy__TrustAnyHop` | no (default `false`) | no | Must be `true` to accept a `/0` network. See "Forwarded headers". |
+| `RateLimits__WritesPerPlayerPerMinute` | no (default 120) | no | Writes per player (per client address when not signed in). |
+| `RateLimits__ReadsPerMinute` | no (default 600) | no | Reads per player (per client address when not signed in). `/health` is not limited. |
+| `Security__HstsIncludeSubDomains` | no (default `true`) | no | `false` if another subdomain of the site is not on https. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | no | no | Turns on OTLP export of traces and metrics. Must be `https`; `http` only to a collector on localhost (sidecar). |
 | `OTEL_EXPORTER_OTLP_HEADERS` | no | yes | Collector credentials, if the collector needs them. |
 | `Sentry__Dsn` | no | yes | Turns on Sentry (errors only). Empty = off. |
 | `Sentry__Release` | no | no | The image SHA, so Sentry groups errors by release. |
 | `OTEL_SERVICE_NAME` | no (default `vybe-api`) | no | Service name on traces and metrics. |
 | `Jobs__IdempotencyCleanupSeconds` | no (default 3600) | no | Interval of the idempotency-record cleanup. |
+| `Jobs__DeletionLogSeconds` | no (default 300) | no | Interval of the copy of deletion requests to the deletion log ([backup-restore.md](backup-restore.md)). |
 | `Jobs__Enabled` | no (default `true`) | no | `false` on instances that must not run the background workers. |
 
 Platform settings for the container:
@@ -62,9 +66,13 @@ Platform settings for the container:
 
 The guest rate limit and the logs use the client address. Behind a proxy, set
 `ReverseProxy__KnownNetworks__<n>` to the CIDR ranges of the proxy. The API then reads
-`X-Forwarded-For` and `X-Forwarded-Proto` only from those addresses. If the host does not publish its
-proxy ranges and the container is reachable only through the proxy, set `0.0.0.0/0` and `::/0`.
-Do not do this if clients can reach the container directly: they can then forge their address.
+`X-Forwarded-For` and `X-Forwarded-Proto` only from those addresses. HSTS is sent only on https requests,
+so `X-Forwarded-Proto` must come from a configured proxy.
+
+A `/0` network (`0.0.0.0/0`, `::/0`) trusts every peer: any client that reaches the container can forge its
+address and get a new rate-limit bucket for each request. The API does not start with a `/0` network unless
+`ReverseProxy__TrustAnyHop=true`. Set it only if the host does not publish its proxy ranges **and** the
+container is reachable only through the proxy (no public port). Prefer the published ranges.
 
 ## Deploy procedure
 

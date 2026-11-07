@@ -38,6 +38,36 @@ public sealed class OpsCommandTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GrantsScript_GivesTheApiRoleDataAccessOnly_AndNothingToTheDataApiRoles()
+    {
+        await RunAsync(OpsCommands.Migrate);
+        await PsqlAsync("CREATE ROLE vybe_api LOGIN PASSWORD 'api-local-test'; CREATE ROLE anon NOLOGIN; GRANT USAGE ON SCHEMA vybe TO anon;");
+        await _postgres.CopyAsync(await File.ReadAllBytesAsync(Path.Combine(ApiFactory.RepoRoot, "infra", "db", "grants.sql")), "/tmp/grants.sql");
+
+        await PsqlAsync(null, "-v", "api_role=vybe_api", "-f", "/tmp/grants.sql");
+        await PsqlAsync(null, "-v", "api_role=vybe_api", "-f", "/tmp/grants.sql"); // idempotent
+
+        var api = new Npgsql.NpgsqlConnectionStringBuilder(_postgres.GetConnectionString()) { Username = "vybe_api", Password = "api-local-test" };
+        await using var connection = new Npgsql.NpgsqlConnection(api.ConnectionString);
+        await connection.OpenAsync();
+        await using (var read = new Npgsql.NpgsqlCommand("SELECT count(*) FROM vybe.players", connection))
+        {
+            Assert.Equal(0L, await read.ExecuteScalarAsync());
+        }
+
+        await using (var ddl = new Npgsql.NpgsqlCommand("CREATE TABLE vybe.not_allowed (id int)", connection))
+        {
+            Assert.Equal("42501", (await Assert.ThrowsAsync<Npgsql.PostgresException>(() => ddl.ExecuteNonQueryAsync())).SqlState);
+        }
+
+        await using (var anon = new Npgsql.NpgsqlCommand(
+            "SELECT has_schema_privilege('anon', 'vybe', 'USAGE') OR has_table_privilege('anon', 'vybe.players', 'SELECT')", connection))
+        {
+            Assert.Equal(false, await anon.ExecuteScalarAsync());
+        }
+    }
+
+    [Fact]
     public async Task MigrationsConnection_IsPreferredOverTheApiConnection()
     {
         var configuration = Config(new() { ["ConnectionStrings:Vybe"] = "Host=127.0.0.1;Port=1;Timeout=1", ["ConnectionStrings:Migrations"] = _postgres.GetConnectionString() });
@@ -53,9 +83,17 @@ public sealed class OpsCommandTests : IAsyncLifetime
     [Theory]
     [InlineData(new[] { "migrate" }, true)]
     [InlineData(new[] { "seed", "--environment", "Production" }, true)]
+    [InlineData(new[] { "replay-deletions" }, true)]
     [InlineData(new string[0], false)]
     [InlineData(new[] { "--urls", "http://+:8080" }, false)]
     public void IsCommand_OnlyForTheFirstArgument(string[] args, bool expected) => Assert.Equal(expected, OpsCommands.IsCommand(args));
+
+    private async Task PsqlAsync(string? sql, params string[] arguments)
+    {
+        string[] command = ["psql", "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1", .. arguments];
+        var result = await _postgres.ExecAsync(sql is null ? command : [.. command, "-c", sql]);
+        Assert.True(result.ExitCode == 0, result.Stderr);
+    }
 
     private Task RunAsync(string command) =>
         OpsCommands.RunAsync(
