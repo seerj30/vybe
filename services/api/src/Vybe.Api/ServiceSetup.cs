@@ -53,7 +53,9 @@ public static class ServiceSetup
         // J4 deletes the Supabase Auth user with the service-role key (spec §17 decision 8).
         services.AddOptions<SupabaseAdminOptions>().Bind(configuration.GetSection(SupabaseAdminOptions.Section));
         services.AddSingleton<IAuthUserAdmin, SupabaseAuthUserAdmin>();
-        services.AddHttpClient(SupabaseAuthUserAdmin.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(10));
+        // No redirects: the key is in the apikey header, which a redirect to another host would also receive.
+        services.AddHttpClient(SupabaseAuthUserAdmin.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(10))
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
         services.AddSingleton<GuestCleanup>();
         if (configuration.GetValue("Jobs:Enabled", true))
         {

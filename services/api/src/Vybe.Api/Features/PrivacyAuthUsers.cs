@@ -33,6 +33,8 @@ public interface IAuthUserAdmin
 /// <summary>
 /// <c>DELETE {Authority}/admin/users/{id}</c> with the service-role key (hard delete). The id is a parsed UUID, so
 /// the request path cannot change; the key goes only into the request headers, never into a log or a message.
+/// The client follows no redirects (a 3xx is a failure), and outside Development the Authority must be https
+/// (<c>ProductionConfiguration</c>), so the key goes only to the configured Auth host.
 /// </summary>
 public sealed class SupabaseAuthUserAdmin(IHttpClientFactory httpClients, IOptions<SupabaseAdminOptions> options) : IAuthUserAdmin
 {
