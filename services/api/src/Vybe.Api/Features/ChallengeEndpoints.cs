@@ -139,7 +139,8 @@ public static class ChallengeEndpoints
 
         var config = RulesetConfig.Parse(
             await db.GameRulesets.Where(r => r.Id == session.RulesetId).Select(r => r.Config).SingleAsync(cancellationToken));
-        if (session.EventCount < config.MinShotsForRewards)
+        // Same minimum-play rule as rewards (spec v1.4 §7): enough shots and a full-length run.
+        if (Rewards.Ineligibility(config, session.EventCount ?? 0, session.StartedAt!.Value, session.SubmittedAt!.Value) is not null)
         {
             throw Problem.Of(422, "session_not_eligible");
         }

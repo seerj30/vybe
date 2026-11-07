@@ -69,8 +69,10 @@
                   <div><dt>XP</dt><dd>+{{ o.rewards.xp }}</dd></div>
                   <div><dt>Level</dt><dd>{{ o.rewards.levelAfter }}</dd></div>
                 </dl>
-                @if (o.rewards.coins === 0 && o.rewards.xp === 0) {
-                  <p class="help">No rewards for this run: take at least {{ ruleset()?.config?.minShotsForRewards }} shots, or the daily reward limit is reached.</p>
+                @if (o.rewards.noCoinsReason; as reason) {
+                  @if (ruleset(); as r) {
+                    <p class="help">{{ noCoinsText(reason, r.config) }}</p>
+                  }
                 }
               }
               @case ("rejected") {

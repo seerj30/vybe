@@ -39,7 +39,7 @@ const MESSAGES: Partial<Record<ErrorCode, string>> = {
   challenge_session_exists: "You already played your run for this challenge.",
   self_accept: "You cannot accept your own challenge.",
   self_challenge: "You cannot challenge yourself.",
-  session_not_eligible: "This run cannot start a challenge. Use a verified run with enough shots.",
+  session_not_eligible: "This run cannot start a challenge. Use a verified full-length run with enough shots.",
   session_already_used: "You already made a challenge from this run. Play a new run to send another one.",
   recipient_blocked: "You blocked this player. Unblock them to send a challenge.",
   challenge_not_completed: "A rematch is possible only after the challenge is finished.",

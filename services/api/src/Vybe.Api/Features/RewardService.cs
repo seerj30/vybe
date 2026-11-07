@@ -16,7 +16,10 @@ public static class RewardService
     // Mapped by the snake_case naming convention: runs_rewarded, xp_from_games.
     private sealed record CounterRow(int RunsRewarded, int XpFromGames);
 
-    public static async Task<RewardsResponse> GrantForRunAsync(
+    /// <summary>The rewards of one run and its daily run number <c>n</c> (null when the run is not reward-eligible).</summary>
+    public sealed record RunReward(RewardsResponse Rewards, int? RunNumber);
+
+    public static async Task<RunReward> GrantForRunAsync(
         VybeDbContext db, GameSession session, StreetHoopsConfig config, int score, int eventCount, int maxStreak, DateTime now,
         CancellationToken cancellationToken)
     {
@@ -34,10 +37,11 @@ public static class RewardService
             throw Problem.Of(403, "account_suspended");
         }
 
-        // Minimum play (spec §7): a short run is verified but earns nothing and does not count.
-        if (eventCount < config.MinShotsForRewards)
+        // Minimum play (spec §7): a run with too few shots or too little real time is verified but earns
+        // nothing and does not count (no runs_rewarded, no quest progress, no challenge).
+        if (Rewards.Ineligibility(config, eventCount, session.StartedAt!.Value, now) is { } ineligible)
         {
-            return new RewardsResponse(0, 0, player.Level);
+            return new RunReward(new RewardsResponse(0, 0, player.Level, ineligible), null);
         }
 
         var day = DateOnly.FromDateTime(session.StartedAt!.Value);
@@ -51,7 +55,7 @@ public static class RewardService
         // A reward-eligible run counts for quests whatever its coin tier (spec §7 minimum play, §8).
         await QuestProgress.AddForRunAsync(db, player.Id, day, score, maxStreak, now, cancellationToken);
 
-        var coins = Rewards.CoinsForRun(Rewards.BaseCoins(score), counter.RunsRewarded);
+        var coins = Rewards.CoinsForRun(Rewards.BaseCoins(score, config.MinScoreForCoins), counter.RunsRewarded);
         var xp = Rewards.XpGrant(Rewards.BaseXp(score), counter.XpFromGames);
         if (xp > 0)
         {
@@ -67,7 +71,8 @@ public static class RewardService
         }
 
         await AddXpAsync(db, player, xp, cancellationToken);
-        return new RewardsResponse(coins, xp, player.Level);
+        var noCoins = Rewards.NoCoins(config, coins, score, eventCount, session.StartedAt.Value, now);
+        return new RunReward(new RewardsResponse(coins, xp, player.Level, noCoins), counter.RunsRewarded);
     }
 
     /// <summary>

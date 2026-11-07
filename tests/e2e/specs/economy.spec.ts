@@ -31,9 +31,9 @@ async function ledger(request: APIRequestContext): Promise<{ reason: string; del
 
 test("E02: wallet → purchase → equip → reload persists", async ({ page }) => {
   await newPlayer(page);
-  await grantCoins(page, 400);
+  await grantCoins(page, 600);
   await openShop(page);
-  await expect(page.getByText("Balance: 400 V-Coins")).toBeVisible();
+  await expect(page.getByText("Balance: 600 V-Coins")).toBeVisible();
 
   await confirmPurchase(page, "Court Jersey");
   await expect(shopItem(page, "Court Jersey").getByText("Owned")).toBeVisible();
@@ -51,23 +51,23 @@ test("E02: wallet → purchase → equip → reload persists", async ({ page }) 
   await expect(page.getByTestId("wallet-balance")).toHaveText("100");
   const rows = page.getByRole("row");
   await expect(rows.nth(1)).toContainText("Purchase");
-  await expect(rows.nth(1)).toContainText("−300");
+  await expect(rows.nth(1)).toContainText("−500");
   await expect(rows.nth(2)).toContainText("Adjustment by VYBE");
-  await expect(rows.nth(2)).toContainText("+400");
+  await expect(rows.nth(2)).toContainText("+600");
 });
 
 test("E06: two simultaneous purchases never overdraw the wallet", async ({ page, context }) => {
   await newPlayer(page);
-  await grantCoins(page, 400);
+  await grantCoins(page, 600);
   const other = await context.newPage();
   for (const tab of [page, other]) {
     await tab.goto("/shop");
-    await expect(tab.getByText("Balance: 400 V-Coins")).toBeVisible();
+    await expect(tab.getByText("Balance: 600 V-Coins")).toBeVisible();
   }
   await shopItem(page, "Court Jersey").getByRole("button", { name: "Buy" }).click();
   await shopItem(other, "High Top").getByRole("button", { name: "Buy" }).click();
 
-  // 300 + 350 > 400: the server lets exactly one purchase through.
+  // 500 + 450 > 600: the server lets exactly one purchase through.
   await Promise.all([
     shopItem(page, "Court Jersey").getByRole("button", { name: "Confirm purchase" }).click(),
     shopItem(other, "High Top").getByRole("button", { name: "Confirm purchase" }).click(),
@@ -80,13 +80,13 @@ test("E06: two simultaneous purchases never overdraw the wallet", async ({ page,
   const owned = [await jersey.getByText("Owned").count(), await highTop.getByText("Owned").count()];
   expect(owned.reduce((a, b) => a + b)).toBe(1);
   const balance = (await me(page.request)).walletBalance;
-  expect(balance).toBe(owned[0] === 1 ? 100 : 50);
+  expect(balance).toBe(owned[0] === 1 ? 100 : 150);
   expect((await ledger(page.request)).filter((e) => e.reason === "purchase")).toHaveLength(1);
 });
 
 test("E09: the purchase answer is lost → Check and retry finds the item, no second purchase", async ({ page }) => {
   await newPlayer(page);
-  await grantCoins(page, 400);
+  await grantCoins(page, 600);
   let posts = 0;
   await page.route("**/api/v1/purchases", async (route) => {
     posts++;
@@ -110,7 +110,7 @@ test("E09: the purchase answer is lost → Check and retry finds the item, no se
 
 test("E09: the purchase request is lost → the retry sends the same Idempotency-Key and buys once", async ({ page }) => {
   await newPlayer(page);
-  await grantCoins(page, 400);
+  await grantCoins(page, 600);
   const keys: string[] = [];
   await page.route("**/api/v1/purchases", async (route) => {
     keys.push((await route.request().headerValue("idempotency-key")) ?? "");
@@ -154,7 +154,7 @@ test("the shop shows why an item cannot be bought; the server has the last word"
 
 test("an accessory goes on one attachment point at a time", async ({ page }) => {
   await newPlayer(page);
-  await grantCoins(page, 100);
+  await grantCoins(page, 300);
   await openShop(page);
   await confirmPurchase(page, "Sweatband");
   await expect(shopItem(page, "Sweatband").getByText("Owned")).toBeVisible();

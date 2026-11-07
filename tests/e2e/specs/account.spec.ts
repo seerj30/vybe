@@ -18,7 +18,7 @@ interface Inventory {
 
 test("E03: guest → sign in → link → same player id and inventory", async ({ page }) => {
   await newPlayer(page);
-  await grantCoins(page, 400);
+  await grantCoins(page, 600);
   await openNav(page, "Shop");
   const jersey = page.getByRole("listitem", { name: "Court Jersey" });
   await jersey.getByRole("button", { name: "Buy" }).click();

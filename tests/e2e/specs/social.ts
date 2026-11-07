@@ -2,6 +2,7 @@ import type { APIRequestContext, Browser, Page } from "@playwright/test";
 import pg from "pg";
 import { expect, newPlayer } from "./app.ts";
 import { DATABASE_URL, playerId } from "./db.ts";
+import { backdateRunStart } from "./shots.ts";
 
 const UNSAFE = { "content-type": "application/json", "x-requested-with": "vybe-web" };
 
@@ -25,21 +26,21 @@ export async function otherPlayer(browser: Browser): Promise<Page> {
 }
 
 /**
- * Test data: a verified, challenge-eligible run without 60 s of play: `minShotsForRewards` shots
- * `minGapMs` apart, submitted when the claimed game time is inside `earlyToleranceMs` (spec §6).
- * With `challengeId`, it is the recipient run of an accepted challenge.
+ * Test data: a verified, reward- and challenge-eligible run without 60 s of play: `minShotsForRewards` shots
+ * `minGapMs` apart; the run start is moved back by `minRunMsForRewards` (spec v1.4 §7), so the submit
+ * is a full-length run and the claimed game time has passed. With `challengeId`, it is the recipient run
+ * of an accepted challenge.
  */
 export async function verifiedRun(request: APIRequestContext, challengeId?: string): Promise<string> {
   const created = await request.post("/api/v1/games/street-hoops/sessions", { headers: UNSAFE, data: challengeId === undefined ? {} : { challengeId } });
   expect(created.status()).toBe(201);
   const { sessionId, rulesetId } = (await created.json()) as { sessionId: string; rulesetId: string };
   const { config } = (await (await request.get(`/api/v1/games/rulesets/${rulesetId}`)).json()) as {
-    config: { minShotsForRewards: number; minGapMs: number; earlyToleranceMs: number };
+    config: { minShotsForRewards: number; minGapMs: number; minRunMsForRewards: number };
   };
   const events = Array.from({ length: config.minShotsForRewards }, (_, i) => ({ tMs: i * config.minGapMs, aimX: 0, power: 600 }));
-  const claimedMs = events[events.length - 1]?.tMs ?? 0;
   expect((await request.post(`/api/v1/games/sessions/${sessionId}/start`, { headers: UNSAFE })).status()).toBe(200);
-  await new Promise((resolve) => setTimeout(resolve, Math.max(0, claimedMs - config.earlyToleranceMs) + 500));
+  await backdateRunStart(sessionId, config.minRunMsForRewards);
   const submitted = await request.post(`/api/v1/games/sessions/${sessionId}/submit`, {
     headers: { ...UNSAFE, "idempotency-key": crypto.randomUUID() },
     data: { rulesetId, events },

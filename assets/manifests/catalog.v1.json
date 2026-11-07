@@ -1,16 +1,16 @@
 {
   "catalogVersion": 1,
-  "description": "Initial catalog (spec §8, illustrative prices). Items with starter=true cost 0 and are granted at onboarding.",
+  "description": "Initial catalog (spec §8). Prices follow the decision 5 bands: common 300-800, rare 1500-3000, epic 6000-10000. Items with starter=true cost 0 and are granted at onboarding.",
   "items": [
     { "sku": "top_starter_tee", "slot": "top", "name": "Starter Tee", "price": 0, "minLevel": 1, "assetKey": "tops/starter_tee", "compatibleBodyPresets": ["body_a", "body_b"], "rarity": "common", "starter": true },
     { "sku": "bottom_starter_shorts", "slot": "bottom", "name": "Starter Shorts", "price": 0, "minLevel": 1, "assetKey": "bottoms/starter_shorts", "compatibleBodyPresets": ["body_a", "body_b"], "rarity": "common", "starter": true },
     { "sku": "shoes_starter_kicks", "slot": "shoes", "name": "Starter Kicks", "price": 0, "minLevel": 1, "assetKey": "shoes/starter_kicks", "compatibleBodyPresets": ["body_a", "body_b"], "rarity": "common", "starter": true },
-    { "sku": "top_court_jersey", "slot": "top", "name": "Court Jersey", "price": 300, "minLevel": 1, "assetKey": "tops/court_jersey", "compatibleBodyPresets": ["body_a", "body_b"], "rarity": "common" },
-    { "sku": "top_neon_hoodie", "slot": "top", "name": "Neon Hoodie", "price": 400, "minLevel": 3, "assetKey": "tops/neon_hoodie", "compatibleBodyPresets": ["body_a"], "rarity": "common" },
-    { "sku": "hair_high_top", "slot": "hair", "name": "High Top", "price": 350, "minLevel": 1, "assetKey": "hair/high_top", "compatibleBodyPresets": ["body_a", "body_b"], "rarity": "common" },
-    { "sku": "shoes_gold_high", "slot": "shoes", "name": "Gold Highs", "price": 650, "minLevel": 5, "assetKey": "shoes/gold_high", "compatibleBodyPresets": ["body_a", "body_b"], "rarity": "rare" },
-    { "sku": "acc_sweatband", "slot": "accessory", "name": "Sweatband", "price": 100, "minLevel": 1, "assetKey": "accessories/sweatband", "compatibleBodyPresets": ["body_a", "body_b"], "rarity": "common" },
-    { "sku": "acc_chain", "slot": "accessory", "name": "Gold Chain", "price": 450, "minLevel": 2, "assetKey": "accessories/chain", "compatibleBodyPresets": ["body_a", "body_b"], "rarity": "rare" },
-    { "sku": "emote_swish", "slot": "emote", "name": "Swish", "price": 200, "minLevel": 1, "assetKey": "emotes/swish", "compatibleBodyPresets": ["body_a", "body_b"], "rarity": "common" }
+    { "sku": "top_court_jersey", "slot": "top", "name": "Court Jersey", "price": 500, "minLevel": 1, "assetKey": "tops/court_jersey", "compatibleBodyPresets": ["body_a", "body_b"], "rarity": "common" },
+    { "sku": "top_neon_hoodie", "slot": "top", "name": "Neon Hoodie", "price": 700, "minLevel": 3, "assetKey": "tops/neon_hoodie", "compatibleBodyPresets": ["body_a"], "rarity": "common" },
+    { "sku": "hair_high_top", "slot": "hair", "name": "High Top", "price": 450, "minLevel": 1, "assetKey": "hair/high_top", "compatibleBodyPresets": ["body_a", "body_b"], "rarity": "common" },
+    { "sku": "shoes_gold_high", "slot": "shoes", "name": "Gold Highs", "price": 2500, "minLevel": 5, "assetKey": "shoes/gold_high", "compatibleBodyPresets": ["body_a", "body_b"], "rarity": "rare" },
+    { "sku": "acc_sweatband", "slot": "accessory", "name": "Sweatband", "price": 300, "minLevel": 1, "assetKey": "accessories/sweatband", "compatibleBodyPresets": ["body_a", "body_b"], "rarity": "common" },
+    { "sku": "acc_chain", "slot": "accessory", "name": "Gold Chain", "price": 1500, "minLevel": 2, "assetKey": "accessories/chain", "compatibleBodyPresets": ["body_a", "body_b"], "rarity": "rare" },
+    { "sku": "emote_swish", "slot": "emote", "name": "Swish", "price": 400, "minLevel": 1, "assetKey": "emotes/swish", "compatibleBodyPresets": ["body_a", "body_b"], "rarity": "common" }
   ]
 }

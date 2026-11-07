@@ -1181,6 +1181,13 @@ export interface components {
             minGapMs: number;
             maxEvents: number;
             minShotsForRewards: number;
+            /**
+             * @description A verified run is reward-eligible only when `submittedAt − startedAt` (server clock) is
+             *     at least this value. An API rule, not a simulator check.
+             */
+            minRunMsForRewards: number;
+            /** @description Base coins need `score` at least this value; XP and quests do not. */
+            minScoreForCoins: number;
         };
         Ruleset: {
             id: components["schemas"]["RulesetId"];
@@ -1222,6 +1229,14 @@ export interface components {
             events: unknown[];
             clientReportedScore?: unknown;
         };
+        /**
+         * @description Why a verified run earned 0 coins (spec v1.4 §7). `too_few_shots` and `run_too_short`:
+         *     the run is not reward-eligible (no XP, no quest progress, no challenge).
+         *     `score_below_minimum`: score below `minScoreForCoins` (XP and quests still count).
+         *     `daily_limit`: run 21 or later of the UTC day.
+         * @enum {string}
+         */
+        NoCoinsReason: "too_few_shots" | "run_too_short" | "score_below_minimum" | "daily_limit";
         Rewards: {
             coins: components["schemas"]["Coins"];
             xp: number;
@@ -1231,6 +1246,8 @@ export interface components {
              *     level (the level at verification time is not stored).
              */
             levelAfter: components["schemas"]["Level"];
+            /** @description Null when `coins` > 0. */
+            noCoinsReason: components["schemas"]["NoCoinsReason"] | null;
         };
         SubmitAccepted: {
             sessionId: components["schemas"]["Uuid"];

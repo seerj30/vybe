@@ -24,6 +24,12 @@ public sealed record StreetHoopsConfig
     public required int MinGapMs { get; init; }
     public required int MaxEvents { get; init; }
     public required int MinShotsForRewards { get; init; }
+
+    /// <summary>Reward eligibility also needs submittedAt − startedAt ≥ this value (API check, not a simulator check).</summary>
+    public required int MinRunMsForRewards { get; init; }
+
+    /// <summary>Base coins need score ≥ this value (API reward rule).</summary>
+    public required int MinScoreForCoins { get; init; }
 }
 
 /// <summary>Fixed input units (§7).</summary>
