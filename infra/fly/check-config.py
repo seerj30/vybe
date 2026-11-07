@@ -58,10 +58,10 @@ def unknown_keys(config: dict, errors: list[str], name: str) -> None:
 
 def common(config: dict, errors: list[str], name: str) -> None:
     unknown_keys(config, errors, name)
-    if not APP_NAME.match(config.get("app", "")):
+    if not APP_NAME.fullmatch(config.get("app", "")):
         errors.append(f"{name}: app must be a Fly app name (lowercase letters, digits, '-')")
     region = config.get("primary_region", "")
-    if region != REGION_NOT_SET and not REGION.match(region):
+    if region != REGION_NOT_SET and not REGION.fullmatch(region):
         errors.append(f"{name}: primary_region must be a Fly region code (for example fra) or {REGION_NOT_SET}")
     if config.get("kill_signal") != "SIGTERM":
         errors.append(f"{name}: kill_signal must be SIGTERM (graceful shutdown)")
