@@ -101,9 +101,21 @@
           @if (canRetrySubmit()) {
             <button type="button" class="start" (click)="retrySubmit()">Retry sending the run</button>
           }
-          <button type="button" class="start" (click)="start()" [disabled]="!canStart()">
-            {{ summary() ? "Play again" : "Start 60 s run" }}
-          </button>
+          @if (challengeParams(); as params) {
+            <a class="start" routerLink="/challenges" [queryParams]="params">
+              {{ params["rematchOf"] ? "Send the rematch" : params["to"] ? "Challenge " + params["to"] + " with this run" : "Challenge a friend with this run" }}
+            </a>
+          }
+          @if (challenge() === undefined) {
+            <button type="button" class="start" (click)="start()" [disabled]="!canStart()">
+              {{ summary() ? "Play again" : "Start 60 s run" }}
+            </button>
+          } @else if (outcome() || summary()) {
+            <a class="start" routerLink="/challenges">See the challenge result</a>
+          } @else {
+            <p class="help">Challenge run: you get one run on the same court as your opponent.</p>
+            <button type="button" class="start" (click)="start()" [disabled]="!canStart()">Start challenge run</button>
+          }
           @if (mode() === "online") {
             <a class="leave" routerLink="/arcade">Back to the arcade</a>
           } @else {

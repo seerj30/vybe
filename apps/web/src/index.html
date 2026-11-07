@@ -5,6 +5,8 @@
     <title>VYBE</title>
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- Invite links carry a token in the path: never send it in Referer (spec §11). -->
+    <meta name="referrer" content="no-referrer" />
   </head>
   <body>
     <vybe-root></vybe-root>

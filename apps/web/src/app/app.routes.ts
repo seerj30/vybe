@@ -1,9 +1,12 @@
 import type { Routes } from "@angular/router";
 import { AvatarCreator } from "./pages/avatar-creator";
 import { Arcade } from "./pages/arcade";
+import { Challenges } from "./pages/challenges";
 import { Hub } from "./pages/hub";
+import { Invite } from "./pages/invite";
 import { Landing } from "./pages/landing";
 import { Onboarding } from "./pages/onboarding";
+import { Profile } from "./pages/profile";
 import { Shop } from "./pages/shop";
 import { Wallet } from "./pages/wallet";
 import { Wardrobe } from "./pages/wardrobe";
@@ -30,6 +33,8 @@ export const routes: Routes = [
     title: "Street Hoops · VYBE",
     data: { layout: "fullscreen", mode: "online" },
   },
+  // The invite preview works without a player; accepting it can create a guest (spec §2 J2).
+  { path: "challenge/:token", component: Invite, title: "Challenge · VYBE", data: { layout: "app" } },
   {
     path: "",
     canActivate: [requirePlayer],
@@ -41,6 +46,8 @@ export const routes: Routes = [
       { path: "shop", component: Shop, title: "Shop · VYBE" },
       { path: "wardrobe", component: Wardrobe, title: "Wardrobe · VYBE" },
       { path: "wallet", component: Wallet, title: "Wallet · VYBE" },
+      { path: "challenges", component: Challenges, title: "Challenges · VYBE" },
+      { path: "profile/:handle", component: Profile, title: "Profile · VYBE" },
     ],
   },
   { path: "**", redirectTo: "" },

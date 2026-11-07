@@ -58,6 +58,15 @@ describe("OnlineSessions", () => {
     expect(api.startSession).toHaveBeenCalledWith(SESSION_ID);
   });
 
+  it("creates the recipient session of a challenge with its id, and a plain session without", async () => {
+    const api = fakeApi();
+    const sessions = new OnlineSessions(api, passThrough);
+    await sessions.prepare("c1");
+    await sessions.prepare();
+    expect(api.createStreetHoopsSession).toHaveBeenNthCalledWith(1, { challengeId: "c1" });
+    expect(api.createStreetHoopsSession).toHaveBeenNthCalledWith(2, {});
+  });
+
   it("downloads and verifies a ruleset once per id", async () => {
     const api = fakeApi();
     const sessions = new OnlineSessions(api, passThrough);
