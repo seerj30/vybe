@@ -16,7 +16,7 @@ namespace Vybe.Api.Features;
 /// </summary>
 public sealed partial class PrivacyProcessor(
     IServiceScopeFactory scopes, IExportStorage storage, ContentCatalog content, PrivacyOptions options, TimeProvider clock,
-    ILogger<PrivacyProcessor> logger)
+    IAuthUserAdmin authUsers, ILogger<PrivacyProcessor> logger)
 {
     public const string PlayerDeletedCode = "player_deleted";
     private const string PseudonymAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -32,6 +32,10 @@ public sealed partial class PrivacyProcessor(
         }
 
         for (var i = 0; i < max && await DeleteNextAsync(cancellationToken); i++)
+        {
+        }
+
+        for (var i = 0; i < max && await DeleteAuthUserNextAsync(cancellationToken); i++)
         {
         }
 
@@ -126,6 +130,16 @@ public sealed partial class PrivacyProcessor(
         var playerId = request.PlayerId;
         var now = clock.UtcNowForDb();
         var player = await db.Players.FromSql($"SELECT * FROM vybe.players WHERE id = {playerId} FOR NO KEY UPDATE").SingleAsync(cancellationToken);
+        if (player.AuthSubject is { } subject)
+        {
+            // Spec §17 decision 8: the Supabase Auth user (email, login) goes too. The call happens after the
+            // commit (DeleteAuthUserNextAsync), so an Auth outage never blocks or undoes the anonymization.
+            await db.Database.ExecuteSqlAsync($"""
+                INSERT INTO vybe.auth_user_deletions (auth_subject, attempts, next_attempt_at, created_at)
+                VALUES ({subject}, 0, {now}, {now}) ON CONFLICT (auth_subject) DO NOTHING
+                """, cancellationToken);
+        }
+
         var pseudonym = "d_" + RandomNumberGenerator.GetString(PseudonymAlphabet, 18);
         player.Handle = pseudonym;
         player.HandleNormalized = pseudonym;
@@ -135,6 +149,9 @@ public sealed partial class PrivacyProcessor(
         player.DeletedAt = now;
         player.SuspendedUntil = null;
         player.SuspensionReason = null;
+        player.AgeConfirmedAt = null;
+        player.AgePolicyVersion = null;
+        player.AgeBand = null;
         player.UpdatedAt = now;
 
         var defaults = content.Avatar.Defaults;
@@ -169,6 +186,68 @@ public sealed partial class PrivacyProcessor(
                 .SetProperty(x => x.CompletedAt, x => x.CompletedAt ?? now), cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return true;
+    }
+
+    /// <summary>
+    /// Deletes one queued Supabase Auth user whose attempt is due, then its row. A failure keeps the row with a
+    /// later attempt time (exponential backoff, at most <see cref="MaxAuthRetryDelay"/>), so it never blocks the
+    /// other rows. Without a service-role key the rows wait (Development, tests).
+    /// </summary>
+    private async Task<bool> DeleteAuthUserNextAsync(CancellationToken cancellationToken)
+    {
+        if (!authUsers.IsConfigured)
+        {
+            return false;
+        }
+
+        await using var scope = scopes.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<VybeDbContext>();
+        var now = clock.UtcNowForDb();
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var row = await db.AuthUserDeletions
+            .FromSql($"""
+                SELECT * FROM vybe.auth_user_deletions WHERE next_attempt_at <= {now}
+                ORDER BY next_attempt_at, auth_subject LIMIT 1 FOR UPDATE SKIP LOCKED
+                """)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (row is null)
+        {
+            return false;
+        }
+
+        if (!Guid.TryParse(row.AuthSubject, out var userId))
+        {
+            // Supabase Auth user ids are UUIDs: this subject cannot be an Auth user, so there is nothing to delete.
+            LogAuthSubjectNotUuid(logger);
+            db.AuthUserDeletions.Remove(row);
+        }
+        else
+        {
+            try
+            {
+                await authUsers.DeleteUserAsync(userId, cancellationToken);
+                db.AuthUserDeletions.Remove(row);
+            }
+            catch (AuthUserDeletionException exception)
+            {
+                row.Attempts++;
+                row.NextAttemptAt = now + AuthRetryDelay(row.Attempts);
+                LogAuthUserDeleteFailed(logger, exception, row.Attempts);
+            }
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
+    public static readonly TimeSpan MaxAuthRetryDelay = TimeSpan.FromHours(6);
+
+    /// <summary>1, 2, 4 … minutes after the failed attempts, at most <see cref="MaxAuthRetryDelay"/>.</summary>
+    public static TimeSpan AuthRetryDelay(int attempts)
+    {
+        var minutes = Math.Pow(2, Math.Clamp(attempts - 1, 0, 20));
+        return TimeSpan.FromMinutes(Math.Min(minutes, MaxAuthRetryDelay.TotalMinutes));
     }
 
     /// <summary>Deletes the file of one failed export (for example of a deleted player) and clears its key.</summary>
@@ -243,6 +322,13 @@ public sealed partial class PrivacyProcessor(
             }
         }
     }
+
+    // The user id and the key are never logged: only the attempt count.
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Deleting a Supabase Auth user failed (attempt {Attempts}); retrying later")]
+    private static partial void LogAuthUserDeleteFailed(ILogger logger, Exception exception, int attempts);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "A queued Supabase Auth user id is not a UUID; the row is removed")]
+    private static partial void LogAuthSubjectNotUuid(ILogger logger);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Deleting the file of data export {ExportId} failed; retrying later")]
     private static partial void LogFileDeleteFailed(ILogger logger, Exception exception, Guid exportId);

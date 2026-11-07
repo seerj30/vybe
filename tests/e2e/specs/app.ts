@@ -2,11 +2,31 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 export { expect };
 
-/** Landing → onboarding → new guest; ends on the avatar creator. Each call is a new player. */
+/** An adult year of birth for the age gate (spec §17 decision 1). */
+export const ADULT_BIRTH_YEAR = 1990;
+
+/** The `createGuest` body of an adult, for API calls in specs. */
+export const ADULT_GUEST = { birthYear: ADULT_BIRTH_YEAR };
+
+/** Fills the age gate on `/play` and starts the guest. */
+export async function passAgeGate(page: Page, year = ADULT_BIRTH_YEAR): Promise<void> {
+  await page.getByLabel("Year of birth").fill(String(year));
+  await page.getByRole("button", { name: "Start as guest" }).click();
+}
+
+/** Fills the age-gate dialog that opens before an invite or a sign-in creates a guest. */
+export async function passAgeGateDialog(page: Page, year = ADULT_BIRTH_YEAR): Promise<void> {
+  const dialog = page.getByRole("dialog", { name: "Before you play" });
+  await dialog.getByLabel("Year of birth").fill(String(year));
+  await dialog.getByRole("button", { name: "Continue" }).click();
+  await expect(dialog).toHaveCount(0);
+}
+
+/** Landing → onboarding → age gate → new guest; ends on the avatar creator. Each call is a new player. */
 export async function startAsGuest(page: Page): Promise<void> {
   await page.goto("/");
   await page.getByRole("link", { name: "Start as guest" }).click();
-  await page.getByRole("button", { name: "Start as guest" }).click();
+  await passAgeGate(page);
   await expect(page.getByRole("heading", { name: "Create your avatar" })).toBeVisible();
 }
 

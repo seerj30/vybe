@@ -10,27 +10,64 @@ public sealed record PublicAvatar(
 
 public sealed record PublicProfile(string Handle, string? DisplayName, int Level, PublicAvatar Avatar);
 
-/// <summary>Spec §5 <c>GET /profiles/{handle}</c>: public fields only (ADR 0001, public profile fields).</summary>
+public sealed record PrivacySettingsRequest(ProfileVisibility? ProfileVisibility);
+
+public sealed record PrivacySettings(ProfileVisibility ProfileVisibility);
+
+/// <summary>
+/// Spec §5 <c>GET /profiles/{handle}</c>: public fields only (ADR 0001, public profile fields), and the
+/// profile privacy setting (spec §17 decision 6).
+/// </summary>
 public static class ProfileEndpoints
 {
     public static void Map(RouteGroupBuilder api)
     {
         ArgumentNullException.ThrowIfNull(api);
+        // Anonymous callers are let through, so they get the same 404 as an unknown handle (not a 401).
         api.MapGet("/profiles/{handle}", GetAsync).AllowAnonymous();
+        api.MapPatch("/me/privacy", UpdatePrivacyAsync);
     }
 
     /// <summary>
-    /// Every caller gets the same answer. Blocks do not change it: a 404 for a blocked caller only would
-    /// tell that caller about the block (spec §2 block privacy, ADR 0005).
+    /// Signed-in callers only (guest or registered); a private profile only for its owner. Every other case is
+    /// the 404 of an unknown handle, so the answer does not tell why. Blocks do not change it: a 404 for a
+    /// blocked caller only would tell that caller about the block (spec §2 block privacy, ADR 0005).
     /// </summary>
-    private static async Task<PublicProfile> GetAsync(string handle, HttpContext context, VybeDbContext db, CancellationToken cancellationToken)
+    private static async Task<IResult> GetAsync(
+        string handle, HttpContext context, VybeDbContext db, CurrentPlayer current, CancellationToken cancellationToken)
     {
+        // Written here, not thrown: the exception handler would clear these headers from the 404.
         context.Response.Headers.CacheControl = "private, no-store"; // contract: never stored by shared caches
-        var player = await PlayerHandles.FindAsync(db, handle, cancellationToken) ?? throw Problem.Of(404, "not_found");
+        context.Response.Headers["X-Robots-Tag"] = "noindex";
+        var callerId = await current.TryGetIdAsync(cancellationToken);
+        var player = callerId is null ? null : await PlayerHandles.FindAsync(db, handle, cancellationToken);
+        if (player is null || (player.ProfileVisibility == ProfileVisibility.Private && player.Id != callerId))
+        {
+            await ProblemWriter.WriteAsync(context, 404, "not_found");
+            return Results.Empty;
+        }
+
         var avatar = await db.AvatarConfigs.AsNoTracking().SingleAsync(a => a.PlayerId == player.Id, cancellationToken);
-        return new PublicProfile(player.Handle, player.DisplayName, player.Level, new PublicAvatar(
+        return TypedResults.Ok(new PublicProfile(player.Handle, player.DisplayName, player.Level, new PublicAvatar(
             avatar.BodyPresetId, avatar.SkinToneId, avatar.FacePresetId, avatar.HairPresetId, avatar.HairColorId,
-            Equipped.FromJson(avatar.EquippedJson)));
+            Equipped.FromJson(avatar.EquippedJson))));
+    }
+
+    /// <summary><c>PATCH /me/privacy</c>: sets who can see the caller's profile; idempotent.</summary>
+    private static async Task<PrivacySettings> UpdatePrivacyAsync(
+        HttpContext context, VybeDbContext db, CurrentPlayer current, TimeProvider clock, CancellationToken cancellationToken)
+    {
+        var playerId = await current.GetIdAsync(cancellationToken);
+        var request = RequestBody.Deserialize<PrivacySettingsRequest>(await RequestBody.ReadAsync(context, cancellationToken));
+        // The enum converter also reads numbers, so an undefined value is possible here.
+        if (request.ProfileVisibility is not { } visibility || !Enum.IsDefined(visibility))
+        {
+            throw Problem.ValidationFailed("/profileVisibility", "invalid", "profileVisibility must be players or private");
+        }
+
+        await db.Players.Where(p => p.Id == playerId)
+            .ExecuteUpdateAsync(u => u.SetProperty(p => p.ProfileVisibility, visibility).SetProperty(p => p.UpdatedAt, clock.UtcNowForDb()), cancellationToken);
+        return new PrivacySettings(visibility);
     }
 }
 

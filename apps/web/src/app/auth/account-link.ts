@@ -3,6 +3,7 @@ import { AccountApi } from "../api/account-api";
 import { isApiError } from "../api/api-client";
 import { API } from "../api/api";
 import { errorMessage } from "../api/messages";
+import { AgeGate } from "../player/age-gate";
 import { type Me, PlayerStore } from "../player/player-store";
 import { AuthSession } from "./auth-session";
 
@@ -36,6 +37,7 @@ export class AccountLink {
   private readonly accounts = inject(AccountApi);
   private readonly auth = inject(AuthSession);
   private readonly player = inject(PlayerStore);
+  private readonly ageGate = inject(AgeGate);
 
   async resolve(): Promise<LinkOutcome> {
     try {
@@ -50,14 +52,19 @@ export class AccountLink {
     }
   }
 
-  /** Call only after the user confirmed the link of this identity (shown by email). */
+  /**
+   * Call only after the user confirmed the link of this identity (shown by email). Without a guest, the age
+   * gate comes first (spec §17 decision 1); a cancelled gate goes back to the confirmation.
+   */
   async link(): Promise<LinkOutcome> {
     try {
       const token = await this.auth.accessToken();
       if (token === null) return { kind: "rejected", message: "Sign in first." };
       let isNew = false;
       if ((await this.guestPlayer()) === null) {
-        await this.api.createGuest();
+        const birthYear = await this.ageGate.ask();
+        if (birthYear === null) return { kind: "confirm", guest: null };
+        await this.api.createGuest(birthYear);
         isNew = true;
       }
       await this.accounts.linkAccount(token);

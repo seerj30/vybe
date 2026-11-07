@@ -27,10 +27,11 @@ function headers(call: Call | undefined): Record<string, string> {
 describe("ApiClient", () => {
   it("sends the CSRF header and same-origin credentials on unsafe requests", async () => {
     const { fetch, calls } = fakeFetch(() => json(201, { playerId: "p", handle: "guest_x", guestExpiresAt: "t" }));
-    const guest = await new ApiClient(fetch).createGuest();
+    const guest = await new ApiClient(fetch).createGuest(1990);
 
     expect(guest.handle).toBe("guest_x");
     expect(calls[0]?.url).toBe("/api/v1/guests");
+    expect(calls[0]?.init.body).toBe('{"birthYear":1990}');
     expect(calls[0]?.init.method).toBe("POST");
     expect(calls[0]?.init.credentials).toBe("same-origin");
     expect(headers(calls[0])["X-Requested-With"]).toBe("vybe-web");

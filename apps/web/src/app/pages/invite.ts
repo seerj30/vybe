@@ -6,6 +6,7 @@ import { API } from "../api/api";
 import { errorMessage } from "../api/messages";
 import { SOCIAL_API } from "../api/social-api";
 import { type Challenge, OUTCOME_LABELS, outcomeFor, shortTime, sideOf } from "../challenges/challenge-view";
+import { AgeGate } from "../player/age-gate";
 import { PlayerStore } from "../player/player-store";
 import { playerName } from "../profiles/player-name";
 import { Generations } from "../challenges/generations";
@@ -142,6 +143,7 @@ export class Invite {
   private readonly social = inject(SOCIAL_API);
   protected readonly name = playerName;
   private readonly player = inject(PlayerStore);
+  private readonly ageGate = inject(AgeGate);
   protected readonly time = shortTime;
 
   protected readonly view = signal<View>({ kind: "loading" });
@@ -195,8 +197,11 @@ export class Invite {
     this.busy.set(true);
     this.actionError.set(null);
     try {
+      if (!signedIn && !(await this.startGuest())) {
+        this.busy.set(false); // the age gate was cancelled: nothing changed
+        return;
+      }
       if (!signedIn) {
-        await this.startGuest();
         const current = this.view();
         if (isCurrent() && current.kind === "open") this.view.set({ ...current, signedIn: true });
       }
@@ -236,13 +241,17 @@ export class Invite {
     }
   }
 
-  private async startGuest(): Promise<void> {
+  /** The age gate first (spec §17 decision 1); false when the user cancelled it. */
+  private async startGuest(): Promise<boolean> {
+    const birthYear = await this.ageGate.ask();
+    if (birthYear === null) return false;
     try {
-      await this.api.createGuest();
+      await this.api.createGuest(birthYear);
     } catch (error: unknown) {
       if (!isApiError(error, "already_authenticated")) throw error;
     }
     await this.player.startedGuest();
+    return true;
   }
 
   private acceptFailed(error: unknown): void {

@@ -1,4 +1,4 @@
-import { expect, newPlayer, openOnlineStreetHoops, RUN_TIMEOUT, shoot, summaryValue } from "./app.ts";
+import { expect, newPlayer, openOnlineStreetHoops, passAgeGateDialog, RUN_TIMEOUT, shoot, summaryValue } from "./app.ts";
 import { acceptStatus, completeAsRecipient, createChallenge, expireInvite, loseFirstAnswer, me, otherPlayer, tokenOf, verifiedRun } from "./social.ts";
 import { powerMeter, startRun, test } from "./street-hoops.ts";
 
@@ -28,6 +28,7 @@ test("E04: creator challenge → share link → second player accepts → verifi
   await recipient.goto(`/challenge/${token}`);
   await expect(recipient.getByTestId("creator-score")).toHaveText(String(creatorScore));
   await recipient.getByRole("button", { name: "Play as a guest and accept" }).click();
+  await passAgeGateDialog(recipient);
   await recipient.getByRole("link", { name: "Play your challenge run" }).click();
 
   await expect(recipient.getByRole("button", { name: "Start challenge run" })).toBeEnabled();

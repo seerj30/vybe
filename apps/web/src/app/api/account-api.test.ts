@@ -41,7 +41,7 @@ describe("bearer token hook", () => {
 
   it("never sends the bearer token to createGuest or linkAccount (cookie only, CSRF header)", async () => {
     const { api, calls } = client("token-1");
-    await api.createGuest();
+    await api.createGuest(1990);
     await accounts(api).linkAccount("proof");
     for (const call of calls) expect(call.headers["Authorization"]).toBeUndefined();
     expect(calls[1]?.url).toBe("/api/v1/accounts/link");

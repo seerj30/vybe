@@ -8,11 +8,32 @@ using Vybe.Data.Entities;
 
 namespace Vybe.Api.Features;
 
+public sealed record GuestCreateRequest(int? BirthYear);
+
 public sealed record GuestCreated(Guid PlayerId, string Handle, DateTime GuestExpiresAt);
 
 public sealed record MeResponse(
     Guid Id, string Handle, PlayerKind Kind, string Status, DateTime? SuspendedUntil, int Level, long XpTotal,
-    long WalletBalance, long AvatarRevision);
+    long WalletBalance, long AvatarRevision, DateTime? GuestExpiresAt, ProfileVisibility ProfileVisibility);
+
+/// <summary>
+/// Spec §17 decision 1: VYBE is for adults. The gate asks only for the birth year; the API keeps the result
+/// (time, policy version, band), never the year. A birth year cannot show the exact age: a player is accepted
+/// when the player reaches <see cref="MinimumAge"/> in the current UTC calendar year (counsel to confirm).
+/// </summary>
+public static class AgePolicy
+{
+    /// <summary>The adult age; per-country values come later (counsel country list).</summary>
+    public const int MinimumAge = 18;
+
+    /// <summary>Stored with every confirmation; change it when the age policy text changes.</summary>
+    public const string Version = "2026-11-07";
+
+    /// <summary>Oldest accepted birth year: <c>current year - MaxAge</c>.</summary>
+    public const int MaxAge = 120;
+
+    public static bool IsAdult(int birthYear, DateTime now) => now.Year - birthYear >= MinimumAge;
+}
 
 public sealed record AvatarResponse(
     string BodyPresetId, string SkinToneId, string FacePresetId, string HairPresetId, string HairColorId,
@@ -46,8 +67,22 @@ public static class IdentityEndpoints
         }
 
         var now = clock.UtcNowForDb();
+        var body = await RequestBody.ReadAsync(context, cancellationToken);
+        var birthYear = (body.Length == 0 ? null : RequestBody.Deserialize<GuestCreateRequest>(body).BirthYear)
+            ?? throw Problem.ValidationFailed("/birthYear", "required", "birthYear is required");
+        if (birthYear > now.Year || birthYear < now.Year - AgePolicy.MaxAge)
+        {
+            throw Problem.ValidationFailed("/birthYear", "out_of_range", "birthYear is not a valid year");
+        }
+
+        // An under-age answer creates nothing: no player, no cookie, no record of the answer.
+        if (!AgePolicy.IsAdult(birthYear, now))
+        {
+            throw Problem.Of(403, "age_not_eligible");
+        }
+
         var token = GuestTokens.NewToken();
-        var expiresAt = now + GuestTokens.Lifetime;
+        var expiresAt = GuestTokens.ExpiryAt(now, now);
         var starterSkus = content.StarterSkus.ToArray();
         var starterItems = await db.CatalogItems.AsNoTracking()
             .Where(i => starterSkus.Contains(i.Sku))
@@ -62,6 +97,11 @@ public static class IdentityEndpoints
                 HandleNormalized = string.Empty,
                 Kind = PlayerKind.Guest,
                 Status = PlayerStatus.Active,
+                CreatedAt = now,
+                UpdatedAt = now,
+                AgeConfirmedAt = now,
+                AgePolicyVersion = AgePolicy.Version,
+                AgeBand = AgeBand.Adult,
             };
             player.HandleNormalized = player.Handle;
 
@@ -121,8 +161,13 @@ public static class IdentityEndpoints
             _ => "active",
         };
 
+        // Spec §17 decision 2: the end of the current guest session; null for registered players.
+        var guestExpiresAt = player.Kind == PlayerKind.Guest
+            ? await db.GuestSessions.Where(s => s.PlayerId == id && s.RevokedAt == null && s.ExpiresAt > now)
+                .MaxAsync(s => (DateTime?)s.ExpiresAt, cancellationToken)
+            : null;
         return new MeResponse(player.Id, player.Handle, player.Kind, status, suspended ? player.SuspendedUntil : null,
-            player.Level, player.XpTotal, balance, revision);
+            player.Level, player.XpTotal, balance, revision, guestExpiresAt, player.ProfileVisibility);
     }
 
     private static async Task<AvatarResponse> GetAvatarAsync(VybeDbContext db, CurrentPlayer current, CancellationToken cancellationToken)

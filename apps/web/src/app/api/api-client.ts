@@ -64,8 +64,9 @@ export class ApiClient {
     private readonly timeoutMs = 15_000,
   ) {}
 
-  createGuest(): Promise<Schemas["GuestCreated"]> {
-    return this.data("POST", "/guests", { guestOnly: true });
+  /** `birthYear` is the age-gate answer (spec §17 decision 1); the API keeps only the result. */
+  createGuest(birthYear: number): Promise<Schemas["GuestCreated"]> {
+    return this.data("POST", "/guests", { body: { birthYear } satisfies Schemas["GuestCreateRequest"], guestOnly: true });
   }
 
   getMe(): Promise<Schemas["Me"]> {

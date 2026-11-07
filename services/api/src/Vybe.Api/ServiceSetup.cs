@@ -50,9 +50,15 @@ public static class ServiceSetup
         services.AddSingleton(configuration.GetSection(PrivacyOptions.Section).Get<PrivacyOptions>() ?? new PrivacyOptions());
         services.AddExportStorage(environment);
         services.AddSingleton<PrivacyProcessor>();
+        // J4 deletes the Supabase Auth user with the service-role key (spec §17 decision 8).
+        services.AddOptions<SupabaseAdminOptions>().Bind(configuration.GetSection(SupabaseAdminOptions.Section));
+        services.AddSingleton<IAuthUserAdmin, SupabaseAuthUserAdmin>();
+        services.AddHttpClient(SupabaseAuthUserAdmin.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(10));
+        services.AddSingleton<GuestCleanup>();
         if (configuration.GetValue("Jobs:Enabled", true))
         {
             services.AddHostedService<PrivacyWorker>();
+            services.AddHostedService<GuestCleanupWorker>();
         }
 
         services.AddVybeJobs(configuration);

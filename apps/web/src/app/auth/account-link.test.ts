@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { AccountApi } from "../api/account-api";
 import { ApiError, type ApiClient } from "../api/api-client";
 import { API } from "../api/api";
+import { AgeGate } from "../player/age-gate";
 import { type Me, PlayerStore } from "../player/player-store";
 import { AccountLink } from "./account-link";
 import { AuthSession } from "./auth-session";
@@ -15,6 +16,8 @@ interface World {
   account: Me | ApiError;
   guest: Me | ApiError;
   link?: ApiError;
+  /** The age-gate answer; null = cancelled. */
+  birthYear?: number | null;
 }
 
 function setup(world: World): { link: AccountLink; log: string[] } {
@@ -23,8 +26,8 @@ function setup(world: World): { link: AccountLink; log: string[] } {
   const answer = (value: Me | ApiError): Promise<Me> => (value instanceof ApiError ? Promise.reject(value) : Promise.resolve(value));
   const api = {
     getMe: () => answer(linked ? { ...GUEST, kind: "registered" } : world.account),
-    createGuest: () => {
-      log.push("createGuest");
+    createGuest: (birthYear: number) => {
+      log.push(`createGuest:${birthYear}`);
       world.guest = GUEST;
       return Promise.resolve({});
     },
@@ -46,6 +49,7 @@ function setup(world: World): { link: AccountLink; log: string[] } {
       { provide: AccountApi, useValue: accounts },
       { provide: AuthSession, useValue: auth },
       { provide: PlayerStore, useValue: player },
+      { provide: AgeGate, useValue: { ask: () => Promise.resolve(world.birthYear === undefined ? 1990 : world.birthYear) } },
       { provide: AccountLink },
     ],
   });
@@ -74,7 +78,22 @@ describe("AccountLink", () => {
     expect(await link.resolve()).toEqual({ kind: "confirm", guest: null });
     const outcome = await link.link();
     expect(outcome.kind === "ready" && outcome.isNew).toBe(true);
-    expect(log).toEqual(["createGuest", "link:token-1"]);
+    expect(log).toEqual(["createGuest:1990", "link:token-1"]);
+  });
+
+  it("goes back to the confirmation when the age gate is cancelled, and creates nothing", async () => {
+    const { link, log } = setup({ account: noPlayer, guest: noGuest, birthYear: null });
+    expect(await link.link()).toEqual({ kind: "confirm", guest: null });
+    expect(log).toEqual([]);
+  });
+
+  it("rejects an under-age answer without linking", async () => {
+    const { link, log } = setup({ account: noPlayer, guest: noGuest });
+    const under = new ApiError(403, "age_not_eligible");
+    (link as unknown as { api: { createGuest: () => Promise<never> } }).api.createGuest = () => Promise.reject(under);
+    const outcome = await link.link();
+    expect(outcome.kind).toBe("rejected");
+    expect(log).toEqual([]);
   });
 
   it("signs in to an identity that has a player, without linking", async () => {

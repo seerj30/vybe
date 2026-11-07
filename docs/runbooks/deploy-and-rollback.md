@@ -30,6 +30,7 @@ The image sets `ASPNETCORE_ENVIRONMENT=Production`; set `Staging` on staging.
 | `ConnectionStrings__Migrations` | for `migrate`/`seed` | yes | Owner role. Direct connection or session-mode pooler. Never the transaction pooler. Do not give it to the API process. |
 | `Auth__Supabase__Authority` | yes | no | `https://<ref>.supabase.co/auth/v1` |
 | `Auth__Supabase__ApiKey` | yes | no (publishable key) | Supabase publishable (anon) key. |
+| `Auth__Supabase__ServiceRoleKey` | yes | yes | Supabase service-role (secret) key. The API uses it only for the Auth admin API: J4 deletes the Supabase Auth user (spec §17 decision 8). Give it only to the API process. Never put it in the web app, a log or a ticket. |
 | `Challenges__InviteSecret` | yes | yes | Base64 of at least 32 random bytes: `openssl rand -base64 32`. |
 | `Challenges__ShareBaseUrl` | yes | no | Web origin, absolute `https` URL. |
 | `Storage__Exports__Bucket` | yes | no | Private bucket for J4 data exports. |

@@ -1,6 +1,6 @@
 import { accessToken, createUser } from "../fake-auth/users.ts";
 import { bearer, guestPost, json, signInOnAdmin } from "./account-flows.ts";
-import { expect, newPlayer } from "./app.ts";
+import { ADULT_GUEST, expect, newPlayer } from "./app.ts";
 import { grantCoins, playerId } from "./db.ts";
 import { test } from "./street-hoops.ts";
 
@@ -17,7 +17,7 @@ test("E08: a player reaches only the own wallet and inventory", async ({ page, b
   await newPlayer(page);
   await grantCoins(page, 123);
   const other = await browser.newContext({ baseURL: test.info().project.use.baseURL });
-  const victim = await json<{ playerId: string }>(await guestPost(other.request, "/guests", undefined));
+  const victim = await json<{ playerId: string }>(await guestPost(other.request, "/guests", ADULT_GUEST));
 
   // The API takes the player from the session, never from the request: there is no path with a player id.
   for (const path of [`/players/${victim.playerId}/wallet`, `/players/${victim.playerId}/inventory`, `/me/wallet/transactions?playerId=${victim.playerId}`]) {
@@ -50,7 +50,7 @@ test("with a bearer token and a guest cookie, the bearer token decides the playe
   const guestId = await playerId(page);
   const user = await createUser();
   const other = await page.context().browser()!.newContext({ baseURL: test.info().project.use.baseURL });
-  const account = await json<{ playerId: string }>(await guestPost(other.request, "/guests", undefined));
+  const account = await json<{ playerId: string }>(await guestPost(other.request, "/guests", ADULT_GUEST));
   await json(await guestPost(other.request, "/accounts/link", { linkProof: await accessToken(user) }));
   await other.close();
 

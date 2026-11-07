@@ -1,7 +1,7 @@
 import { AUTH_ANON_KEY, AUTH_URL } from "../fake-auth/config.ts";
 import { accessToken, confirmationUrl, createUser, updateUser } from "../fake-auth/users.ts";
 import { bearer, confirmLink, fillSignIn, guestPost, json, openNav, signInOnLanding } from "./account-flows.ts";
-import { expect, newPlayer, walletBalance } from "./app.ts";
+import { ADULT_GUEST, expect, newPlayer, passAgeGateDialog, walletBalance } from "./app.ts";
 import { grantCoins, playerId } from "./db.ts";
 import { test } from "./street-hoops.ts";
 
@@ -57,7 +57,7 @@ test("an identity with a player and another guest: the user chooses, nothing mer
   // The account's player: a guest that linked earlier in another browser.
   const user = await createUser();
   const first = await browser.newContext({ baseURL: test.info().project.use.baseURL });
-  const created = await json<{ playerId: string }>(await guestPost(first.request, "/guests", undefined));
+  const created = await json<{ playerId: string }>(await guestPost(first.request, "/guests", ADULT_GUEST));
   await json(await guestPost(first.request, "/accounts/link", { linkProof: await accessToken(user) }));
   await first.close();
 
@@ -105,6 +105,7 @@ test("a new account without a guest gets a new player; a reload asks to sign in 
   await form.getByRole("button", { name: "Create account" }).click();
   await expect(region.getByText("a new VYBE player")).toBeVisible();
   await region.getByRole("button", { name: "Link this account" }).click();
+  await passAgeGateDialog(page); // a new player passes the age gate first (spec §17 decision 1)
   await expect(page.getByRole("heading", { name: "Create your avatar" })).toBeVisible();
 
   // The session is in memory only: a reload signs out, and the app asks to sign in (not "lost guest").
@@ -240,7 +241,7 @@ test("a wrong password is explained and nothing changes", async ({ page }) => {
 
 test("settings: blocked players are listed and can be unblocked", async ({ page, browser }) => {
   const other = await browser.newContext({ baseURL: test.info().project.use.baseURL });
-  const target = await json<{ handle: string }>(await guestPost(other.request, "/guests", undefined));
+  const target = await json<{ handle: string }>(await guestPost(other.request, "/guests", ADULT_GUEST));
   await other.close();
 
   await newPlayer(page);

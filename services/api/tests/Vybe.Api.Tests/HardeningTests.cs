@@ -220,7 +220,7 @@ public sealed class RateLimitTests(RateLimitedApiFactory api) : IClassFixture<Ra
         HttpResponseMessage? last = null;
         for (var i = 0; i < 3; i++)
         {
-            last = await api.CreateBrowser().PostAsync("/api/v1/guests", null);
+            last = await api.CreateBrowser().PostAsync("/api/v1/guests", Player.AdultGuest());
             statuses.Add(last.StatusCode);
         }
 
