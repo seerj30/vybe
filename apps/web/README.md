@@ -19,6 +19,9 @@ change.
 | `/challenge/:token` | Invite: preview without a player, accept (creates a guest if necessary), result |
 | `/profile/:handle` | Public profile: challenge, report, block and unblock |
 | `/practice` | Client-only Street Hoops prototype (no API, no rewards, dev tuning panel) |
+| `/settings` | Account state and linking, blocked players, data export, account deletion |
+| `/deletion/:requestId` | Status of a deletion request (no session needed: the id is the access key) |
+| `/admin` | Staff sign-in; reports, suspensions (moderator); catalog, wallet adjustment, audit log (administrator) |
 
 ## API client
 
@@ -29,6 +32,33 @@ change.
 - A problem response becomes an `ApiError` with the contract `code`. A network failure or timeout is
   `network_error`. `retryable` is true when the outcome is unknown or temporary.
 - `newIdempotencyKey()` makes one key per user action. A retry of the same action sends the same key.
+
+## Sign-in and accounts (Supabase Auth)
+
+- Configuration: the app reads `/runtime-config.json` at run time:
+  `{ "supabaseUrl": "https://<project>.supabase.co", "supabaseAnonKey": "<publishable key>" }`.
+  The hosting serves this file next to the app. The publishable key is public; put no secret in the
+  file. Without the file (404), sign-in is off and the app is guest-only.
+- The Supabase session is in memory only (spec §11: no tokens in localStorage). A reload signs the
+  player out; the landing page then asks to sign in again. supabase-js loads as a lazy chunk at the
+  first sign-in.
+- A signed-in player sends the access token as `Authorization: Bearer`. `createGuest` and
+  `linkAccount` send only the guest cookie. When a token refresh fails, the request fails; it never
+  falls back to the cookie.
+- J3 (`src/app/auth/account-link.ts`): after a sign-in, an identity with a player signs in to that
+  player. An identity without a player links the guest of this browser (`POST /accounts/link`, a new
+  guest if there is none), so the player id, wallet and inventory stay the same. When the identity
+  has a player and the browser has another guest, the player chooses; VYBE merges nothing.
+- Deletion of a linked account needs a sign-in from the last 5 minutes (`amr`); else the page asks
+  for the password again ("Verification required").
+- Admin roles come from `app_metadata.vybe_role`. The page only hides what a role cannot use; the
+  API checks every call.
+
+Local sign-in without a Supabase project: start the test Auth server
+(`E2E_AUTH_PORT=5290 node tests/e2e/fake-auth/server.ts`), start the API with
+`Auth__Supabase__Authority=http://localhost:5290/auth/v1`, and the dev server with `E2E_AUTH_PORT=5290`.
+The dev proxy then serves `/runtime-config.json` from that server. Create users with
+`POST http://localhost:5290/__test/users` with the header `X-Test-Secret: vybe-e2e-test-only` (see `tests/e2e/fake-auth/server.ts`).
 
 ## Street Hoops on the API (`/arcade/street-hoops`)
 
@@ -194,7 +224,10 @@ README). Do not edit `street-hoops-v1.json` in place.
 | `src/app/profiles/*.ts` | Player names, report reasons, block lookup |
 | `src/app/outfits/outfits-panel.ts` | Saved outfits in the wardrobe |
 | `src/app/player/player-store.ts` | The calling player (`/me`) as a signal; lost-guest hint |
-| `src/app/player/guards.ts` | Route guard: no player → `/play`; API down → `/` |
+| `src/app/player/guards.ts` | Route guard: no player → `/play` (or `/` after a signed-in session); API down → `/` |
+| `src/app/api/account-api.ts` | Linking, blocks, export, deletion and admin operations |
+| `src/app/auth/*.ts` | Runtime config, Supabase session, J3 link flow, sign-in form |
+| `src/app/settings/*.ts`, `src/app/admin/*.ts` | Panels of `/settings` and `/admin` |
 | `src/app/avatar/presets.ts` | Avatar presets from `assets/manifests/avatar.v1.json`, labels, 2D colors |
 | `src/app/avatar/avatar-portrait.ts` | 2D fallback avatar portrait (SVG) |
 | `src/app/pages/*.ts` | Screens of spec §3 |

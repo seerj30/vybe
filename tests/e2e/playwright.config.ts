@@ -1,6 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 // PostgreSQL with `services/api/db/schema.sql` applied (`pnpm --filter @vybe/e2e db:up` locally).
 import { DATABASE_URL } from "./specs/db.ts";
+// Fake Supabase Auth for sign-in, linking and admin roles (tests/e2e/fake-auth; port E2E_AUTH_PORT).
+import { AUTH_ANON_KEY, AUTH_ISSUER, AUTH_PORT, AUTH_URL } from "./fake-auth/config.ts";
 
 // Override the ports to run several worktrees at the same time (tests/e2e/scripts/db-up.sh).
 const PORT = Number(process.env["E2E_WEB_PORT"] ?? 4321);
@@ -43,6 +45,14 @@ export default defineConfig({
   ],
   webServer: [
     {
+      // Test-only stand-in for Supabase Auth: JWKS, password sign-in, `/auth/v1/user`, roles and `amr`.
+      command: "node fake-auth/server.ts",
+      url: `${AUTH_URL}/auth/v1/.well-known/jwks.json`,
+      reuseExistingServer: !isCI,
+      timeout: 30_000,
+      env: { E2E_AUTH_PORT: String(AUTH_PORT) },
+    },
+    {
       // The real API (ADR 0003) on PostgreSQL; it seeds rulesets and the catalog at start-up.
       command: "dotnet run --project ../../services/api/src/Vybe.Api --no-launch-profile",
       url: `http://localhost:${API_PORT}/api/v1/catalog/items`,
@@ -55,6 +65,12 @@ export default defineConfig({
         Content__SeedOnStartup: "true",
         // Every test creates guests from the same address.
         RateLimits__GuestsPerIpPerMinute: "10000",
+        RateLimits__LinkPerIpPerMinute: "10000",
+        // Supabase bearer tokens from the fake Auth (http is accepted in Development only).
+        Auth__Supabase__Authority: AUTH_ISSUER,
+        Auth__Supabase__ApiKey: AUTH_ANON_KEY,
+        // Exports and deletions finish within seconds.
+        Privacy__PollSeconds: "1",
       },
     },
     {
@@ -64,7 +80,7 @@ export default defineConfig({
       url: `http://localhost:${PORT}`,
       reuseExistingServer: !isCI,
       timeout: 180_000,
-      env: { E2E_API_PORT: String(API_PORT) },
+      env: { E2E_API_PORT: String(API_PORT), E2E_AUTH_PORT: String(AUTH_PORT) },
     },
   ],
 });

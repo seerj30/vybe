@@ -39,6 +39,16 @@ const MESSAGES: Partial<Record<ErrorCode, string>> = {
   self_report: "You cannot report yourself.",
   outfit_limit_reached: "You can save 3 outfits. Delete one to save a new one.",
   outfit_items_invalid: "Some items in this outfit are not yours any more or do not fit. Nothing changed.",
+  // Accounts, privacy and admin (stream H).
+  forbidden: "You do not have access to this.",
+  not_found: "VYBE did not find this.",
+  player_not_found: "This account has no VYBE player yet.",
+  identity_already_linked: "This account already belongs to another VYBE player. Nothing was merged.",
+  invalid_link_proof: "VYBE could not confirm this account. Confirm your email address, then sign in again.",
+  auth_unavailable: "The sign-in service does not answer right now. Your guest progress is safe. Try again in a moment.",
+  export_in_progress: "Your data export is still being prepared.",
+  reauthentication_required: "Sign in again to confirm that it is you.",
+  idempotency_key_mismatch: "This request was already used for another action. Start again.",
 };
 
 export function errorMessage(error: unknown): string {
