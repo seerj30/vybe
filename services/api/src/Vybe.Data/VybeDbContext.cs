@@ -9,6 +9,7 @@ public sealed class VybeDbContext(DbContextOptions<VybeDbContext> options) : DbC
 
     public DbSet<Player> Players => Set<Player>();
     public DbSet<GuestSession> GuestSessions => Set<GuestSession>();
+    public DbSet<AuthUserDeletion> AuthUserDeletions => Set<AuthUserDeletion>();
     public DbSet<AvatarConfig> AvatarConfigs => Set<AvatarConfig>();
     public DbSet<PlayerBlock> PlayerBlocks => Set<PlayerBlock>();
     public DbSet<PlayerReport> PlayerReports => Set<PlayerReport>();

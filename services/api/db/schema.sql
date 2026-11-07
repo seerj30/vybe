@@ -721,3 +721,34 @@ VALUES ('20261106122824_DatabaseGuards', '10.0.13');
 
 COMMIT;
 
+START TRANSACTION;
+ALTER TABLE vybe.players ADD age_band text;
+
+ALTER TABLE vybe.players ADD age_confirmed_at timestamp with time zone;
+
+ALTER TABLE vybe.players ADD age_policy_version character varying(32);
+
+ALTER TABLE vybe.players ADD profile_visibility text NOT NULL DEFAULT ('players');
+
+CREATE TABLE vybe.auth_user_deletions (
+    auth_subject text NOT NULL,
+    attempts integer NOT NULL DEFAULT 0,
+    next_attempt_at timestamp with time zone NOT NULL DEFAULT (now()),
+    created_at timestamp with time zone NOT NULL DEFAULT (now()),
+    CONSTRAINT pk_auth_user_deletions PRIMARY KEY (auth_subject),
+    CONSTRAINT ck_auth_user_deletions_attempts CHECK (attempts >= 0)
+);
+
+ALTER TABLE vybe.players ADD CONSTRAINT ck_players_age_band CHECK (age_band IN ('adult'));
+
+ALTER TABLE vybe.players ADD CONSTRAINT ck_players_age_confirmation CHECK ((age_confirmed_at IS NULL) = (age_policy_version IS NULL) AND (age_confirmed_at IS NULL) = (age_band IS NULL));
+
+ALTER TABLE vybe.players ADD CONSTRAINT ck_players_profile_visibility CHECK (profile_visibility IN ('players', 'private'));
+
+CREATE INDEX ix_auth_user_deletions_next_attempt_at ON vybe.auth_user_deletions (next_attempt_at);
+
+INSERT INTO vybe.__ef_migrations_history (migration_id, product_version)
+VALUES ('20261107132714_AccountPolicies', '10.0.13');
+
+COMMIT;
+

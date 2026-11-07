@@ -58,12 +58,34 @@ paths:
         Requires `X-Requested-With: vybe-web` (a cross-site form cannot send it, so it cannot
         replace a victim's guest cookie). If the request already carries a valid guest cookie
         or a bearer token linked to a player, nothing is created: 409 `already_authenticated`.
+
+        Age gate (spec §17 decision 1): VYBE is for adults. The body carries the self-declared
+        birth month and year. The API accepts only when the month of the 18th birthday is before
+        the current UTC month (in that month itself the person can still be 17). Otherwise 403
+        `age_not_eligible`: no player and no cookie are created, and the answer is not stored.
+        The API stores only the gate result (time, policy version, band), never the month or year.
+        A missing or impossible month is 422 `validation_failed`.
+
+        The web client sends `createGuest` with the guest cookie only. In one case it adds the
+        bearer token: a signed-in Supabase identity without a player (account linking). If that
+        answer is under age, the API also queues the Supabase Auth user for deletion (J4 queue),
+        and the client signs out.
+
+        The guest session expires 30 days after its last use and never later than 90 days
+        after the guest was created (spec §17 decision 2); `guestExpiresAt` is its first expiry.
       security: []
       parameters:
         - $ref: "#/components/parameters/CsrfHeader"
       x-problem-codes:
-        "403": [csrf_check_failed]
+        "403": [csrf_check_failed, age_not_eligible]
         "409": [already_authenticated]
+        "422": [validation_failed]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuestCreateRequest"
       responses:
         "201":
           description: Guest created.
@@ -80,6 +102,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "409":
           $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableContent"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         default:
@@ -148,6 +172,10 @@ paths:
         A valid Supabase token whose identity has no player yet gets 404 `player_not_found`
         (any authenticated operation does). The client then calls `createGuest` without the
         bearer token and links the new guest with `linkAccount`.
+
+        A guest request renews the guest session at most once per UTC day (sliding 30 days,
+        never past 90 days after creation; spec §17 decision 2). The renewal re-sends the
+        cookie; any authenticated guest request can renew it.
       x-problem-codes:
         "404": [player_not_found]
       responses:
@@ -219,6 +247,12 @@ paths:
       tags: [profiles]
       operationId: getProfile
       summary: Get a public profile
+      description: |
+        Signed-in callers only (guest or registered; spec §17 decision 6). An anonymous caller,
+        an unknown, deleting or deleted handle, and a private profile of another player all get
+        the same 404 `not_found`, so the answer does not tell why. The owner always sees the
+        own profile. Blocks do not change the answer. Every response (also the 404) carries
+        `Cache-Control: private, no-store` and `X-Robots-Tag: noindex`.
       security:
         - {}
         - bearerAuth: []
@@ -231,12 +265,57 @@ paths:
           headers:
             Cache-Control:
               $ref: "#/components/headers/CacheControlPrivate"
+            X-Robots-Tag:
+              $ref: "#/components/headers/RobotsNoIndex"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/PublicProfile"
         "404":
-          $ref: "#/components/responses/NotFound"
+          description: Not found, not visible to the caller, or an anonymous caller.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlPrivate"
+            X-Robots-Tag:
+              $ref: "#/components/headers/RobotsNoIndex"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /me/privacy:
+    patch:
+      tags: [profiles]
+      operationId: updatePrivacySettings
+      summary: Set who can see the own profile
+      description: |
+        `players` (default): every signed-in player. `private`: only the owner; other callers get
+        the 404 of an unknown handle, and a challenge with this `recipientHandle` gets 404
+        `not_found` (spec §17 decision 6). Idempotent. Challenge results still show the handle
+        to the other participant.
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+      x-problem-codes:
+        "422": [validation_failed]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PrivacySettings"
+      responses:
+        "200":
+          description: The privacy settings now in effect.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrivacySettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableContent"
         default:
           $ref: "#/components/responses/Problem"
 
@@ -1446,6 +1525,11 @@ components:
       schema:
         type: string
         const: private, no-store
+    RobotsNoIndex:
+      description: Search engines must not index the response (spec §17 decision 6).
+      schema:
+        type: string
+        const: noindex
     ReferrerPolicyNoReferrer:
       description: Invite-token responses never leak the token through the Referer header.
       schema:
@@ -1768,6 +1852,7 @@ components:
         # identity / avatar
         - player_not_found
         - already_authenticated
+        - age_not_eligible
         - invalid_link_proof
         - identity_already_linked
         - auth_unavailable
@@ -1822,6 +1907,22 @@ components:
       type: string
       description: Spec §6 account state as seen by the player.
       enum: [active, suspended, deleting]
+    GuestCreateRequest:
+      type: object
+      required: [birthYear, birthMonth]
+      additionalProperties: false
+      description: |
+        Self-declared birth month of the age gate. Used only for the check, never stored or
+        logged. The API accepts months from 120 years ago up to the current month (else 422).
+      properties:
+        birthYear:
+          type: integer
+          minimum: 1900
+          maximum: 2100
+        birthMonth:
+          type: integer
+          minimum: 1
+          maximum: 12
     GuestCreated:
       type: object
       required: [playerId, handle, guestExpiresAt]
@@ -1856,7 +1957,7 @@ components:
           const: true
     Me:
       type: object
-      required: [id, handle, kind, status, suspendedUntil, level, xpTotal, walletBalance, avatarRevision]
+      required: [id, handle, kind, status, suspendedUntil, level, xpTotal, walletBalance, avatarRevision, guestExpiresAt, profileVisibility]
       properties:
         id:
           $ref: "#/components/schemas/Uuid"
@@ -1879,6 +1980,24 @@ components:
           $ref: "#/components/schemas/Coins"
         avatarRevision:
           $ref: "#/components/schemas/Revision"
+        guestExpiresAt:
+          description: |
+            End of the current guest session (sliding; spec §17 decision 2). Null for
+            registered players. The client shows a link prompt when fewer than 14 days remain.
+          $ref: "#/components/schemas/NullableTimestamp"
+        profileVisibility:
+          $ref: "#/components/schemas/ProfileVisibility"
+    ProfileVisibility:
+      type: string
+      description: "`players`: every signed-in player can see the profile. `private`: only the owner."
+      enum: [players, private]
+    PrivacySettings:
+      type: object
+      required: [profileVisibility]
+      additionalProperties: false
+      properties:
+        profileVisibility:
+          $ref: "#/components/schemas/ProfileVisibility"
 
     # ---------------------------------------------------------------- avatar
     Equipped:

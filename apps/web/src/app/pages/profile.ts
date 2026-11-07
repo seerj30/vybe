@@ -57,7 +57,13 @@ interface Message {
           </div>
 
           @if (isMe()) {
-            <p class="notice">This is your public profile. Other players see this name, level and avatar.</p>
+            @if (player.me()?.profileVisibility === "private") {
+              <p class="notice" data-testid="own-profile-private">
+                Your profile is private. Only you can see it. You can change this in <a routerLink="/settings">Settings</a>.
+              </p>
+            } @else {
+              <p class="notice">This is your profile. Signed-in players see this name, level and avatar.</p>
+            }
           } @else {
             @if (blockCheckFailed()) {
               <p class="notice" role="status">VYBE could not check your block list. If you blocked this player, a challenge to them fails.</p>
@@ -147,7 +153,7 @@ export class Profile {
 
   private readonly social = inject(SOCIAL_API);
   protected readonly name = playerName;
-  private readonly player = inject(PlayerStore);
+  protected readonly player = inject(PlayerStore);
   protected readonly reasons = REPORT_REASONS;
 
   protected readonly state = signal<Load>({ kind: "loading" });

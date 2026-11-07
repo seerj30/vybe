@@ -18,6 +18,17 @@ public sealed class Player
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public DateTime? DeletedAt { get; set; }
+
+    /// <summary>Spec §17 decision 1: when the age gate was passed; null for players created before the gate.</summary>
+    public DateTime? AgeConfirmedAt { get; set; }
+
+    /// <summary>Version of the age policy that the player confirmed.</summary>
+    public string? AgePolicyVersion { get; set; }
+
+    /// <summary>Self-declared age band of the gate; never the birth year.</summary>
+    public AgeBand? AgeBand { get; set; }
+
+    public ProfileVisibility ProfileVisibility { get; set; }
 }
 
 public sealed class GuestSession
@@ -27,6 +38,18 @@ public sealed class GuestSession
     public required byte[] TokenHash { get; set; }
     public DateTime ExpiresAt { get; set; }
     public DateTime? RevokedAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>
+/// J4 (spec §17 decision 8): a Supabase Auth user to delete. The anonymization writes the row in its transaction;
+/// a privacy pass deletes the user and then the row, and retries on failure.
+/// </summary>
+public sealed class AuthUserDeletion
+{
+    public required string AuthSubject { get; set; }
+    public int Attempts { get; set; }
+    public DateTime NextAttemptAt { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 

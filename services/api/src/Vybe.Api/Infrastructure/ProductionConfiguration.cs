@@ -46,6 +46,16 @@ public static class ProductionConfiguration
             problems.Add("Auth:Supabase:ApiKey is not configured");
         }
 
+        // J4 deletes the Supabase Auth user (spec §17 decision 8); without this key the deletions only queue up.
+        if (string.IsNullOrWhiteSpace(configuration["Auth:Supabase:ServiceRoleKey"]))
+        {
+            problems.Add("Auth:Supabase:ServiceRoleKey is not configured");
+        }
+        else if (string.IsNullOrWhiteSpace(configuration["Auth:Supabase:Authority"]))
+        {
+            problems.Add("Auth:Supabase:Authority is not configured (the Auth admin API for J4 deletion uses it)");
+        }
+
         if (!IsInviteSecret(configuration["Challenges:InviteSecret"]))
         {
             problems.Add("Challenges:InviteSecret must be base64 of at least 32 bytes");

@@ -37,7 +37,8 @@ So every decision below must work on any container host and any OpenTelemetry ba
    (Supabase Storage S3 endpoint, AWS S3, MinIO) with the AWS SDK. Objects are private (`exports/{id}.json`);
    download URLs are SigV4 presigned GET URLs valid for min(10 min, export expiry), as an attachment. The
    storage endpoint must be https outside Development. Supabase S3 access keys give storage access only,
-   so the API does not need the Supabase service role key.
+   so the export storage does not need the Supabase service role key. (Since ADR 0007 the API has that key
+   only to delete Supabase Auth users in J4.)
 6. **Telemetry is opt-in by configuration and vendor-neutral.** OpenTelemetry traces and metrics (ASP.NET Core,
    HttpClient, Npgsql, runtime, rate limiting) are exported over OTLP only when `OTEL_EXPORTER_OTLP_ENDPOINT`
    is set; outside Development the endpoint must be https, or http to a collector on localhost (a sidecar on the

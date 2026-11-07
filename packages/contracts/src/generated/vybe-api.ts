@@ -19,6 +19,21 @@ export interface paths {
          *     Requires `X-Requested-With: vybe-web` (a cross-site form cannot send it, so it cannot
          *     replace a victim's guest cookie). If the request already carries a valid guest cookie
          *     or a bearer token linked to a player, nothing is created: 409 `already_authenticated`.
+         *
+         *     Age gate (spec §17 decision 1): VYBE is for adults. The body carries the self-declared
+         *     birth month and year. The API accepts only when the month of the 18th birthday is before
+         *     the current UTC month (in that month itself the person can still be 17). Otherwise 403
+         *     `age_not_eligible`: no player and no cookie are created, and the answer is not stored.
+         *     The API stores only the gate result (time, policy version, band), never the month or year.
+         *     A missing or impossible month is 422 `validation_failed`.
+         *
+         *     The web client sends `createGuest` with the guest cookie only. In one case it adds the
+         *     bearer token: a signed-in Supabase identity without a player (account linking). If that
+         *     answer is under age, the API also queues the Supabase Auth user for deletion (J4 queue),
+         *     and the client signs out.
+         *
+         *     The guest session expires 30 days after its last use and never later than 90 days
+         *     after the guest was created (spec §17 decision 2); `guestExpiresAt` is its first expiry.
          */
         post: operations["createGuest"];
         delete?: never;
@@ -65,6 +80,10 @@ export interface paths {
          * @description A valid Supabase token whose identity has no player yet gets 404 `player_not_found`
          *     (any authenticated operation does). The client then calls `createGuest` without the
          *     bearer token and links the new guest with `linkAccount`.
+         *
+         *     A guest request renews the guest session at most once per UTC day (sliding 30 days,
+         *     never past 90 days after creation; spec §17 decision 2). The renewal re-sends the
+         *     cookie; any authenticated guest request can renew it.
          */
         get: operations["getMe"];
         put?: never;
@@ -104,7 +123,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get a public profile */
+        /**
+         * Get a public profile
+         * @description Signed-in callers only (guest or registered; spec §17 decision 6). An anonymous caller,
+         *     an unknown, deleting or deleted handle, and a private profile of another player all get
+         *     the same 404 `not_found`, so the answer does not tell why. The owner always sees the
+         *     own profile. Blocks do not change the answer. Every response (also the 404) carries
+         *     `Cache-Control: private, no-store` and `X-Robots-Tag: noindex`.
+         */
         get: operations["getProfile"];
         put?: never;
         post?: never;
@@ -112,6 +138,29 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/me/privacy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Set who can see the own profile
+         * @description `players` (default): every signed-in player. `private`: only the owner; other callers get
+         *     the 404 of an unknown handle, and a challenge with this `recipientHandle` gets 404
+         *     `not_found` (spec §17 decision 6). Idempotent. Challenge results still show the handle
+         *     to the other participant.
+         */
+        patch: operations["updatePrivacySettings"];
         trace?: never;
     };
     "/me/blocks": {
@@ -885,7 +934,7 @@ export interface components {
             message?: string;
         };
         /** @enum {string} */
-        ProblemCode: "malformed_request" | "invalid_idempotency_key" | "unauthenticated" | "forbidden" | "account_suspended" | "csrf_check_failed" | "not_found" | "revision_conflict" | "request_in_progress" | "payload_too_large" | "validation_failed" | "idempotency_key_mismatch" | "idempotency_key_required" | "rate_limited" | "internal_error" | "player_not_found" | "already_authenticated" | "invalid_link_proof" | "identity_already_linked" | "auth_unavailable" | "invalid_preset" | "incompatible_equipment" | "self_block" | "self_report" | "insufficient_funds" | "already_owned" | "level_too_low" | "item_unavailable" | "item_not_purchasable" | "item_not_owned" | "incompatible_item" | "item_inactive" | "item_already_equipped" | "outfit_limit_reached" | "outfit_items_invalid" | "session_expired" | "challenge_unavailable" | "challenge_session_exists" | "challenge_expired" | "session_not_eligible" | "session_already_used" | "self_challenge" | "recipient_blocked" | "self_accept" | "challenge_already_accepted" | "challenge_not_completed" | "rematch_already_created" | "quest_not_completed" | "quest_already_claimed" | "quest_claim_expired" | "export_in_progress" | "reauthentication_required";
+        ProblemCode: "malformed_request" | "invalid_idempotency_key" | "unauthenticated" | "forbidden" | "account_suspended" | "csrf_check_failed" | "not_found" | "revision_conflict" | "request_in_progress" | "payload_too_large" | "validation_failed" | "idempotency_key_mismatch" | "idempotency_key_required" | "rate_limited" | "internal_error" | "player_not_found" | "already_authenticated" | "age_not_eligible" | "invalid_link_proof" | "identity_already_linked" | "auth_unavailable" | "invalid_preset" | "incompatible_equipment" | "self_block" | "self_report" | "insufficient_funds" | "already_owned" | "level_too_low" | "item_unavailable" | "item_not_purchasable" | "item_not_owned" | "incompatible_item" | "item_inactive" | "item_already_equipped" | "outfit_limit_reached" | "outfit_items_invalid" | "session_expired" | "challenge_unavailable" | "challenge_session_exists" | "challenge_expired" | "session_not_eligible" | "session_already_used" | "self_challenge" | "recipient_blocked" | "self_accept" | "challenge_already_accepted" | "challenge_not_completed" | "rematch_already_created" | "quest_not_completed" | "quest_already_claimed" | "quest_claim_expired" | "export_in_progress" | "reauthentication_required";
         /** @description Cursor for the next page; null on the last page. */
         NextCursor: string | null;
         /** @enum {string} */
@@ -895,6 +944,14 @@ export interface components {
          * @enum {string}
          */
         PlayerStatus: "active" | "suspended" | "deleting";
+        /**
+         * @description Self-declared birth month of the age gate. Used only for the check, never stored or
+         *     logged. The API accepts months from 120 years ago up to the current month (else 422).
+         */
+        GuestCreateRequest: {
+            birthYear: number;
+            birthMonth: number;
+        };
         GuestCreated: {
             playerId: components["schemas"]["Uuid"];
             handle: components["schemas"]["Handle"];
@@ -925,6 +982,20 @@ export interface components {
             xpTotal: number;
             walletBalance: components["schemas"]["Coins"];
             avatarRevision: components["schemas"]["Revision"];
+            /**
+             * @description End of the current guest session (sliding; spec §17 decision 2). Null for
+             *     registered players. The client shows a link prompt when fewer than 14 days remain.
+             */
+            guestExpiresAt: components["schemas"]["NullableTimestamp"];
+            profileVisibility: components["schemas"]["ProfileVisibility"];
+        };
+        /**
+         * @description `players`: every signed-in player can see the profile. `private`: only the owner.
+         * @enum {string}
+         */
+        ProfileVisibility: "players" | "private";
+        PrivacySettings: {
+            profileVisibility: components["schemas"]["ProfileVisibility"];
         };
         /** @description Equipment per slot (spec §4 `equipped_json`). `accessories` index = attachment point. */
         Equipped: {
@@ -1580,6 +1651,8 @@ export interface components {
     headers: {
         /** @description The body depends on the caller; shared caches must not store it. */
         CacheControlPrivate: "private, no-store";
+        /** @description Search engines must not index the response (spec §17 decision 6). */
+        RobotsNoIndex: "noindex";
         /** @description Invite-token responses never leak the token through the Referer header. */
         ReferrerPolicyNoReferrer: "no-referrer";
     };
@@ -1601,7 +1674,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GuestCreateRequest"];
+            };
+        };
         responses: {
             /** @description Guest created. */
             201: {
@@ -1616,6 +1693,7 @@ export interface operations {
             };
             403: components["responses"]["Forbidden"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableContent"];
             429: components["responses"]["TooManyRequests"];
             default: components["responses"]["Problem"];
         };
@@ -1755,13 +1833,58 @@ export interface operations {
             200: {
                 headers: {
                     "Cache-Control": components["headers"]["CacheControlPrivate"];
+                    "X-Robots-Tag": components["headers"]["RobotsNoIndex"];
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["PublicProfile"];
                 };
             };
-            404: components["responses"]["NotFound"];
+            /** @description Not found, not visible to the caller, or an anonymous caller. */
+            404: {
+                headers: {
+                    "Cache-Control": components["headers"]["CacheControlPrivate"];
+                    "X-Robots-Tag": components["headers"]["RobotsNoIndex"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    updatePrivacySettings: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Must be `vybe-web`. Declared on every unsafe operation that guests can call; clients
+                 *     always send it. The server checks it itself (not through generic schema validation) on
+                 *     cookie-authenticated requests: missing or wrong → 403 `csrf_check_failed`.
+                 */
+                "X-Requested-With": components["parameters"]["CsrfHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PrivacySettings"];
+            };
+        };
+        responses: {
+            /** @description The privacy settings now in effect. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrivacySettings"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            422: components["responses"]["UnprocessableContent"];
             default: components["responses"]["Problem"];
         };
     };
