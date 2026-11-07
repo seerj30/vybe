@@ -23,7 +23,9 @@
     "streakMax": 100,
     "minGapMs": 650,
     "maxEvents": 93,
-    "minShotsForRewards": 5
+    "minShotsForRewards": 5,
+    "minRunMsForRewards": 58000,
+    "minScoreForCoins": 500
   },
-  "checksum": "9b3bd19baa803520ab49a48f96f415f477fdfedbfc5a842dbacf00cfc8f2948d"
+  "checksum": "a2a1003e290bd0da4e7536dac0137e673461a98b073e6c46786f4ba6fbf4b7ca"
 }

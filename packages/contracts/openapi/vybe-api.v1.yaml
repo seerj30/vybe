@@ -2267,6 +2267,8 @@ components:
         - minGapMs
         - maxEvents
         - minShotsForRewards
+        - minRunMsForRewards
+        - minScoreForCoins
       properties:
         streamId:
           type: integer
@@ -2327,6 +2329,16 @@ components:
           type: integer
           minimum: 0
         minShotsForRewards:
+          type: integer
+          minimum: 0
+        minRunMsForRewards:
+          description: |
+            A verified run is reward-eligible only when `submittedAt − startedAt` (server clock) is
+            at least this value. An API rule, not a simulator check.
+          type: integer
+          minimum: 0
+        minScoreForCoins:
+          description: Base coins need `score` at least this value; XP and quests do not.
           type: integer
           minimum: 0
     Ruleset:
@@ -2411,9 +2423,17 @@ components:
           type: array
           items: {}
         clientReportedScore: {}
+    NoCoinsReason:
+      description: |
+        Why a verified run earned 0 coins (spec v1.4 §7). `too_few_shots` and `run_too_short`:
+        the run is not reward-eligible (no XP, no quest progress, no challenge).
+        `score_below_minimum`: score below `minScoreForCoins` (XP and quests still count).
+        `daily_limit`: run 21 or later of the UTC day.
+      type: string
+      enum: [too_few_shots, run_too_short, score_below_minimum, daily_limit]
     Rewards:
       type: object
-      required: [coins, xp, levelAfter]
+      required: [coins, xp, levelAfter, noCoinsReason]
       properties:
         coins:
           $ref: "#/components/schemas/Coins"
@@ -2426,6 +2446,11 @@ components:
             `getGameSession` and on a duplicate submit with a new key it is the player's current
             level (the level at verification time is not stored).
           $ref: "#/components/schemas/Level"
+        noCoinsReason:
+          description: Null when `coins` > 0.
+          oneOf:
+            - $ref: "#/components/schemas/NoCoinsReason"
+            - type: "null"
     SubmitAccepted:
       type: object
       required: [sessionId, status]

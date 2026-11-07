@@ -22,7 +22,7 @@ public sealed class RewardEdgeTests(ApiFactory api)
         var startDay = DateOnly.FromDateTime(api.Clock.GetUtcNow().UtcDateTime);
 
         var (sessionId, seed, config, rulesetId) = await player.StartRunAsync();
-        api.Clock.Advance(TimeSpan.FromSeconds(20)); // verification happens on the next UTC day
+        api.Clock.Advance(TimeSpan.FromSeconds(60)); // a full-length run; verification happens on the next UTC day
         var run = await Contract.AssertAsync(
             await player.SubmitAsync(sessionId, rulesetId, Player.PerfectEvents(config, seed, 5)), HttpStatusCode.OK, "SubmitResult");
 
@@ -46,7 +46,7 @@ public sealed class RewardEdgeTests(ApiFactory api)
         }
 
         var (sessionId, seed, config, rulesetId) = await player.StartRunAsync();
-        api.Clock.Advance(TimeSpan.FromSeconds(3));
+        api.Clock.Advance(TimeSpan.FromMilliseconds(config.MinRunMsForRewards));
         var run = await Contract.AssertAsync(
             await player.SubmitAsync(sessionId, rulesetId, Player.PerfectEvents(config, seed, 5)), HttpStatusCode.OK, "SubmitResult");
 

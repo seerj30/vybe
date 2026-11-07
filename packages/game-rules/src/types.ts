@@ -21,6 +21,10 @@ export interface StreetHoopsConfig {
   minGapMs: number;
   maxEvents: number;
   minShotsForRewards: number;
+  /** Reward eligibility also needs `submittedAt − startedAt ≥ minRunMsForRewards` (API check, not a simulator check). */
+  minRunMsForRewards: number;
+  /** Base coins need `score ≥ minScoreForCoins` (API reward rule). */
+  minScoreForCoins: number;
 }
 
 /** Fixed input units (§7). */

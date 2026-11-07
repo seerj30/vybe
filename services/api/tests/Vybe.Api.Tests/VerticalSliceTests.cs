@@ -54,19 +54,21 @@ public sealed class VerticalSliceTests(ApiFactory api)
     public async Task E02_PurchaseEquipAndReloadPersists()
     {
         var player = await Player.CreateGuestAsync(api);
-        await player.PlayPerfectRunAsync();
-        await player.PlayPerfectRunAsync(); // 300 coins, 160 XP → level 2 (+100 coins)
+        for (var run = 0; run < 3; run++)
+        {
+            await player.PlayPerfectRunAsync(); // 3 × 150 coins, 240 XP → level 2 (+100 coins)
+        }
 
         var me = await player.MeAsync();
         Assert.Equal(2, me.GetProperty("level").GetInt32());
-        Assert.Equal(400, me.GetProperty("walletBalance").GetInt64());
+        Assert.Equal(550, me.GetProperty("walletBalance").GetInt64());
 
         var catalog = await Contract.AssertAsync(await player.Http.GetAsync("/api/v1/catalog/items?slot=top"), HttpStatusCode.OK, "CatalogPage");
         Assert.All(catalog.GetProperty("items").EnumerateArray(), i => Assert.True(i.GetProperty("price").GetInt64() > 0));
 
         var jersey = await player.CatalogItemIdAsync("top_court_jersey");
         var purchase = await Contract.AssertAsync(await player.PurchaseAsync(jersey), HttpStatusCode.OK, "Purchase");
-        Assert.Equal(100, purchase.GetProperty("balanceAfter").GetInt64());
+        Assert.Equal(50, purchase.GetProperty("balanceAfter").GetInt64()); // jersey 500
 
         var avatar = await Contract.AssertAsync(await player.Http.GetAsync("/api/v1/me/avatar"), HttpStatusCode.OK, "Avatar");
         await Contract.AssertAsync(await player.Http.PostAsJsonAsync("/api/v1/me/equipment", new
@@ -110,10 +112,12 @@ public sealed class VerticalSliceTests(ApiFactory api)
     public async Task E06_ConcurrentPurchases_NeverOverdraw()
     {
         var player = await Player.CreateGuestAsync(api);
-        await player.PlayPerfectRunAsync();
-        await player.PlayPerfectRunAsync(); // 400 coins
+        for (var run = 0; run < 3; run++)
+        {
+            await player.PlayPerfectRunAsync(); // 550 coins with the level 2 bonus
+        }
 
-        // 300 + 350 > 400: at most one can succeed, whatever the interleaving.
+        // 500 + 450 > 550: at most one can succeed, whatever the interleaving.
         var jersey = await player.CatalogItemIdAsync("top_court_jersey");
         var hair = await player.CatalogItemIdAsync("hair_high_top");
         var responses = await Task.WhenAll(player.PurchaseAsync(jersey), player.PurchaseAsync(hair));
@@ -122,6 +126,6 @@ public sealed class VerticalSliceTests(ApiFactory api)
         var failed = Assert.Single(responses, r => r.StatusCode != HttpStatusCode.OK);
         await Contract.AssertProblemAsync(failed, HttpStatusCode.Conflict, "insufficient_funds");
         var balance = (await player.MeAsync()).GetProperty("walletBalance").GetInt64();
-        Assert.True(balance is 100 or 50, $"unexpected balance {balance}");
+        Assert.True(balance is 50 or 100, $"unexpected balance {balance}");
     }
 }
