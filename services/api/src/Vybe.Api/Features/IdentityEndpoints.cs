@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -8,7 +9,7 @@ using Vybe.Data.Entities;
 
 namespace Vybe.Api.Features;
 
-public sealed record GuestCreateRequest(int? BirthYear);
+public sealed record GuestCreateRequest(int? BirthYear, int? BirthMonth);
 
 public sealed record GuestCreated(Guid PlayerId, string Handle, DateTime GuestExpiresAt);
 
@@ -17,9 +18,10 @@ public sealed record MeResponse(
     long WalletBalance, long AvatarRevision, DateTime? GuestExpiresAt, ProfileVisibility ProfileVisibility);
 
 /// <summary>
-/// Spec §17 decision 1: VYBE is for adults. The gate asks only for the birth year; the API keeps the result
-/// (time, policy version, band), never the year. A birth year cannot show the exact age: a player is accepted
-/// when the player reaches <see cref="MinimumAge"/> in the current UTC calendar year (counsel to confirm).
+/// Spec §17 decision 1: VYBE is for adults. The gate asks for the birth month and year; the API keeps only the
+/// result (time, policy version, band), never the month or the year. Without a day, the rule is conservative:
+/// the month of the 18th birthday must be before the current UTC month (in that month itself the player can
+/// still be 17, so it is refused).
 /// </summary>
 public static class AgePolicy
 {
@@ -32,7 +34,16 @@ public static class AgePolicy
     /// <summary>Oldest accepted birth year: <c>current year - MaxAge</c>.</summary>
     public const int MaxAge = 120;
 
-    public static bool IsAdult(int birthYear, DateTime now) => now.Year - birthYear >= MinimumAge;
+    public static bool IsAdult(int birthYear, int birthMonth, DateTime now) =>
+        MonthIndex(birthYear + MinimumAge, birthMonth) < MonthIndex(now.Year, now.Month);
+
+    /// <summary>True for a real month that is not after the current UTC month and not more than <see cref="MaxAge"/> years ago.</summary>
+    public static bool IsPossible(int birthYear, int birthMonth, DateTime now) =>
+        birthMonth is >= 1 and <= 12
+        && birthYear >= now.Year - MaxAge
+        && MonthIndex(birthYear, birthMonth) <= MonthIndex(now.Year, now.Month);
+
+    private static int MonthIndex(int year, int month) => (year * 12) + month - 1;
 }
 
 public sealed record AvatarResponse(
@@ -68,16 +79,24 @@ public static class IdentityEndpoints
 
         var now = clock.UtcNowForDb();
         var body = await RequestBody.ReadAsync(context, cancellationToken);
-        var birthYear = (body.Length == 0 ? null : RequestBody.Deserialize<GuestCreateRequest>(body).BirthYear)
-            ?? throw Problem.ValidationFailed("/birthYear", "required", "birthYear is required");
-        if (birthYear > now.Year || birthYear < now.Year - AgePolicy.MaxAge)
+        var request = body.Length == 0 ? new GuestCreateRequest(null, null) : RequestBody.Deserialize<GuestCreateRequest>(body);
+        var birthYear = request.BirthYear ?? throw Problem.ValidationFailed("/birthYear", "required", "birthYear is required");
+        var birthMonth = request.BirthMonth ?? throw Problem.ValidationFailed("/birthMonth", "required", "birthMonth is required");
+        if (!AgePolicy.IsPossible(birthYear, birthMonth, now))
         {
-            throw Problem.ValidationFailed("/birthYear", "out_of_range", "birthYear is not a valid year");
+            throw Problem.ValidationFailed("/birthYear", "out_of_range", "birthYear and birthMonth are not a possible birth month");
         }
 
-        // An under-age answer creates nothing: no player, no cookie, no record of the answer.
-        if (!AgePolicy.IsAdult(birthYear, now))
+        // An under-age answer creates nothing: no player, no cookie, no record of the answer. A caller with a
+        // Supabase identity that has no player (sign-in before the gate) also loses that Auth user: J4 queue.
+        if (!AgePolicy.IsAdult(birthYear, birthMonth, now))
         {
+            if (context.User.FindFirstValue(AuthSchemes.AuthKindClaim) != AuthSchemes.Guest
+                && context.User.FindFirstValue("sub") is { Length: > 0 } subject)
+            {
+                await AuthUserDeletions.QueueAsync(db, subject, now, cancellationToken);
+            }
+
             throw Problem.Of(403, "age_not_eligible");
         }
 

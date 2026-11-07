@@ -8,6 +8,8 @@ namespace Vybe.Api.Jobs;
 /// Spec §17 decision 2 and 8: a guest player whose last guest session ended <see cref="Grace"/> ago gets a queued
 /// deletion request, exactly like J4 (status <c>deleting</c>, then <see cref="Features.PrivacyProcessor"/>
 /// anonymizes it). Nobody can sign in as that guest any more, so nobody else can ask for the deletion.
+/// A guest needs at least one session (a guest without one is not "expired", only broken). A suspended guest
+/// with an open report stays until a moderator resolves the report, so the moderation context is kept.
 /// Players are claimed with <c>SKIP LOCKED</c>, and the conditions are checked again in the update, so a
 /// repeated or parallel run changes nothing twice.
 /// </summary>
@@ -33,8 +35,11 @@ public sealed class GuestCleanup(IServiceScopeFactory scopes, TimeProvider clock
                 WITH due AS (
                     SELECT p.id FROM vybe.players p
                     WHERE p.kind = 'guest' AND p.status IN ('active', 'suspended')
+                      AND EXISTS (SELECT 1 FROM vybe.guest_sessions s WHERE s.player_id = p.id)
                       AND NOT EXISTS (SELECT 1 FROM vybe.guest_sessions s
                                       WHERE s.player_id = p.id AND LEAST(s.revoked_at, s.expires_at) > {cutoff})
+                      AND NOT (p.status = 'suspended'
+                               AND EXISTS (SELECT 1 FROM vybe.player_reports r WHERE r.target_player_id = p.id AND r.status = 'open'))
                     ORDER BY p.id
                     LIMIT {BatchSize}
                     FOR NO KEY UPDATE SKIP LOCKED),

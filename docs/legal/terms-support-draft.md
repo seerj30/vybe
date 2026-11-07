@@ -11,7 +11,7 @@
 ### A1. Eligibility
 
 - VYBE is for adults only (18 or older, or the local age of majority if it is higher: `[counsel per country]`).
-- VYBE asks for the year of birth before it creates a player and keeps only the result (see the privacy notice draft §2).
+- VYBE asks for the month and year of birth before it creates a player and keeps only the result (see the privacy notice draft §2).
 - VYBE is available only in `[counsel-approved countries]`.
 
 ### A2. Accounts

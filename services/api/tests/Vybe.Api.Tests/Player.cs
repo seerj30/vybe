@@ -24,7 +24,7 @@ public sealed class Player(ApiFactory api, HttpClient http)
     }
 
     /// <summary>The <c>createGuest</c> body of an adult (spec §17 decision 1).</summary>
-    public static JsonContent AdultGuest() => JsonContent.Create(new { birthYear = 1990 });
+    public static JsonContent AdultGuest() => JsonContent.Create(new { birthYear = 1990, birthMonth = 6 });
 
     public async Task<JsonElement> MeAsync() =>
         await Contract.AssertAsync(await Http.GetAsync("/api/v1/me"), HttpStatusCode.OK, "Me");

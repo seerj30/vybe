@@ -21,10 +21,16 @@ export interface paths {
          *     or a bearer token linked to a player, nothing is created: 409 `already_authenticated`.
          *
          *     Age gate (spec §17 decision 1): VYBE is for adults. The body carries the self-declared
-         *     birth year. A player who does not reach the adult age (18) in the current UTC calendar
-         *     year gets 403 `age_not_eligible`: no player and no cookie are created. The API stores
-         *     only the gate result (time, policy version, band), never the birth year. A missing or
-         *     impossible year is 422 `validation_failed`.
+         *     birth month and year. The API accepts only when the month of the 18th birthday is before
+         *     the current UTC month (in that month itself the person can still be 17). Otherwise 403
+         *     `age_not_eligible`: no player and no cookie are created, and the answer is not stored.
+         *     The API stores only the gate result (time, policy version, band), never the month or year.
+         *     A missing or impossible month is 422 `validation_failed`.
+         *
+         *     The web client sends `createGuest` with the guest cookie only. In one case it adds the
+         *     bearer token: a signed-in Supabase identity without a player (account linking). If that
+         *     answer is under age, the API also queues the Supabase Auth user for deletion (J4 queue),
+         *     and the client signs out.
          *
          *     The guest session expires 30 days after its last use and never later than 90 days
          *     after the guest was created (spec §17 decision 2); `guestExpiresAt` is its first expiry.
@@ -938,12 +944,13 @@ export interface components {
          * @enum {string}
          */
         PlayerStatus: "active" | "suspended" | "deleting";
+        /**
+         * @description Self-declared birth month of the age gate. Used only for the check, never stored or
+         *     logged. The API accepts months from 120 years ago up to the current month (else 422).
+         */
         GuestCreateRequest: {
-            /**
-             * @description Self-declared birth year of the age gate. Used only for the check and never stored.
-             *     The API accepts years from 120 years ago up to the current year (else 422).
-             */
             birthYear: number;
+            birthMonth: number;
         };
         GuestCreated: {
             playerId: components["schemas"]["Uuid"];

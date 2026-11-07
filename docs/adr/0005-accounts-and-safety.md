@@ -128,3 +128,6 @@ ADR records the decisions that the spec leaves open.
   need the Supabase service key in the API and is not done.
 - Accepted risk: deletion clears an active suspension, and the freed identity can link a new guest. A
   suspended player can already start over as a new guest; the admin audit log keeps the suspension.
+- Accepted risk (stream J, decision 6): `POST /me/blocks` and `POST /reports` accept the handle of a
+  private profile, so their 204/202 tells a signed-in player that the handle exists, while
+  `GET /profiles/{handle}` answers 404. A private player must stay blockable and reportable, so this stays.

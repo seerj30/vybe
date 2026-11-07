@@ -3,7 +3,7 @@ import { Router, RouterLink } from "@angular/router";
 import { isApiError } from "../api/api-client";
 import { API } from "../api/api";
 import { errorMessage } from "../api/messages";
-import { AgeGateForm } from "../player/age-gate";
+import { AgeGateForm, type BirthDate } from "../player/age-gate";
 import { PlayerStore } from "../player/player-store";
 
 type State = "checking" | "ready" | "creating" | "failed" | "under-age";
@@ -68,11 +68,11 @@ export class Onboarding {
     void this.check();
   }
 
-  protected async create(birthYear: number): Promise<void> {
+  protected async create(birth: BirthDate): Promise<void> {
     this.state.set("creating");
     this.error.set(null);
     try {
-      await this.api.createGuest(birthYear);
+      await this.api.createGuest(birth);
     } catch (error: unknown) {
       if (isApiError(error, "age_not_eligible")) {
         this.state.set("under-age");

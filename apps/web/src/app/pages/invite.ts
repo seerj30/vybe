@@ -243,10 +243,10 @@ export class Invite {
 
   /** The age gate first (spec §17 decision 1); false when the user cancelled it. */
   private async startGuest(): Promise<boolean> {
-    const birthYear = await this.ageGate.ask();
-    if (birthYear === null) return false;
+    const birth = await this.ageGate.ask();
+    if (birth === null) return false;
     try {
-      await this.api.createGuest(birthYear);
+      await this.api.createGuest(birth);
     } catch (error: unknown) {
       if (!isApiError(error, "already_authenticated")) throw error;
     }

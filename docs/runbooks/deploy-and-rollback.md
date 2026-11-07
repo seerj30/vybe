@@ -84,13 +84,16 @@ container is reachable only through the proxy (no public port). Prefer the publi
 4. Run the migration step against the target environment:
    `docker run --rm -e ConnectionStrings__Migrations=<secret> <image> migrate`.
    Make sure that the exit code is 0 and the log line is "The database schema is up to date".
+   The first deploy must run the migrations **before the first player exists**: the `AccountPolicies`
+   migration adds the age-gate columns, and players created before it have no gate result (ADR 0007).
 5. Run the seed step: `docker run --rm -e ConnectionStrings__Migrations=<secret> <image> seed`.
    Make sure that the exit code is 0. A changed ruleset with an existing id stops the seed: publish a new
    ruleset version instead.
 6. Deploy the new image (rolling or blue/green). The new instances receive traffic only after
    `/health/ready` returns 200.
 7. Smoke test through the public origin:
-   - `POST /api/v1/guests` with `X-Requested-With: vybe-web` returns 201.
+   - `POST /api/v1/guests` with `X-Requested-With: vybe-web` and the body `{"birthYear":1990,"birthMonth":6}`
+     returns 201.
    - `GET /api/v1/catalog` with the guest cookie returns 200.
    - The response has `Strict-Transport-Security` and `Content-Security-Policy` headers.
 8. Watch the dashboards for 30 minutes: 5xx rate, p95 latency, wallet errors, auth failures (spec §12).

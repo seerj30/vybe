@@ -35,7 +35,8 @@ public sealed partial class PrivacyProcessor(
         {
         }
 
-        for (var i = 0; i < max && await DeleteAuthUserNextAsync(cancellationToken); i++)
+        // The first failure ends the Auth step of this pass: an Auth outage costs one timeout per pass, not max.
+        for (var i = 0; i < max && await DeleteAuthUserNextAsync(cancellationToken) == AuthStep.Deleted; i++)
         {
         }
 
@@ -134,10 +135,7 @@ public sealed partial class PrivacyProcessor(
         {
             // Spec §17 decision 8: the Supabase Auth user (email, login) goes too. The call happens after the
             // commit (DeleteAuthUserNextAsync), so an Auth outage never blocks or undoes the anonymization.
-            await db.Database.ExecuteSqlAsync($"""
-                INSERT INTO vybe.auth_user_deletions (auth_subject, attempts, next_attempt_at, created_at)
-                VALUES ({subject}, 0, {now}, {now}) ON CONFLICT (auth_subject) DO NOTHING
-                """, cancellationToken);
+            await AuthUserDeletions.QueueAsync(db, subject, now, cancellationToken);
         }
 
         var pseudonym = "d_" + RandomNumberGenerator.GetString(PseudonymAlphabet, 18);
@@ -188,57 +186,69 @@ public sealed partial class PrivacyProcessor(
         return true;
     }
 
+    private enum AuthStep
+    {
+        Nothing,
+        Deleted,
+        Failed,
+    }
+
+    /// <summary>A claimed Auth deletion is not taken by another worker for this long (one HTTP call fits easily).</summary>
+    public static readonly TimeSpan AuthClaimLease = TimeSpan.FromMinutes(5);
+
     /// <summary>
-    /// Deletes one queued Supabase Auth user whose attempt is due, then its row. A failure keeps the row with a
-    /// later attempt time (exponential backoff, at most <see cref="MaxAuthRetryDelay"/>), so it never blocks the
-    /// other rows. Without a service-role key the rows wait (Development, tests).
+    /// Deletes one queued Supabase Auth user whose attempt is due. Three short steps, so no transaction or row
+    /// lock is held during the HTTP call: claim (move <c>next_attempt_at</c> forward by the lease and commit),
+    /// call Auth, then record (delete the row, or count the failure and set the backoff). A worker that stops
+    /// after the claim leaves the row for the next pass after the lease. Without a service-role key the rows wait.
     /// </summary>
-    private async Task<bool> DeleteAuthUserNextAsync(CancellationToken cancellationToken)
+    private async Task<AuthStep> DeleteAuthUserNextAsync(CancellationToken cancellationToken)
     {
         if (!authUsers.IsConfigured)
         {
-            return false;
+            return AuthStep.Nothing;
         }
 
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<VybeDbContext>();
         var now = clock.UtcNowForDb();
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        var row = await db.AuthUserDeletions
-            .FromSql($"""
-                SELECT * FROM vybe.auth_user_deletions WHERE next_attempt_at <= {now}
-                ORDER BY next_attempt_at, auth_subject LIMIT 1 FOR UPDATE SKIP LOCKED
-                """)
-            .SingleOrDefaultAsync(cancellationToken);
-        if (row is null)
+        var claimed = (await db.Database.SqlQuery<string>($"""
+            WITH due AS (
+                SELECT auth_subject FROM vybe.auth_user_deletions WHERE next_attempt_at <= {now}
+                ORDER BY next_attempt_at, auth_subject LIMIT 1 FOR UPDATE SKIP LOCKED)
+            UPDATE vybe.auth_user_deletions d SET next_attempt_at = {now + AuthClaimLease}
+            FROM due WHERE d.auth_subject = due.auth_subject
+            RETURNING d.auth_subject AS "Value"
+            """).ToListAsync(cancellationToken)).SingleOrDefault();
+        if (claimed is null)
         {
-            return false;
+            return AuthStep.Nothing;
         }
 
-        if (!Guid.TryParse(row.AuthSubject, out var userId))
+        if (!Guid.TryParse(claimed, out var userId))
         {
             // Supabase Auth user ids are UUIDs: this subject cannot be an Auth user, so there is nothing to delete.
             LogAuthSubjectNotUuid(logger);
-            db.AuthUserDeletions.Remove(row);
-        }
-        else
-        {
-            try
-            {
-                await authUsers.DeleteUserAsync(userId, cancellationToken);
-                db.AuthUserDeletions.Remove(row);
-            }
-            catch (AuthUserDeletionException exception)
-            {
-                row.Attempts++;
-                row.NextAttemptAt = now + AuthRetryDelay(row.Attempts);
-                LogAuthUserDeleteFailed(logger, exception, row.Attempts);
-            }
+            await db.AuthUserDeletions.Where(d => d.AuthSubject == claimed).ExecuteDeleteAsync(cancellationToken);
+            return AuthStep.Deleted;
         }
 
-        await db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-        return true;
+        try
+        {
+            await authUsers.DeleteUserAsync(userId, cancellationToken);
+        }
+        catch (AuthUserDeletionException exception)
+        {
+            var attempts = await db.AuthUserDeletions.Where(d => d.AuthSubject == claimed).Select(d => d.Attempts).SingleOrDefaultAsync(cancellationToken) + 1;
+            var retryAt = clock.UtcNowForDb() + AuthRetryDelay(attempts);
+            await db.AuthUserDeletions.Where(d => d.AuthSubject == claimed)
+                .ExecuteUpdateAsync(u => u.SetProperty(d => d.Attempts, attempts).SetProperty(d => d.NextAttemptAt, retryAt), cancellationToken);
+            LogAuthUserDeleteFailed(logger, exception, attempts);
+            return AuthStep.Failed;
+        }
+
+        await db.AuthUserDeletions.Where(d => d.AuthSubject == claimed).ExecuteDeleteAsync(cancellationToken);
+        return AuthStep.Deleted;
     }
 
     public static readonly TimeSpan MaxAuthRetryDelay = TimeSpan.FromHours(6);

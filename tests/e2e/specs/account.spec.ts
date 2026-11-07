@@ -103,9 +103,10 @@ test("a new account without a guest gets a new player; a reload asks to sign in 
   await form.getByLabel("Email").fill(`e2e-${crypto.randomUUID()}@vybe.test`);
   await form.getByLabel("Password").fill("a-long-password");
   await form.getByRole("button", { name: "Create account" }).click();
-  await expect(region.getByText("a new VYBE player")).toBeVisible();
+  // No guest in this browser: the age gate and the new guest come before the Auth account (spec §17 decision 1).
+  await passAgeGateDialog(page);
+  await expect(region.getByText("your guest")).toBeVisible();
   await region.getByRole("button", { name: "Link this account" }).click();
-  await passAgeGateDialog(page); // a new player passes the age gate first (spec §17 decision 1)
   await expect(page.getByRole("heading", { name: "Create your avatar" })).toBeVisible();
 
   // The session is in memory only: a reload signs out, and the app asks to sign in (not "lost guest").
@@ -114,8 +115,8 @@ test("a new account without a guest gets a new player; a reload asks to sign in 
   await expect(page.getByRole("link", { name: "Start as guest" })).toBeVisible();
 });
 
-/** Sign-up with "Confirm email" on: the page asks to check the email. */
-async function signUpUnconfirmed(page: import("@playwright/test").Page, email: string): Promise<void> {
+/** Sign-up with "Confirm email" on: the page asks to check the email. Without a guest, the age gate comes first. */
+async function signUpUnconfirmed(page: import("@playwright/test").Page, email: string, hasGuest = true): Promise<void> {
   await page.goto("/");
   await page.getByRole("button", { name: "Sign in" }).click();
   const region = page.getByRole("region", { name: "Sign in to VYBE" });
@@ -123,6 +124,7 @@ async function signUpUnconfirmed(page: import("@playwright/test").Page, email: s
   await region.getByLabel("Email").fill(email);
   await region.getByLabel("Password").fill("a-long-password");
   await region.getByRole("button", { name: "Create account" }).click();
+  if (!hasGuest) await passAgeGateDialog(page);
   await expect(region.getByRole("status")).toContainText("Check your email");
 }
 
@@ -144,7 +146,7 @@ test("a sign-in link with someone else's session does not sign in and links noth
   // The attacker starts a sign-up in their own browser and keeps the code of the confirmation link.
   const attacker = await browser.newPage({ baseURL: test.info().project.use.baseURL });
   const email = `e2e-${crypto.randomUUID()}+unconfirmed@vybe.test`;
-  await signUpUnconfirmed(attacker, email);
+  await signUpUnconfirmed(attacker, email, false);
   const redirect = await fetch(await confirmationUrl(email), { redirect: "manual" });
   const codeLink = redirect.headers.get("Location") ?? "";
   expect(codeLink).toMatch(/[?&]code=/);

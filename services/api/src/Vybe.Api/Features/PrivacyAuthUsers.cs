@@ -1,7 +1,9 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Vybe.Data;
 
 namespace Vybe.Api.Features;
 
@@ -15,6 +17,20 @@ public sealed class SupabaseAdminOptions
 
     /// <summary>The project's service-role (secret) key. It can delete any Auth user: keep it only on the server.</summary>
     public string? ServiceRoleKey { get; init; }
+}
+
+/// <summary>The J4 queue of Supabase Auth users to delete (<c>vybe.auth_user_deletions</c>).</summary>
+public static class AuthUserDeletions
+{
+    /// <summary>Queues the Auth user; idempotent. Runs inside the caller's transaction when it has one.</summary>
+    public static Task QueueAsync(VybeDbContext db, string subject, DateTime now, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        return db.Database.ExecuteSqlAsync($"""
+            INSERT INTO vybe.auth_user_deletions (auth_subject, attempts, next_attempt_at, created_at)
+            VALUES ({subject}, 0, {now}, {now}) ON CONFLICT (auth_subject) DO NOTHING
+            """, cancellationToken);
+    }
 }
 
 /// <summary>Supabase Auth did not delete the user (network error, timeout or an unexpected status).</summary>

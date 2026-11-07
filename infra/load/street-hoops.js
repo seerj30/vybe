@@ -67,7 +67,11 @@ function headers(extra) {
 }
 
 function createGuest() {
-  const res = http.post(`${BASE_URL}/api/v1/guests`, null, { headers: CSRF, tags: { kind: 'write', name: 'createGuest' } });
+  // An adult age-gate answer (spec §17 decision 1); the API keeps only the result.
+  const res = http.post(`${BASE_URL}/api/v1/guests`, JSON.stringify({ birthYear: 1990, birthMonth: 6 }), {
+    headers: Object.assign({ 'Content-Type': 'application/json' }, CSRF),
+    tags: { kind: 'write', name: 'createGuest' },
+  });
   check(res, { 'guest 201': (r) => r.status === 201 });
   const cookie = res.cookies[COOKIE];
   if (res.status !== 201 || !cookie || cookie.length === 0) {

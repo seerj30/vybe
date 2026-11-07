@@ -41,7 +41,8 @@ public static class ServiceSetup
         services.AddSingleton<ChallengeInvites>();
         services.AddSingleton<ILinkProofVerifier, SupabaseLinkProofVerifier>();
         services.AddSingleton<LinkRateLimiter>();
-        services.AddHttpClient(SupabaseLinkProofVerifier.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(10));
+        services.AddHttpClient(SupabaseLinkProofVerifier.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(10))
+            .RemoveAllLoggers(); // Supabase Auth calls: no request logs (stream J, decision 8 log hygiene)
         var supabaseAuth = services.AddOptions<SupabaseAuthOptions>().Bind(configuration.GetSection(SupabaseAuthOptions.Section));
         if (!environment.IsDevelopment())
         {
@@ -54,8 +55,10 @@ public static class ServiceSetup
         services.AddOptions<SupabaseAdminOptions>().Bind(configuration.GetSection(SupabaseAdminOptions.Section));
         services.AddSingleton<IAuthUserAdmin, SupabaseAuthUserAdmin>();
         // No redirects: the key is in the apikey header, which a redirect to another host would also receive.
+        // No request logs: the default HttpClient logs write the URL, which carries the Auth user id.
         services.AddHttpClient(SupabaseAuthUserAdmin.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(10))
-            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false })
+            .RemoveAllLoggers();
         services.AddSingleton<GuestCleanup>();
         if (configuration.GetValue("Jobs:Enabled", true))
         {

@@ -2,22 +2,28 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 export { expect };
 
-/** An adult year of birth for the age gate (spec §17 decision 1). */
-export const ADULT_BIRTH_YEAR = 1990;
+/** An adult date of birth for the age gate (spec §17 decision 1). */
+export const ADULT_BIRTH = { month: "June", year: 1990 };
 
 /** The `createGuest` body of an adult, for API calls in specs. */
-export const ADULT_GUEST = { birthYear: ADULT_BIRTH_YEAR };
+export const ADULT_GUEST = { birthYear: 1990, birthMonth: 6 };
+
+/** Chooses the month and types the year of the age gate inside `scope`. */
+export async function fillAgeGate(scope: Page | Locator, birth: { month: string; year: number } = ADULT_BIRTH): Promise<void> {
+  await scope.getByLabel("Month").selectOption({ label: birth.month });
+  await scope.getByLabel("Year").fill(String(birth.year));
+}
 
 /** Fills the age gate on `/play` and starts the guest. */
-export async function passAgeGate(page: Page, year = ADULT_BIRTH_YEAR): Promise<void> {
-  await page.getByLabel("Year of birth").fill(String(year));
+export async function passAgeGate(page: Page, birth = ADULT_BIRTH): Promise<void> {
+  await fillAgeGate(page, birth);
   await page.getByRole("button", { name: "Start as guest" }).click();
 }
 
-/** Fills the age-gate dialog that opens before an invite or a sign-in creates a guest. */
-export async function passAgeGateDialog(page: Page, year = ADULT_BIRTH_YEAR): Promise<void> {
+/** Fills the age-gate dialog that opens before an invite, a sign-up or a new-player link creates a guest. */
+export async function passAgeGateDialog(page: Page, birth = ADULT_BIRTH): Promise<void> {
   const dialog = page.getByRole("dialog", { name: "Before you play" });
-  await dialog.getByLabel("Year of birth").fill(String(year));
+  await fillAgeGate(dialog, birth);
   await dialog.getByRole("button", { name: "Continue" }).click();
   await expect(dialog).toHaveCount(0);
 }

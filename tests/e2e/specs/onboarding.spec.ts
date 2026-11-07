@@ -83,8 +83,12 @@ test("keyboard only: start as a guest and save the avatar", async ({ page }) => 
   await page.keyboard.press("Tab");
   await expect(start).toBeFocused();
   await page.keyboard.press("Enter");
-  const year = page.getByLabel("Year of birth");
-  await year.focus();
+  const month = page.getByLabel("Month");
+  await month.focus();
+  await page.keyboard.type("Jun"); // type-ahead chooses the month without opening the list
+  await expect(month).toHaveValue("6");
+  await page.keyboard.press("Tab");
+  await expect(page.getByLabel("Year")).toBeFocused();
   await page.keyboard.type("1990");
   await page.keyboard.press("Enter"); // submits the age-gate form
   await expect(page.getByRole("heading", { name: "Create your avatar" })).toBeVisible();

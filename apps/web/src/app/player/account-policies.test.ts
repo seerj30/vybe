@@ -1,16 +1,16 @@
 import "@angular/compiler";
 import { describe, expect, it } from "vitest";
-import { parseBirthYear } from "./age-gate";
+import { parseBirthDate } from "./age-gate";
 import { guestExpiry, LINK_PROMPT_DAYS } from "./guest-expiry";
 
-describe("parseBirthYear", () => {
-  it("accepts exactly 4 digits and gives no other hint", () => {
-    expect(parseBirthYear(" 1990 ")).toBe(1990);
-    expect(parseBirthYear("2015")).toBe(2015); // the API decides the age, not the page
-    expect(parseBirthYear("")).toBeNull();
-    expect(parseBirthYear("199")).toBeNull();
-    expect(parseBirthYear("19900")).toBeNull();
-    expect(parseBirthYear("19a0")).toBeNull();
+describe("parseBirthDate", () => {
+  it("needs a month and a 4-digit year, and gives no other hint", () => {
+    expect(parseBirthDate("6", " 1990 ")).toEqual({ birthYear: 1990, birthMonth: 6 });
+    expect(parseBirthDate("12", "2020")).toEqual({ birthYear: 2020, birthMonth: 12 }); // the API decides the age
+    expect(parseBirthDate("", "1990")).toBeNull();
+    expect(parseBirthDate("13", "1990")).toBeNull();
+    expect(parseBirthDate("6", "199")).toBeNull();
+    expect(parseBirthDate("6", "19a0")).toBeNull();
   });
 });
 

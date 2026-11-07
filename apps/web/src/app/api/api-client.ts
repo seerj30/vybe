@@ -35,8 +35,10 @@ export interface RequestOptions {
   body?: unknown;
   idempotencyKey?: string;
   query?: Query;
-  /** Sends only the guest cookie, never the bearer token (`createGuest`, `linkAccount`). */
+  /** Sends only the guest cookie, never the bearer token of the session (`createGuest`, `linkAccount`). */
   guestOnly?: boolean;
+  /** An explicit bearer token, also with `guestOnly` (`createGuest` in the link flow). */
+  bearer?: string;
 }
 
 /** Supabase access token of the signed-in player, or null for the guest cookie path. */
@@ -64,9 +66,13 @@ export class ApiClient {
     private readonly timeoutMs = 15_000,
   ) {}
 
-  /** `birthYear` is the age-gate answer (spec §17 decision 1); the API keeps only the result. */
-  createGuest(birthYear: number): Promise<Schemas["GuestCreated"]> {
-    return this.data("POST", "/guests", { body: { birthYear } satisfies Schemas["GuestCreateRequest"], guestOnly: true });
+  /**
+   * `birth` is the age-gate answer (spec §17 decision 1); the API keeps only the result. `identityToken`: the
+   * Supabase token of a signed-in identity without a player (link flow); an under-age answer then also queues
+   * that Auth user for deletion on the server.
+   */
+  createGuest(birth: Schemas["GuestCreateRequest"], identityToken?: string): Promise<Schemas["GuestCreated"]> {
+    return this.data("POST", "/guests", { body: birth, guestOnly: true, bearer: identityToken });
   }
 
   getMe(): Promise<Schemas["Me"]> {
@@ -127,7 +133,8 @@ export class ApiClient {
     if (UNSAFE_METHODS.has(method)) headers["X-Requested-With"] = "vybe-web";
     if (options.body !== undefined) headers["Content-Type"] = "application/json";
     if (options.idempotencyKey !== undefined) headers["Idempotency-Key"] = options.idempotencyKey;
-    if (options.guestOnly !== true) {
+    if (options.bearer !== undefined) headers["Authorization"] = `Bearer ${options.bearer}`;
+    else if (options.guestOnly !== true) {
       let token: string | null;
       try {
         token = await this.accessToken();

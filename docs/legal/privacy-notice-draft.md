@@ -18,13 +18,17 @@
 ## 2. Who can use VYBE
 
 - VYBE is for adults only (18 or older, or the local age of majority if it is higher: `[counsel to confirm per country]`).
-- Before VYBE creates a player, it asks for the year of birth. It does not show which years it accepts.
-- VYBE does not keep the year of birth. It keeps only the result: the time of the confirmation, the
-  version of the age policy, and the band "adult".
+- Before VYBE creates a player, it asks for the month and year of birth. It does not show which dates it accepts.
+- VYBE does not keep the month or the year of birth. It keeps only the result: the time of the
+  confirmation, the version of the age policy, and the band "adult".
 - If the answer shows that the person is under the adult age, VYBE creates no player and sets no cookie.
   It does not keep the answer.
-- A year of birth cannot show the exact age. The current rule accepts a person who reaches 18 in the
-  current calendar year. `[Counsel to confirm this rule, or to require a full date of birth.]`
+- A month and year cannot show the exact age. The rule is conservative: VYBE accepts a person only when
+  the month of the 18th birthday is before the current month. In the month of the 18th birthday itself,
+  VYBE refuses, because the person can still be 17. `[Counsel to confirm this rule.]`
+- When a person signs up for an account without a guest, the age question comes before VYBE creates the
+  sign-in account, so an under-age answer creates no email record. If an existing sign-in account without
+  a player gives an under-age answer, VYBE deletes that sign-in account.
 - The gate is a self-declaration. `[Counsel to state whether this is sufficient in each country.]`
 
 ## 3. What data VYBE uses, why, and for how long
@@ -125,7 +129,7 @@ the policy version that the player confirmed.]`
 ## Open points for counsel
 
 1. The countries list and the adult age per country (decision 1).
-2. The birth-year rule for the age gate (§2) and whether a self-declaration is sufficient.
+2. The month-and-year rule for the age gate (§2) and whether a self-declaration is sufficient.
 3. The lawful basis for each row of §3, and the ledger retention (option A: no time limit; option B: fixed period).
 4. The retention of resolved reports, the audit log and deletion requests.
 5. The backup retention period to state in §7.

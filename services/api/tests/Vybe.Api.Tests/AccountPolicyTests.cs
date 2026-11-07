@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vybe.Api.Features;
 using Vybe.Api.Infrastructure;
@@ -26,9 +27,13 @@ public sealed class AccountPolicyApiFactory : ApiFactory
 
     public FakeSupabaseAdmin Admin { get; } = new();
 
+    /// <summary>Every log line of the API (all categories, Debug and up), to prove what never reaches the logs.</summary>
+    public LogSink Logs { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         base.ConfigureWebHost(builder);
+        builder.ConfigureLogging(logging => logging.AddProvider(Logs).SetMinimumLevel(LogLevel.Debug));
         // Not through Auth:Supabase:Authority: that setting would also make the bearer scheme fetch metadata.
         builder.ConfigureServices(services =>
         {
@@ -36,6 +41,37 @@ public sealed class AccountPolicyApiFactory : ApiFactory
             services.AddSingleton(Options.Create(new SupabaseAdminOptions { Authority = TokenIssuer, ServiceRoleKey = ServiceRoleKey }));
             services.AddHttpClient(SupabaseAuthUserAdmin.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => Admin);
         });
+    }
+}
+
+/// <summary>Keeps every formatted log message, its scopes and its exception text.</summary>
+public sealed class LogSink : ILoggerProvider, ISupportExternalScope
+{
+    private IExternalScopeProvider _scopes = new LoggerExternalScopeProvider();
+
+    public ConcurrentQueue<string> Messages { get; } = new();
+
+    public ILogger CreateLogger(string categoryName) => new SinkLogger(this, categoryName);
+
+    public void SetScopeProvider(IExternalScopeProvider scopeProvider) => _scopes = scopeProvider;
+
+    public void Dispose()
+    {
+    }
+
+    private sealed class SinkLogger(LogSink sink, string category) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => sink._scopes.Push(state);
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            var scopes = new StringBuilder();
+            sink._scopes.ForEachScope((scope, text) => text.Append(scope).Append(' '), scopes);
+            sink.Messages.Enqueue($"{category} {formatter(state, exception)} {scopes} {exception}");
+        }
     }
 }
 
@@ -77,38 +113,95 @@ public sealed class AccountPolicyTests(AccountPolicyApiFactory api) : IClassFixt
     // ---------------------------------------------------------------- decision 1: age gate
 
     [Fact]
-    public async Task CreateGuest_NeedsAnAdultBirthYear_AndStoresOnlyTheGateResult()
+    public async Task CreateGuest_ValidatesTheBirthMonth()
     {
-        var year = api.Clock.GetUtcNow().Year;
+        var now = api.Clock.GetUtcNow().UtcDateTime;
         var browser = api.CreateBrowser();
         await Contract.AssertProblemAsync(await browser.PostAsync("/api/v1/guests", null), HttpStatusCode.UnprocessableEntity, "validation_failed");
-        await Contract.AssertProblemAsync(
-            await browser.PostAsJsonAsync("/api/v1/guests", new { }), HttpStatusCode.UnprocessableEntity, "validation_failed");
-        await Contract.AssertProblemAsync(
-            await browser.PostAsJsonAsync("/api/v1/guests", new { birthYear = year + 1 }), HttpStatusCode.UnprocessableEntity, "validation_failed");
-        await Contract.AssertProblemAsync(
-            await browser.PostAsJsonAsync("/api/v1/guests", new { birthYear = year - 121 }), HttpStatusCode.UnprocessableEntity, "validation_failed");
-        await Contract.AssertProblemAsync(
-            await browser.PostAsJsonAsync("/api/v1/guests", new { birthYear = "nineteen" }), HttpStatusCode.BadRequest, "malformed_request");
+        foreach (var body in new object[]
+        {
+            new { },
+            new { birthYear = 1990 },
+            new { birthMonth = 6 },
+            new { birthYear = 1990, birthMonth = 0 },
+            new { birthYear = 1990, birthMonth = 13 },
+            new { birthYear = now.Year - AgePolicy.MaxAge - 1, birthMonth = 12 },
+            new { birthYear = now.AddMonths(1).Year, birthMonth = now.AddMonths(1).Month }, // next month: not born yet
+        })
+        {
+            await Contract.AssertProblemAsync(await browser.PostAsJsonAsync("/api/v1/guests", body), HttpStatusCode.UnprocessableEntity, "validation_failed");
+        }
 
-        // Under age: no player, no cookie.
+        await Contract.AssertProblemAsync(
+            await browser.PostAsJsonAsync("/api/v1/guests", new { birthYear = "nineteen", birthMonth = 6 }), HttpStatusCode.BadRequest, "malformed_request");
+    }
+
+    /// <summary>The 18th birthday month must be before the current UTC month: the month before passes, the same month and the next do not.</summary>
+    [Theory]
+    [InlineData(-1, true)]
+    [InlineData(0, false)]
+    [InlineData(1, false)]
+    public async Task CreateGuest_AgeBoundary_IsTheMonthOfThe18thBirthday(int monthsFromNow, bool accepted)
+    {
+        var now = api.Clock.GetUtcNow().UtcDateTime;
+        var birthday18 = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(monthsFromNow);
+        var born = birthday18.AddYears(-AgePolicy.MinimumAge);
+        var browser = api.CreateBrowser();
         await using var db = api.CreateDbContext();
         var playersBefore = await db.Players.CountAsync();
-        var underAge = await browser.PostAsJsonAsync("/api/v1/guests", new { birthYear = year - AgePolicy.MinimumAge + 1 });
-        await Contract.AssertProblemAsync(underAge, HttpStatusCode.Forbidden, "age_not_eligible");
-        Assert.False(underAge.Headers.Contains("Set-Cookie"));
+
+        var response = await browser.PostAsJsonAsync("/api/v1/guests", new { birthYear = born.Year, birthMonth = born.Month });
+
+        if (accepted)
+        {
+            var created = await Contract.AssertAsync(response, HttpStatusCode.Created, "GuestCreated");
+            var player = await db.Players.AsNoTracking().SingleAsync(p => p.Id == created.GetProperty("playerId").GetGuid());
+            Assert.Equal((AgeBand.Adult, AgePolicy.Version), (player.AgeBand, player.AgePolicyVersion));
+            Assert.NotNull(player.AgeConfirmedAt);
+            return;
+        }
+
+        // Under age: no player, no cookie, nothing stored.
+        await Contract.AssertProblemAsync(response, HttpStatusCode.Forbidden, "age_not_eligible");
+        Assert.False(response.Headers.Contains("Set-Cookie"));
         Assert.Equal(playersBefore, await db.Players.CountAsync());
         await Contract.AssertProblemAsync(await browser.GetAsync("/api/v1/me"), HttpStatusCode.Unauthorized, "unauthenticated");
+    }
 
-        // Adult (reaches 18 this calendar year): the gate result is stored, the birth year is not.
-        var created = await Contract.AssertAsync(
-            await browser.PostAsJsonAsync("/api/v1/guests", new { birthYear = year - AgePolicy.MinimumAge }), HttpStatusCode.Created, "GuestCreated");
-        var player = await db.Players.AsNoTracking().SingleAsync(p => p.Id == created.GetProperty("playerId").GetGuid());
-        Assert.Equal((AgeBand.Adult, AgePolicy.Version), (player.AgeBand, player.AgePolicyVersion));
-        Assert.NotNull(player.AgeConfirmedAt);
+    [Fact]
+    public async Task CreateGuest_NeverStoresTheBirthMonth_AndAllowsAnotherAnswerAfterAnUnderAgeOne()
+    {
+        var now = api.Clock.GetUtcNow().UtcDateTime;
+        var browser = api.CreateBrowser();
+        // The gate is a self-declaration: nothing remembers the first answer, so a second answer is not blocked.
+        await Contract.AssertProblemAsync(
+            await browser.PostAsJsonAsync("/api/v1/guests", new { birthYear = now.Year - 10, birthMonth = 1 }), HttpStatusCode.Forbidden, "age_not_eligible");
+        await Contract.AssertAsync(await browser.PostAsync("/api/v1/guests", Player.AdultGuest()), HttpStatusCode.Created, "GuestCreated");
+
+        await using var db = api.CreateDbContext();
         var columns = await db.Database.SqlQuery<string>(
-            $"SELECT column_name AS \"Value\" FROM information_schema.columns WHERE table_schema = 'vybe' AND table_name = 'players'").ToListAsync();
+            $"SELECT column_name AS \"Value\" FROM information_schema.columns WHERE table_schema = 'vybe'").ToListAsync();
         Assert.DoesNotContain(columns, c => c.Contains("birth", StringComparison.Ordinal));
+        Assert.DoesNotContain(api.Logs.Messages, m => m.Contains("birth", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task CreateGuest_UnderAge_WithASignedInIdentityWithoutPlayer_QueuesTheAuthUserForDeletion()
+    {
+        var now = api.Clock.GetUtcNow().UtcDateTime;
+        var subject = Guid.NewGuid().ToString();
+        using var signedIn = Bearer(ApiFactory.RegisteredToken(subject));
+        signedIn.DefaultRequestHeaders.Add(CsrfMiddleware.Header, CsrfMiddleware.Value);
+
+        var response = await signedIn.PostAsJsonAsync("/api/v1/guests", new { birthYear = now.Year - 12, birthMonth = 3 });
+
+        await Contract.AssertProblemAsync(response, HttpStatusCode.Forbidden, "age_not_eligible");
+        Assert.False(response.Headers.Contains("Set-Cookie"));
+        await using var db = api.CreateDbContext();
+        Assert.True(await db.AuthUserDeletions.AnyAsync(d => d.AuthSubject == subject));
+        Assert.False(await db.Players.AnyAsync(p => p.AuthSubject == subject));
+        await RunPrivacyAsync();
+        Assert.Contains(subject, api.Admin.Deleted);
     }
 
     [Fact]
@@ -339,7 +432,146 @@ public sealed class AccountPolicyTests(AccountPolicyApiFactory api) : IClassFixt
         Assert.Equal(PrivacyProcessor.MaxAuthRetryDelay, PrivacyProcessor.AuthRetryDelay(500));
     }
 
+    // ---------------------------------------------------------------- review follow-ups
+
+    [Fact]
+    public async Task Renewal_TwoParallelRequests_WriteOnce_AndSendOneCookie()
+    {
+        MoveToUtcHour(2);
+        var guest = await Player.CreateGuestAsync(api);
+        api.Clock.Advance(TimeSpan.FromDays(1));
+
+        var responses = await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => guest.Http.GetAsync("/api/v1/me/avatar")));
+
+        Assert.All(responses, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
+        Assert.Single(responses, r => r.Headers.Contains("Set-Cookie"));
+        Assert.Equal(api.Clock.GetUtcNow().UtcDateTime + GuestTokens.IdleLifetime, await GuestExpiresAtAsync(guest), TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public async Task Renewal_NeverRevivesARevokedSession()
+    {
+        var guest = await Player.CreateGuestAsync(api);
+        await using var db = api.CreateDbContext();
+        var revokedAt = api.Clock.GetUtcNow().UtcDateTime;
+        await db.GuestSessions.Where(s => s.PlayerId == guest.Id).ExecuteUpdateAsync(u => u.SetProperty(s => s.RevokedAt, revokedAt));
+        var before = await db.GuestSessions.AsNoTracking().SingleAsync(s => s.PlayerId == guest.Id);
+        api.Clock.Advance(TimeSpan.FromDays(1));
+
+        var response = await guest.Http.GetAsync("/api/v1/me");
+
+        await Contract.AssertProblemAsync(response, HttpStatusCode.Unauthorized, "unauthenticated");
+        Assert.False(response.Headers.Contains("Set-Cookie"));
+        var after = await db.GuestSessions.AsNoTracking().SingleAsync(s => s.PlayerId == guest.Id);
+        Assert.Equal((before.ExpiresAt, before.RevokedAt), (after.ExpiresAt, after.RevokedAt));
+    }
+
+    [Fact]
+    public async Task GuestCleanup_EdgeCases_AndBatchesOver500()
+    {
+        var reporter = await Player.CreateGuestAsync(api); // also gives InsertGuestAsync an avatar row to copy
+        var now = api.Clock.GetUtcNow().UtcDateTime;
+        var expired = now - GuestCleanup.Grace - TimeSpan.FromDays(1);
+        await using var db = api.CreateDbContext();
+        var noSession = await InsertGuestAsync(db, "active", sessionEndsAt: null);
+        var recentlyRevoked = await InsertGuestAsync(db, "active", sessionEndsAt: now + TimeSpan.FromDays(20), revokedAt: now - TimeSpan.FromDays(5));
+        var oldRevoked = await InsertGuestAsync(db, "active", sessionEndsAt: now + TimeSpan.FromDays(20), revokedAt: expired);
+        var suspendedReported = await InsertGuestAsync(db, "suspended", sessionEndsAt: expired);
+        var suspended = await InsertGuestAsync(db, "suspended", sessionEndsAt: expired);
+        await db.Database.ExecuteSqlAsync($"""
+            INSERT INTO vybe.player_reports (id, reporter_player_id, target_player_id, reason, status, created_at)
+            VALUES ({Guid.NewGuid()}, {reporter.Id}, {suspendedReported}, 'cheating', 'open', {now})
+            """);
+        var bulk = new List<Guid>();
+        for (var i = 0; i < GuestCleanup.BatchSize + 1; i++)
+        {
+            bulk.Add(await InsertGuestAsync(db, "active", sessionEndsAt: expired));
+        }
+
+        var queued = await api.Services.GetRequiredService<GuestCleanup>().RunOnceAsync(CancellationToken.None);
+
+        Assert.True(queued >= GuestCleanup.BatchSize + 3, $"queued {queued}"); // bulk, oldRevoked, suspended (+ guests of other tests)
+        var statuses = await db.Players.AsNoTracking()
+            .Where(p => bulk.Contains(p.Id) || new[] { noSession, recentlyRevoked, oldRevoked, suspendedReported, suspended }.Contains(p.Id))
+            .ToDictionaryAsync(p => p.Id, p => p.Status);
+        Assert.All(bulk, id => Assert.Equal(PlayerStatus.Deleting, statuses[id]));
+        Assert.Equal(PlayerStatus.Active, statuses[noSession]);
+        Assert.Equal(PlayerStatus.Active, statuses[recentlyRevoked]);
+        Assert.Equal(PlayerStatus.Deleting, statuses[oldRevoked]);
+        Assert.Equal(PlayerStatus.Suspended, statuses[suspendedReported]);
+        Assert.Equal(PlayerStatus.Deleting, statuses[suspended]);
+
+        await RunPrivacyAsync(); // anonymizes them, so later passes of other tests stay small
+        var last = bulk[^1];
+        Assert.Equal(PlayerStatus.Deleted, (await db.Players.AsNoTracking().SingleAsync(p => p.Id == last)).Status);
+    }
+
+    [Fact]
+    public async Task PrivateProfile_CanStillBeBlockedAndReported()
+    {
+        var target = await Player.CreateGuestAsync(api);
+        var other = await Player.CreateGuestAsync(api);
+        var handle = (await target.MeAsync()).GetProperty("handle").GetString()!;
+        await Contract.AssertAsync(await SetVisibilityAsync(target, "private"), HttpStatusCode.OK, "PrivacySettings");
+
+        // Accepted risk (ADR 0005, decision 6): these answers tell that the handle exists.
+        Assert.Equal(HttpStatusCode.NoContent, (await other.Http.PostAsJsonAsync("/api/v1/me/blocks", new { handle })).StatusCode);
+        await Contract.AssertAsync(
+            await other.Http.PostAsJsonAsync("/api/v1/reports", new { targetHandle = handle, reason = "offensive_name" }), HttpStatusCode.Accepted, "ReportAccepted");
+    }
+
+    [Fact]
+    public async Task AuthDeletion_LogsNeitherTheUserIdNorTheKey_AndAFailureEndsThePass()
+    {
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        await RegisteredAsync(first);
+        await RegisteredAsync(second);
+        api.Admin.Answers.Enqueue((HttpStatusCode.BadGateway, "{}"));
+        var callsBefore = api.Admin.Requests.Count;
+        await RequestDeletionAsync(first);
+        await RequestDeletionAsync(second);
+
+        await RunPrivacyAsync();
+
+        Assert.Equal(callsBefore + 1, api.Admin.Requests.Count); // the failure ended the Auth step of this pass
+        await using var db = api.CreateDbContext();
+        Assert.Equal(2, await db.AuthUserDeletions.CountAsync(d => d.AuthSubject == first.ToString() || d.AuthSubject == second.ToString()));
+
+        api.Clock.Advance(PrivacyProcessor.AuthRetryDelay(1));
+        await RunPrivacyAsync();
+        Assert.Contains(first.ToString(), api.Admin.Deleted);
+        Assert.Contains(second.ToString(), api.Admin.Deleted);
+        Assert.Contains(api.Logs.Messages, m => m.Contains("Supabase Auth user failed", StringComparison.Ordinal)); // the sink works
+        foreach (var secret in new[] { first.ToString(), second.ToString(), AccountPolicyApiFactory.ServiceRoleKey })
+        {
+            Assert.DoesNotContain(api.Logs.Messages, m => m.Contains(secret, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
     // ---------------------------------------------------------------- helpers
+
+    /// <summary>A guest row written directly (no API): optional one session that ends at <paramref name="sessionEndsAt"/>.</summary>
+    private static async Task<Guid> InsertGuestAsync(VybeDbContext db, string status, DateTime? sessionEndsAt, DateTime? revokedAt = null)
+    {
+        var id = Guid.CreateVersion7();
+        var handle = "edge_" + Guid.NewGuid().ToString("N")[..12];
+        await db.Database.ExecuteSqlAsync($"""
+            INSERT INTO vybe.players (id, handle, handle_normalized, kind, status) VALUES ({id}, {handle}, {handle}, 'guest', {status});
+            INSERT INTO vybe.avatar_configs (player_id, body_preset_id, skin_tone_id, face_preset_id, hair_preset_id, hair_color_id, equipped_json)
+            SELECT {id}, body_preset_id, skin_tone_id, face_preset_id, hair_preset_id, hair_color_id, equipped_json FROM vybe.avatar_configs LIMIT 1;
+            """);
+        if (sessionEndsAt is { } ends)
+        {
+            await db.Database.ExecuteSqlAsync($"""
+                INSERT INTO vybe.guest_sessions (id, player_id, token_hash, expires_at, revoked_at)
+                VALUES ({Guid.NewGuid()}, {id}, {System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)}, {ends}, {revokedAt})
+                """);
+        }
+
+        return id;
+    }
+
 
     private void MoveToUtcHour(int hour)
     {
