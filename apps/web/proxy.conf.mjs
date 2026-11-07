@@ -10,5 +10,5 @@ export default {
     target: `http://localhost:${apiPort}`,
     secure: false,
   },
-  ...(authPort === undefined ? {} : { "/runtime-config.json": { target: `http://localhost:${authPort}`, secure: false } }),
+  ...(authPort === undefined ? {} : { "/runtime-config.json": { target: `http://localhost:${authPort}`, secure: false, changeOrigin: true } }),
 };

@@ -1,5 +1,4 @@
 import type { Routes } from "@angular/router";
-import { Admin } from "./pages/admin";
 import { AvatarCreator } from "./pages/avatar-creator";
 import { Arcade } from "./pages/arcade";
 import { DeletionStatus } from "./pages/deletion-status";
@@ -20,7 +19,12 @@ export const routes: Routes = [
   { path: "", pathMatch: "full", component: Landing, title: "VYBE", data: { layout: "bare" } },
   { path: "play", component: Onboarding, title: "Start · VYBE", data: { layout: "bare" } },
   // Staff may have no player, and a deletion status must open after the sessions are revoked.
-  { path: "admin", component: Admin, title: "Admin · VYBE", data: { layout: "bare" } },
+  {
+    path: "admin",
+    loadComponent: () => import("./pages/admin").then((m) => m.Admin),
+    title: "Admin · VYBE",
+    data: { layout: "bare" },
+  },
   { path: "deletion/:requestId", component: DeletionStatus, title: "Account deletion · VYBE", data: { layout: "bare" } },
   {
     path: "practice",

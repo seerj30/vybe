@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from "@angular/core";
+import { ChangeDetectionStrategy, Component, effect, inject, signal } from "@angular/core";
 import { Router, RouterLink } from "@angular/router";
 import { errorMessage } from "../api/messages";
 import { AccountLinkPanel, type LinkDone } from "../auth/account-link-panel";
@@ -34,10 +34,16 @@ type State = { kind: "loading" } | { kind: "player"; me: Me } | { kind: "new" } 
               <a class="button" routerLink="/play">Start as guest</a>
             }
             <a class="button secondary" routerLink="/practice">Practice Street Hoops</a>
-            @if (canSignIn() && !signingIn()) {
+            @if (canSignIn() && !signingIn() && !auth.linkFailed()) {
               <button type="button" class="button secondary" (click)="signingIn.set(true)">Sign in</button>
             }
           </div>
+          @if (auth.linkFailed()) {
+            <p class="notice" role="alert">
+              This sign-in link works only in the browser tab where you created the account. Your email address is
+              confirmed: sign in with your password, or open the link in that tab.
+            </p>
+          }
           @if (signingIn() || (auth.status() === "signed-in" && me() === null)) {
             <section class="card sign-in" aria-labelledby="sign-in-title">
               <h2 id="sign-in-title">Sign in to VYBE</h2>
@@ -67,6 +73,10 @@ export class Landing {
   protected readonly signingIn = signal(false);
 
   constructor() {
+    // An email link that this tab cannot use: open the sign-in form, and keep it open after the sign-in.
+    effect(() => {
+      if (this.auth.linkFailed()) this.signingIn.set(true);
+    });
     void this.load();
   }
 

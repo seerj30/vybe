@@ -36,26 +36,45 @@ change.
   `{ "supabaseUrl": "https://<project>.supabase.co", "supabaseAnonKey": "<publishable key>" }`.
   The hosting serves this file next to the app. The publishable key is public; put no secret in the
   file. Without the file (404), sign-in is off and the app is guest-only.
-- The Supabase session is in memory only (spec §11: no tokens in localStorage). A reload signs the
-  player out; the landing page then asks to sign in again. supabase-js loads as a lazy chunk at the
-  first sign-in.
-- A signed-in player sends the access token as `Authorization: Bearer`. `createGuest` and
-  `linkAccount` send only the guest cookie. When a token refresh fails, the request fails; it never
-  falls back to the cookie.
+- Supabase project settings: enable the asymmetric JWT signing keys (ES256 or RS256). The API takes
+  the keys from the issuer's JWKS and does not accept the legacy HS256 shared secret. Add
+  `<web origin>/` to the "Redirect URLs" (the email confirmation link returns there).
+- PKCE flow. The access and refresh tokens stay in memory only (spec §11: no tokens in web storage).
+  Only the PKCE code verifier goes to sessionStorage, under a key for this tab. So the email
+  confirmation link signs in only in the tab that created the account. In another tab, the landing
+  page says so and asks for the password (the address is confirmed). A reload signs the player out;
+  the landing page then asks to sign in again. supabase-js loads as a lazy chunk at the first sign-in.
+- A signed-in player sends the access token as `Authorization: Bearer`; the API prefers it to the
+  guest cookie. `createGuest` and `linkAccount` send only the guest cookie. When a token refresh
+  fails or the session ends without a sign-out, the request fails; it never falls back to the cookie.
 - J3 (`src/app/auth/account-link.ts`): after a sign-in, an identity with a player signs in to that
-  player. An identity without a player links the guest of this browser (`POST /accounts/link`, a new
-  guest if there is none), so the player id, wallet and inventory stay the same. When the identity
-  has a player and the browser has another guest, the player chooses; VYBE merges nothing.
+  player. For an identity without a player, the page shows the email and waits for "Link this
+  account". Then it links the guest of this browser (`POST /accounts/link`, a new guest if there is
+  none), so the player id, wallet and inventory stay the same. When the identity has a player and
+  the browser has another guest, the player chooses; VYBE merges nothing.
+- Sign-out ends the session of this browser only and forgets the cached player. After an account
+  deletion, the sign-out ends the sessions of all devices.
 - Deletion of a linked account needs a sign-in from the last 5 minutes (`amr`); else the page asks
   for the password again ("Verification required").
 - Admin roles come from `app_metadata.vybe_role`. The page only hides what a role cannot use; the
-  API checks every call.
+  API checks every call. `/admin` is a lazy chunk.
+
+### Content Security Policy
+
+The app adds a CSP `<meta>` element at start-up, with the Supabase origin from the runtime config
+(`src/app/auth/content-security-policy.ts`). The hosting must also send these headers for the app
+pages (a meta element cannot set `frame-ancestors`):
+
+```
+Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://<project>.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+Referrer-Policy: no-referrer
+```
 
 Local sign-in without a Supabase project: start the test Auth server
-(`E2E_AUTH_PORT=5290 node tests/e2e/fake-auth/server.ts`), start the API with
+(`E2E_AUTH_PORT=5290 E2E_WEB_PORT=4200 E2E_AUTH_TEST_SECRET=<random> node tests/e2e/fake-auth/server.ts`), start the API with
 `Auth__Supabase__Authority=http://localhost:5290/auth/v1`, and the dev server with `E2E_AUTH_PORT=5290`.
 The dev proxy then serves `/runtime-config.json` from that server. Create users with
-`POST http://localhost:5290/__test/users` with the header `X-Test-Secret: vybe-e2e-test-only` (see `tests/e2e/fake-auth/server.ts`).
+`POST http://localhost:5290/__test/users` with the header `X-Test-Secret: <the same random value>` (see `tests/e2e/fake-auth/server.ts`).
 
 ## Street Hoops on the API (`/arcade/street-hoops`)
 

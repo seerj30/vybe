@@ -45,6 +45,21 @@ test("E08: a player reaches only the own wallet and inventory", async ({ page, b
   await other.close();
 });
 
+test("with a bearer token and a guest cookie, the bearer token decides the player", async ({ page }) => {
+  await newPlayer(page);
+  const guestId = await playerId(page);
+  const user = await createUser();
+  const other = await page.context().browser()!.newContext({ baseURL: test.info().project.use.baseURL });
+  const account = await json<{ playerId: string }>(await guestPost(other.request, "/guests", undefined));
+  await json(await guestPost(other.request, "/accounts/link", { linkProof: await accessToken(user) }));
+  await other.close();
+
+  // page.request sends the guest cookie of `page`; the bearer token belongs to the other player.
+  const me = await json<Me>(await page.request.get("/api/v1/me", { headers: bearer(await accessToken(user)) }));
+  expect(me.id).toBe(account.playerId);
+  expect(me.id).not.toBe(guestId);
+});
+
 test("E08: a normal player sees 'Unauthorized' at /admin, and the admin API refuses the token (403)", async ({ page }) => {
   const player = await createUser();
   await signInOnAdmin(page, player);

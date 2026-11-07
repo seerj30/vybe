@@ -6,19 +6,24 @@
  * JWTs with the claims of a real Supabase access token (`amr`, `app_metadata`, `is_anonymous`).
  * Sign-up addresses that contain "+unconfirmed" act like "Confirm email" on.
  *
- * Test-only endpoints under `/__test` need the `X-Test-Secret` header (no CORS, so web pages cannot
- * call them):
+ * It answers only to `localhost:<port>` (Host check) and allows CORS only for the web app origin.
+ * Test-only endpoints under `/__test` need the `X-Test-Secret` header with `E2E_AUTH_TEST_SECRET` (no CORS):
  * - `POST /__test/users` `{ email, password, role?, confirmed?, amrAgeSeconds? }`
  * - `PATCH /__test/users/{email}` `{ role?, amrAgeSeconds?, userFailures? }`
  * - `GET /__test/users/{email}/confirmation` → `{ url }`, the link of the confirmation email
  * `amrAgeSeconds` moves the sign-in time (`amr[].timestamp`) into the past; `userFailures` makes the
  * next N calls of `GET /auth/v1/user` answer 503 (Auth outage).
  *
- * Run: `node tests/e2e/fake-auth/server.ts` (port `E2E_AUTH_PORT`, default 5290).
+ * Run: `E2E_AUTH_TEST_SECRET=<random> node tests/e2e/fake-auth/server.ts` (port `E2E_AUTH_PORT`, default 5290;
+ * web origin port `E2E_WEB_PORT`, default 4321).
  */
 import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign, verify } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { AUTH_ANON_KEY, AUTH_ISSUER, AUTH_PORT, AUTH_TEST_SECRET, AUTH_URL } from "./config.ts";
+import { AUTH_ANON_KEY, AUTH_ISSUER, AUTH_PORT, AUTH_URL, WEB_ORIGIN, testSecret } from "./config.ts";
+
+const TEST_SECRET = testSecret(); // the server does not start without it
+/** Host names this server answers to (no DNS rebinding through another name). */
+const HOSTS = new Set([`localhost:${AUTH_PORT}`, `127.0.0.1:${AUTH_PORT}`]);
 
 interface User {
   id: string;
@@ -197,7 +202,7 @@ async function route(request: IncomingMessage, url: URL): Promise<Answer> {
   if (method === "GET" && path === "/auth/v1/.well-known/jwks.json") return [200, { keys: [jwk] }];
 
   if (path.startsWith("/__test/")) {
-    if (request.headers["x-test-secret"] !== AUTH_TEST_SECRET) throw new HttpError(403, "forbidden", "Test endpoints need X-Test-Secret");
+    if (request.headers["x-test-secret"] !== TEST_SECRET) throw new HttpError(403, "forbidden", "Test endpoints need X-Test-Secret");
     return testRoute(method, path, await readJson(request));
   }
 
@@ -331,10 +336,15 @@ function send(response: ServerResponse, status: number, body: unknown, headers: 
 }
 
 const server = createServer((request, response) => {
+  if (!HOSTS.has(request.headers.host ?? "")) {
+    send(response, 421, { code: 421, error_code: "misdirected_request", msg: "Unknown host" });
+    return;
+  }
   const url = new URL(request.url ?? "/", AUTH_URL);
   if (url.pathname.startsWith("/auth/v1/")) {
-    // supabase-js calls Auth from the web origin, as it calls a real Supabase project. No CORS on /__test.
-    response.setHeader("Access-Control-Allow-Origin", "*");
+    // supabase-js calls Auth from the web app, as it calls a real Supabase project. No CORS on /__test.
+    response.setHeader("Access-Control-Allow-Origin", WEB_ORIGIN);
+    response.setHeader("Vary", "Origin");
     response.setHeader("Access-Control-Allow-Headers", "apikey, authorization, content-type, x-client-info, x-supabase-api-version");
     response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     response.setHeader("Access-Control-Expose-Headers", "x-supabase-api-version, retry-after");

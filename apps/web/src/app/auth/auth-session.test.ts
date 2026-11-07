@@ -2,6 +2,7 @@ import "@angular/compiler";
 import { Injector } from "@angular/core";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
+import { PlayerStore } from "../player/player-store";
 import { AuthSession, SUPABASE, type SupabaseLoader, authErrorMessage, tabStorage } from "./auth-session";
 import type { AuthConfig } from "./runtime-config";
 
@@ -32,8 +33,10 @@ function fakeClient(): SupabaseClient {
   return { auth } as unknown as SupabaseClient;
 }
 
-function session(config: () => Promise<AuthConfig | null>): { auth: AuthSession; created: () => number } {
+function session(config: () => Promise<AuthConfig | null>): { auth: AuthSession; created: () => number; cleared: () => number } {
   let created = 0;
+  let cleared = 0;
+  const player = { clear: () => void cleared++ } as unknown as PlayerStore;
   const loader: SupabaseLoader = {
     config,
     create: () => {
@@ -41,8 +44,10 @@ function session(config: () => Promise<AuthConfig | null>): { auth: AuthSession;
       return Promise.resolve(fakeClient());
     },
   };
-  const auth = Injector.create({ providers: [{ provide: SUPABASE, useValue: loader }, { provide: AuthSession }] }).get(AuthSession);
-  return { auth, created: () => created };
+  const auth = Injector.create({
+    providers: [{ provide: SUPABASE, useValue: loader }, { provide: PlayerStore, useValue: player }, { provide: AuthSession }],
+  }).get(AuthSession);
+  return { auth, created: () => created, cleared: () => cleared };
 }
 
 describe("AuthSession", () => {
@@ -59,7 +64,7 @@ describe("AuthSession", () => {
   });
 
   it("loads supabase-js only for a sign-in, then sends its token and role", async () => {
-    const { auth, created } = session(() => Promise.resolve(CONFIG));
+    const { auth, created, cleared } = session(() => Promise.resolve(CONFIG));
     await expect(auth.accessToken()).resolves.toBeNull();
     expect(auth.status()).toBe("signed-out");
     expect(created()).toBe(0);
@@ -72,6 +77,7 @@ describe("AuthSession", () => {
 
     await auth.signOut();
     expect(auth.status()).toBe("signed-out");
+    expect(cleared()).toBe(1); // no screen keeps the old player
     await expect(auth.accessToken()).resolves.toBeNull();
   });
 

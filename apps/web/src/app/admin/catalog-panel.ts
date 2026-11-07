@@ -30,15 +30,15 @@ interface KnownItem {
       </label>
       <fieldset>
         <legend>State</legend>
-        <label class="radio"><input type="radio" name="active" [checked]="active()" (change)="active.set(true)" /> Active (in the shop)</label>
-        <label class="radio"><input type="radio" name="active" [checked]="!active()" (change)="active.set(false)" /> Inactive (hidden, cannot be bought or worn)</label>
+        <label class="radio"><input type="radio" name="active" [checked]="active() === true" (change)="active.set(true)" /> Active (in the shop)</label>
+        <label class="radio"><input type="radio" name="active" [checked]="active() === false" (change)="active.set(false)" /> Inactive (hidden, cannot be bought or worn)</label>
       </fieldset>
       <label>
         Reason
         <input type="text" name="reason" minlength="3" maxlength="500" [value]="reason()" (input)="reason.set(inputText($event))" />
       </label>
       <div class="actions">
-        <button type="submit" class="button" [disabled]="busy() || itemId() === '' || !validReason(reason())">Save item</button>
+        <button type="submit" class="button" [disabled]="busy() || itemId() === '' || active() === null || !validReason(reason())">Save item</button>
       </div>
     </form>
     @if (error(); as error) {
@@ -56,7 +56,7 @@ interface KnownItem {
             <tr>
               <td>{{ item.name }}</td>
               <td>{{ item.isActive ? "Active" : "Inactive" }}</td>
-              <td><button type="button" class="link" (click)="itemId.set(item.id)" [attr.aria-label]="'Edit ' + item.name"><code>{{ item.id }}</code></button></td>
+              <td><button type="button" class="link" (click)="pick(item.id)" [attr.aria-label]="'Edit ' + item.name"><code>{{ item.id }}</code></button></td>
             </tr>
           }
         </tbody>
@@ -83,7 +83,8 @@ export class AdminCatalog {
   protected readonly validReason = validReason;
   protected readonly items = signal<KnownItem[]>([]);
   protected readonly itemId = signal("");
-  protected readonly active = signal(false);
+  /** No default: the administrator picks the new state for every save, so a save never deactivates by accident. */
+  protected readonly active = signal<boolean | null>(null);
   protected readonly reason = signal("");
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
@@ -93,14 +94,22 @@ export class AdminCatalog {
     void this.loadItems();
   }
 
+  protected pick(itemId: string): void {
+    this.itemId.set(itemId);
+    this.active.set(null);
+  }
+
   protected async save(): Promise<void> {
+    const isActive = this.active();
+    if (isActive === null) return;
     this.busy.set(true);
     this.error.set(null);
     this.notice.set(null);
     try {
-      const item = await this.api.adminUpdateCatalogItem(this.itemId(), { isActive: this.active(), reason: this.reason().trim() });
+      const item = await this.api.adminUpdateCatalogItem(this.itemId(), { isActive, reason: this.reason().trim() });
       this.remember(item);
       this.reason.set("");
+      this.active.set(null);
       this.notice.set(`${item.name} is now ${item.isActive ? "active" : "inactive"}.`);
     } catch (error: unknown) {
       this.error.set(isApiError(error, "not_found") ? "VYBE has no catalog item with this id." : errorMessage(error));

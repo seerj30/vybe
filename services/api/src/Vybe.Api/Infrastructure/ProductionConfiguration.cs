@@ -32,6 +32,15 @@ public static class ProductionConfiguration
             problems.Add("Auth:Supabase:Authority (or Auth:Supabase:MetadataAddress) is not configured");
         }
 
+        // Tokens and signing keys must not come over plain http (only Development accepts it, for the local fake Auth).
+        foreach (var key in new[] { "Auth:Supabase:Authority", "Auth:Supabase:MetadataAddress", "Auth:Supabase:Issuer" })
+        {
+            if (!string.IsNullOrWhiteSpace(configuration[key]) && !IsHttpsUrl(configuration[key]))
+            {
+                problems.Add($"{key} must be an absolute https URL");
+            }
+        }
+
         if (string.IsNullOrWhiteSpace(configuration["Auth:Supabase:ApiKey"]))
         {
             problems.Add("Auth:Supabase:ApiKey is not configured");

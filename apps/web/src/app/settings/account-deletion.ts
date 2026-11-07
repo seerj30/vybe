@@ -128,7 +128,7 @@ export class AccountDeletion {
   private async leave(requestId: string): Promise<void> {
     try {
       // The API revoked the guest cookie; the Supabase session ends here.
-      if (this.registered()) await this.auth.signOut();
+      if (this.registered()) await this.auth.signOut("global");
       await this.player.refresh();
     } catch (error: unknown) {
       console.error("Sign-out after the deletion request failed", error);

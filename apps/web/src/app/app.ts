@@ -3,6 +3,7 @@ import { toSignal } from "@angular/core/rxjs-interop";
 import { type ActivatedRouteSnapshot, NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from "@angular/router";
 import { filter, map } from "rxjs";
 import type { Layout } from "./app.routes";
+import { AuthSession } from "./auth/auth-session";
 import { PlayerStore } from "./player/player-store";
 
 interface NavItem {
@@ -64,6 +65,11 @@ export class App {
   private readonly main = viewChild.required<ElementRef<HTMLElement>>("main");
   private readonly router = inject(Router);
   private navigations = 0;
+
+  constructor() {
+    // Runtime config at start-up: it sets the Content Security Policy and takes a sign-in callback.
+    void inject(AuthSession).ready();
+  }
 
   protected readonly layout = toSignal(
     this.router.events.pipe(

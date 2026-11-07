@@ -31,6 +31,13 @@ export class PlayerStore {
     return this.loaded;
   }
 
+  /** Forgets the player (sign-out), so no screen shows the old one; the next `ensure()` loads again. */
+  clear(): void {
+    this.generation++;
+    this.loaded = null;
+    this.meSignal.set(null);
+  }
+
   /** Called after `createGuest` succeeded. */
   async startedGuest(): Promise<Me | null> {
     rememberGuest();

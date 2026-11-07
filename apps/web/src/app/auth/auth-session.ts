@@ -1,7 +1,9 @@
-import { Injectable, InjectionToken, inject, signal } from "@angular/core";
+import { Injectable, InjectionToken, Injector, inject, signal } from "@angular/core";
 import type { Schemas } from "@vybe/contracts";
 import type { AuthError, Session, SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "../api/api-client";
+import { PlayerStore } from "../player/player-store";
+import { applyContentSecurityPolicy } from "./content-security-policy";
 import { type AuthConfig, loadAuthConfig } from "./runtime-config";
 
 export type AuthStatus = "loading" | "off" | "unavailable" | "signed-out" | "signed-in";
@@ -109,8 +111,12 @@ function hasAuthResult(): boolean {
 @Injectable({ providedIn: "root" })
 export class AuthSession {
   private readonly supabase = inject(SUPABASE);
+  // Lazy: PlayerStore → API → AuthSession would be a cycle at construction.
+  private readonly injector = inject(Injector);
   private readonly statusSignal = signal<AuthStatus>("loading");
   private readonly userSignal = signal<AuthUser | null>(null);
+  private readonly linkFailedSignal = signal(false);
+  private callback: Promise<void> | null = null;
   private config: Promise<AuthConfig | null> | null = null;
   private client: Promise<SupabaseClient> | null = null;
   /** A session existed and the user did not sign out: a missing session now is an error, not "guest". */
@@ -118,10 +124,27 @@ export class AuthSession {
 
   readonly status = this.statusSignal.asReadonly();
   readonly user = this.userSignal.asReadonly();
+  /**
+   * True when the URL had a sign-in code (email link) but this tab could not use it: the PKCE verifier
+   * lives only in the tab that signed up. The email address is confirmed; the user signs in with the password.
+   */
+  readonly linkFailed = this.linkFailedSignal.asReadonly();
 
   /** Loads the runtime config once (sets `status`); picks up a sign-in callback from the URL. */
   async ready(): Promise<void> {
-    if ((await this.loadConfig()) !== null && hasAuthResult()) await this.use();
+    if ((await this.loadConfig()) === null) return;
+    if (this.callback === null && hasAuthResult()) this.callback = this.takeCallback();
+    await this.callback;
+  }
+
+  /** Lets supabase-js exchange the URL code once, then removes the code from the address. */
+  private async takeCallback(): Promise<void> {
+    await this.use();
+    if (this.statusSignal() !== "signed-in") this.linkFailedSignal.set(true);
+    const url = new URL(location.href);
+    url.searchParams.delete("code");
+    url.searchParams.delete("sb_flow_id");
+    history.replaceState(history.state, "", url.pathname + url.search + url.hash);
   }
 
   /**
@@ -142,6 +165,7 @@ export class AuthSession {
     const client = await this.use();
     if (client === null) return { ok: false, message: UNAVAILABLE };
     const { error } = await client.auth.signInWithPassword({ email: email.trim(), password });
+    if (error === null) this.linkFailedSignal.set(false);
     return error === null ? { ok: true } : { ok: false, message: authErrorMessage(error) };
   }
 
@@ -165,13 +189,17 @@ export class AuthSession {
     return this.signIn(email, password);
   }
 
-  /** Ends the session in Supabase too (all devices), so its refresh token stops working. */
-  async signOut(): Promise<void> {
+  /**
+   * Ends the session of this browser (`local`, the default: other devices stay signed in) or of every
+   * device (`global`, after an account deletion). It also forgets the cached player.
+   */
+  async signOut(scope: "local" | "global" = "local"): Promise<void> {
     this.expectSession = false;
     forgetAccount();
+    this.injector.get(PlayerStore).clear();
     if (this.client === null) return;
     const client = await this.client;
-    const { error } = await client.auth.signOut();
+    const { error } = await client.auth.signOut({ scope });
     if (error !== null) {
       // Supabase did not answer: end the session in this tab at least.
       await client.auth.signOut({ scope: "local" });
@@ -190,12 +218,14 @@ export class AuthSession {
   private loadConfig(): Promise<AuthConfig | null> {
     this.config ??= this.supabase.config().then(
       (config) => {
+        applyContentSecurityPolicy(config?.supabaseUrl ?? null);
         if (config === null) this.statusSignal.set("off");
         else if (this.statusSignal() === "loading") this.statusSignal.set("signed-out");
         return config;
       },
       (error: unknown) => {
         console.error("Sign-in is unavailable", error);
+        applyContentSecurityPolicy(null);
         this.statusSignal.set("unavailable");
         return null;
       },

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { defineConfig, devices } from "@playwright/test";
 // PostgreSQL with `services/api/db/schema.sql` applied (`pnpm --filter @vybe/e2e db:up` locally).
 import { DATABASE_URL } from "./specs/db.ts";
@@ -8,6 +9,8 @@ import { AUTH_ANON_KEY, AUTH_ISSUER, AUTH_PORT, AUTH_URL } from "./fake-auth/con
 const PORT = Number(process.env["E2E_WEB_PORT"] ?? 4321);
 const API_PORT = Number(process.env["E2E_API_PORT"] ?? 5246);
 const isCI = process.env["CI"] !== undefined;
+// A new secret per run for the fake Auth test endpoints; the workers inherit it from this process.
+process.env["E2E_AUTH_TEST_SECRET"] ??= randomUUID();
 
 
 function npgsql(url: string): string {
@@ -48,9 +51,10 @@ export default defineConfig({
       // Test-only stand-in for Supabase Auth: JWKS, password sign-in, `/auth/v1/user`, roles and `amr`.
       command: "node fake-auth/server.ts",
       url: `${AUTH_URL}/auth/v1/.well-known/jwks.json`,
-      reuseExistingServer: !isCI,
+      // Never reuse: the server must have this run's test secret.
+      reuseExistingServer: false,
       timeout: 30_000,
-      env: { E2E_AUTH_PORT: String(AUTH_PORT) },
+      env: { E2E_AUTH_PORT: String(AUTH_PORT), E2E_WEB_PORT: String(PORT), E2E_AUTH_TEST_SECRET: process.env["E2E_AUTH_TEST_SECRET"] },
     },
     {
       // The real API (ADR 0003) on PostgreSQL; it seeds rulesets and the catalog at start-up.

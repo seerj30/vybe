@@ -5,6 +5,7 @@ import type { Schemas } from "@vybe/contracts";
 import { AccountApi } from "../api/account-api";
 import { isApiError } from "../api/api-client";
 import { errorMessage } from "../api/messages";
+import { DELETION_REQUEST_KEY } from "../settings/account-deletion";
 
 const POLL_MS = 3000;
 
@@ -81,11 +82,21 @@ export class DeletionStatus implements OnInit {
       const status = await this.api.getDeletionRequest(this.requestId());
       if (this.destroyed) return;
       this.status.set(status);
-      if (status.status !== "completed") this.timer = setTimeout(() => void this.load(), POLL_MS);
+      if (status.status === "completed") forget(this.requestId());
+      else this.timer = setTimeout(() => void this.load(), POLL_MS);
     } catch (error: unknown) {
       if (this.destroyed) return;
       if (isApiError(error, "not_found", "validation_failed", "malformed_request")) this.missing.set(true);
       else this.error.set(errorMessage(error));
     }
+  }
+}
+
+/** The id is an access key to the status: once the deletion is done, this browser forgets it. */
+function forget(requestId: string): void {
+  try {
+    if (localStorage.getItem(DELETION_REQUEST_KEY) === requestId) localStorage.removeItem(DELETION_REQUEST_KEY);
+  } catch {
+    // Storage blocked: nothing stored.
   }
 }

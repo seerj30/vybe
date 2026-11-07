@@ -42,7 +42,10 @@ test("E12: a guest deletes the account; the status page needs no session", async
   await confirm.click();
 
   await expect(page.getByRole("heading", { name: "Account deletion" })).toBeVisible();
+  // The address holds the request id (a capability): it must not leak through the Referer header.
+  await expect(page.locator('meta[name="referrer"]')).toHaveAttribute("content", "no-referrer");
   await expect(page.getByTestId("deletion-status")).toContainText("Your account is deleted", WORKER);
+  expect(await page.evaluate(() => localStorage.getItem("vybe.deletionRequest"))).toBeNull();
   const requestId = new URL(page.url()).pathname.split("/").pop() ?? "";
 
   // The guest session is revoked; the status needs only the request id.
