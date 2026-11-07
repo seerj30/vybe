@@ -34,7 +34,7 @@ Configure these on the telemetry backend (OTLP metrics and Sentry). Send them to
 | Score validation spike | rejected submits (`status = rejected`) | > 3× the 7-day baseline for 30 min |
 | Auth failures | 401 rate; 503 `auth_unavailable` on linking | > 5× baseline for 10 min; any 503 for 5 min |
 | Rate limit | 429 count (`aspnetcore.rate_limiting.requests` with `rejected`) | > 10× baseline (possible attack or a bad client release) |
-| Background jobs | log lines "Outbox pass failed", "Sweep failed", "Privacy pass failed", "Idempotency cleanup failed"; outbox job `failed` | any, repeated for 10 min |
+| Background jobs | log lines "Outbox pass failed", "Sweep failed", "Privacy pass failed", "Idempotency cleanup failed", "Deletion log export failed"; outbox job `failed` | any, repeated for 10 min |
 | Backup | backup job result | any failure |
 
 ## Procedure

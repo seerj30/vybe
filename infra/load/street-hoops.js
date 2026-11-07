@@ -3,9 +3,15 @@
 // How to run: docs/runbooks/load-test.md. Local targets only: the script stops for any other host.
 import http from 'k6/http';
 import { check, fail, sleep } from 'k6';
-import { randomIntBetween, uuidv4 } from 'https://jslib.k6.io/k6-utils/1.4.0/index.js';
+
+// No remote imports: the script runs only what is in this repository.
+function randomIntBetween(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
 
 const BASE_URL = (__ENV.BASE_URL || 'http://localhost:8080').replace(/\/$/, '');
+// scheme://host[:port][/path] only: no user info ("localhost@evil.example"), query or fragment.
+const BASE_URL_PATTERN = /^https?:\/\/(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9.-]+)(?::\d{1,5})?(?:\/[^?#@]*)?$/;
 const DURATION = __ENV.DURATION || '5m';
 const LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]', 'host.docker.internal', 'api'];
 const COOKIE = '__Host-vybe_guest';
@@ -35,7 +41,11 @@ export const options = {
 http.setResponseCallback(http.expectedStatuses({ min: 200, max: 299 }, 409));
 
 export function setup() {
-  const host = BASE_URL.replace(/^https?:\/\//, '').replace(/[:/].*$/, '');
+  const match = BASE_URL_PATTERN.exec(BASE_URL);
+  if (!match) {
+    fail('BASE_URL must be http(s)://host[:port][/path] without user info, query or fragment');
+  }
+  const host = match[1].toLowerCase();
   if (!LOCAL_HOSTS.includes(host) && __ENV.VYBE_LOAD_TARGET_CONFIRMED !== host) {
     fail(`refusing to load ${host}: only local targets (see docs/runbooks/load-test.md)`);
   }
@@ -118,7 +128,7 @@ export function playRun(data) {
   }
   sleep(events[events.length - 1].tMs / 1000 + 0.2);
 
-  const submitted = write('POST', `/api/v1/games/sessions/${sessionId}/submit`, { rulesetId, events, clientReportedScore: 0 }, 'submit', { 'Idempotency-Key': uuidv4() });
+  const submitted = write('POST', `/api/v1/games/sessions/${sessionId}/submit`, { rulesetId, events, clientReportedScore: 0 }, 'submit', { 'Idempotency-Key': crypto.randomUUID() });
   check(submitted, { 'submit verified': (r) => r.status === 200 && r.json('status') === 'verified' });
 }
 
@@ -126,7 +136,7 @@ export function purchase(data) {
   if (!ensureGuest()) {
     return;
   }
-  const res = write('POST', '/api/v1/purchases', { itemId: data.itemId }, 'purchase', { 'Idempotency-Key': uuidv4() });
+  const res = write('POST', '/api/v1/purchases', { itemId: data.itemId }, 'purchase', { 'Idempotency-Key': crypto.randomUUID() });
   check(res, { 'purchase 200 or 409': (r) => r.status === 200 || r.status === 409 });
   check(read('/api/v1/me', 'me'), { 'me 200': (r) => r.status === 200 });
 }
