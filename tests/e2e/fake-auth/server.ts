@@ -1,12 +1,16 @@
 /**
  * Fake Supabase Auth for the browser tests only (never for a real deployment). It speaks the subset of
- * the GoTrue API that supabase-js and the VYBE API use: password sign-in, refresh, sign-up, sign-out,
- * `GET /auth/v1/user`, the issuer metadata and the JWKS. Tokens are ES256 JWTs with the claims of a
- * real Supabase access token (`amr`, `app_metadata`, `is_anonymous`).
+ * the GoTrue API that supabase-js and the VYBE API use: password sign-in, refresh, sign-up with the
+ * PKCE email confirmation (`/verify` redirects with `?code=`, `grant_type=pkce` checks the
+ * `code_verifier`), sign-out, `GET /auth/v1/user`, the issuer metadata and the JWKS. Tokens are ES256
+ * JWTs with the claims of a real Supabase access token (`amr`, `app_metadata`, `is_anonymous`).
+ * Sign-up addresses that contain "+unconfirmed" act like "Confirm email" on.
  *
- * Test-only endpoints under `/__test` create users and change their state:
+ * Test-only endpoints under `/__test` need the `X-Test-Secret` header (no CORS, so web pages cannot
+ * call them):
  * - `POST /__test/users` `{ email, password, role?, confirmed?, amrAgeSeconds? }`
  * - `PATCH /__test/users/{email}` `{ role?, amrAgeSeconds?, userFailures? }`
+ * - `GET /__test/users/{email}/confirmation` → `{ url }`, the link of the confirmation email
  * `amrAgeSeconds` moves the sign-in time (`amr[].timestamp`) into the past; `userFailures` makes the
  * next N calls of `GET /auth/v1/user` answer 503 (Auth outage).
  *
@@ -14,7 +18,7 @@
  */
 import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign, verify } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { AUTH_ANON_KEY, AUTH_ISSUER, AUTH_PORT, AUTH_URL } from "./config.ts";
+import { AUTH_ANON_KEY, AUTH_ISSUER, AUTH_PORT, AUTH_TEST_SECRET, AUTH_URL } from "./config.ts";
 
 interface User {
   id: string;
@@ -25,6 +29,14 @@ interface User {
   amrAgeSeconds: number;
   userFailures: number;
   createdAt: string;
+  /** Sign-up waiting for the email link: the link token and the PKCE challenge of the tab that signed up. */
+  pending: { token: string; challenge: string | null; method: string; redirectTo: string } | null;
+}
+
+interface AuthCode {
+  userId: string;
+  challenge: string;
+  method: string;
 }
 
 interface Session {
@@ -41,6 +53,8 @@ const jwk = { ...publicKey.export({ format: "jwk" }), kid, alg: "ES256", use: "s
 const users = new Map<string, User>(); // by lowercase email
 const sessions = new Map<string, Session>(); // by session id
 const refreshTokens = new Map<string, string>(); // refresh token → session id
+const authCodes = new Map<string, AuthCode>(); // one-time PKCE codes
+const MAX_BODY = 64 * 1024;
 
 class HttpError extends Error {
   readonly status: number;
@@ -161,12 +175,15 @@ function newUser(body: Record<string, unknown>, defaults: { confirmed: boolean }
     amrAgeSeconds: typeof body["amrAgeSeconds"] === "number" ? body["amrAgeSeconds"] : 0,
     userFailures: 0,
     createdAt: new Date().toISOString(),
+    pending: null,
   };
   users.set(email, user);
   return user;
 }
 
-async function route(request: IncomingMessage, url: URL): Promise<[number, unknown]> {
+type Answer = [number, unknown] | [number, unknown, Record<string, string>];
+
+async function route(request: IncomingMessage, url: URL): Promise<Answer> {
   const path = url.pathname;
   const method = request.method ?? "GET";
 
@@ -179,7 +196,30 @@ async function route(request: IncomingMessage, url: URL): Promise<[number, unkno
   }
   if (method === "GET" && path === "/auth/v1/.well-known/jwks.json") return [200, { keys: [jwk] }];
 
-  if (path.startsWith("/__test/")) return testRoute(method, path, await readJson(request));
+  if (path.startsWith("/__test/")) {
+    if (request.headers["x-test-secret"] !== AUTH_TEST_SECRET) throw new HttpError(403, "forbidden", "Test endpoints need X-Test-Secret");
+    return testRoute(method, path, await readJson(request));
+  }
+
+  if (method === "GET" && path === "/auth/v1/verify") {
+    // The link of the confirmation email: confirms the user, then redirects like Supabase does.
+    const user = [...users.values()].find((u) => u.pending !== null && u.pending.token === url.searchParams.get("token"));
+    if (user === undefined || user.pending === null) throw new HttpError(403, "otp_expired", "Email link is invalid or has expired");
+    const { challenge, method: challengeMethod, redirectTo } = user.pending;
+    user.confirmed = true;
+    user.pending = null;
+    if (challenge === null) {
+      // Implicit flow: the session goes in the URL fragment.
+      const session = signIn(user) as Record<string, string | number>;
+      const fragment = new URLSearchParams(Object.entries(session).filter(([k]) => k !== "user").map(([k, v]) => [k, String(v)]));
+      return [303, null, { Location: `${redirectTo}#${fragment.toString()}&type=signup` }];
+    }
+    const code = randomUUID();
+    authCodes.set(code, { userId: user.id, challenge, method: challengeMethod });
+    const target = new URL(redirectTo);
+    target.searchParams.set("code", code);
+    return [303, null, { Location: target.toString() }];
+  }
 
   if (path.startsWith("/auth/v1/") && request.headers["apikey"] !== AUTH_ANON_KEY) {
     throw new HttpError(401, "no_api_key", "No API key found in request");
@@ -202,6 +242,17 @@ async function route(request: IncomingMessage, url: URL): Promise<[number, unkno
       refreshTokens.delete(token); // rotation; a refresh keeps the original sign-in time in `amr`
       return [200, issue(user, session)];
     }
+    if (grant === "pkce") {
+      const code = authCodes.get(String(body["auth_code"] ?? ""));
+      authCodes.delete(String(body["auth_code"] ?? "")); // one use only
+      const verifier = String(body["code_verifier"] ?? "");
+      const expected = code?.method === "plain" ? verifier : createHash("sha256").update(verifier).digest("base64url");
+      const user = code === undefined ? undefined : userById(code.userId);
+      if (code === undefined || user === undefined || verifier === "" || expected !== code.challenge) {
+        throw new HttpError(400, "bad_code_verifier", "code challenge does not match previously saved code verifier");
+      }
+      return [200, signIn(user)];
+    }
     throw new HttpError(400, "unsupported_grant_type", "unsupported_grant_type");
   }
 
@@ -209,7 +260,14 @@ async function route(request: IncomingMessage, url: URL): Promise<[number, unkno
     // Addresses with "+unconfirmed" behave like "Confirm email" on: no session until the email is confirmed.
     const body = await readJson(request);
     const user = newUser({ email: body["email"], password: body["password"] }, { confirmed: !String(body["email"]).includes("+unconfirmed") });
-    return [200, user.confirmed ? signIn(user) : userJson(user)];
+    if (user.confirmed) return [200, signIn(user)];
+    user.pending = {
+      token: randomBytes(16).toString("hex"),
+      challenge: typeof body["code_challenge"] === "string" ? body["code_challenge"] : null,
+      method: typeof body["code_challenge_method"] === "string" ? body["code_challenge_method"] : "s256",
+      redirectTo: url.searchParams.get("redirect_to") ?? AUTH_URL,
+    };
+    return [200, userJson(user)];
   }
 
   if (method === "GET" && path === "/auth/v1/user") {
@@ -233,14 +291,17 @@ async function route(request: IncomingMessage, url: URL): Promise<[number, unkno
   throw new HttpError(404, "not_found", `No route for ${method} ${path}`);
 }
 
-function testRoute(method: string, path: string, body: Record<string, unknown>): [number, unknown] {
+function testRoute(method: string, path: string, body: Record<string, unknown>): Answer {
   if (method === "POST" && path === "/__test/users") {
     const user = newUser(body, { confirmed: true });
     return [201, { id: user.id, email: user.email }];
   }
-  const email = /^\/__test\/users\/([^/]+)$/.exec(path)?.[1];
+  const [, email, sub] = /^\/__test\/users\/([^/]+)(\/confirmation)?$/.exec(path) ?? [];
   const user = email === undefined ? undefined : users.get(decodeURIComponent(email).toLowerCase());
-  if (method === "PATCH" && user !== undefined) {
+  if (method === "GET" && sub !== undefined && user?.pending != null) {
+    return [200, { url: `${AUTH_ISSUER}/verify?token=${user.pending.token}&type=signup&redirect_to=${encodeURIComponent(user.pending.redirectTo)}` }];
+  }
+  if (method === "PATCH" && sub === undefined && user !== undefined) {
     if (typeof body["amrAgeSeconds"] === "number") user.amrAgeSeconds = body["amrAgeSeconds"];
     if (typeof body["userFailures"] === "number") user.userFailures = body["userFailures"];
     if (typeof body["role"] === "string" || body["role"] === null) user.role = body["role"];
@@ -251,7 +312,10 @@ function testRoute(method: string, path: string, body: Record<string, unknown>):
 
 async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
   let text = "";
-  for await (const chunk of request) text += String(chunk);
+  for await (const chunk of request) {
+    text += String(chunk);
+    if (text.length > MAX_BODY) throw new HttpError(413, "request_too_large", "Request body too large");
+  }
   if (text === "") return {};
   try {
     const value: unknown = JSON.parse(text);
@@ -267,18 +331,20 @@ function send(response: ServerResponse, status: number, body: unknown, headers: 
 }
 
 const server = createServer((request, response) => {
-  // supabase-js calls Auth from the web origin, as it calls a real Supabase project.
-  response.setHeader("Access-Control-Allow-Origin", "*");
-  response.setHeader("Access-Control-Allow-Headers", "apikey, authorization, content-type, x-client-info, x-supabase-api-version");
-  response.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS");
-  response.setHeader("Access-Control-Expose-Headers", "x-supabase-api-version, retry-after");
-  if (request.method === "OPTIONS") {
-    send(response, 204, null);
-    return;
-  }
   const url = new URL(request.url ?? "/", AUTH_URL);
+  if (url.pathname.startsWith("/auth/v1/")) {
+    // supabase-js calls Auth from the web origin, as it calls a real Supabase project. No CORS on /__test.
+    response.setHeader("Access-Control-Allow-Origin", "*");
+    response.setHeader("Access-Control-Allow-Headers", "apikey, authorization, content-type, x-client-info, x-supabase-api-version");
+    response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    response.setHeader("Access-Control-Expose-Headers", "x-supabase-api-version, retry-after");
+    if (request.method === "OPTIONS") {
+      send(response, 204, null);
+      return;
+    }
+  }
   route(request, url).then(
-    ([status, body]) => send(response, status, body),
+    ([status, body, headers]) => send(response, status, body, headers),
     (error: unknown) => {
       if (error instanceof HttpError) {
         send(response, error.status, { code: error.status, error_code: error.errorCode, msg: error.message }, error.headers);

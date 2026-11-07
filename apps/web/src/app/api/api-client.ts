@@ -130,9 +130,9 @@ export class ApiClient {
       let token: string | null;
       try {
         token = await this.accessToken();
-      } catch {
-        // No token refresh: sending the guest cookie instead could act as another player.
-        throw new ApiError(0, "network_error");
+      } catch (error: unknown) {
+        // No token (refresh failed, session ended): sending the guest cookie instead could act as another player.
+        throw error instanceof ApiError ? error : new ApiError(0, "network_error");
       }
       if (token !== null) headers["Authorization"] = `Bearer ${token}`;
     }

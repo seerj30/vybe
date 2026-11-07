@@ -2,7 +2,7 @@ import "@angular/compiler";
 import { Injector } from "@angular/core";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
-import { AuthSession, SUPABASE, type SupabaseLoader, authErrorMessage } from "./auth-session";
+import { AuthSession, SUPABASE, type SupabaseLoader, authErrorMessage, tabStorage } from "./auth-session";
 import type { AuthConfig } from "./runtime-config";
 
 const CONFIG: AuthConfig = { supabaseUrl: "https://abc.supabase.co", supabaseAnonKey: "k" };
@@ -73,6 +73,29 @@ describe("AuthSession", () => {
     await auth.signOut();
     expect(auth.status()).toBe("signed-out");
     await expect(auth.accessToken()).resolves.toBeNull();
+  });
+
+  it("fails instead of falling back to the guest cookie when the session ends without a sign-out", async () => {
+    const { auth } = session(() => Promise.resolve(CONFIG));
+    await auth.signIn("ace@vybe.test", "pw");
+    const client = (await (auth as unknown as { client: Promise<SupabaseClient> }).client).auth as unknown as { signOut: () => Promise<unknown> };
+    await client.signOut(); // as supabase-js does when the refresh token is revoked
+    await expect(auth.accessToken()).rejects.toMatchObject({ code: "unauthenticated" });
+  });
+
+  it("keeps PKCE verifiers in tab storage and tokens in memory", () => {
+    const tab = new Map<string, string>();
+    const storage = tabStorage({
+      getItem: (k) => tab.get(k) ?? null,
+      setItem: (k, v) => void tab.set(k, v),
+      removeItem: (k) => void tab.delete(k),
+    });
+    storage.setItem("vybe-auth-1-flow-abc-code-verifier", "v");
+    storage.setItem("vybe-auth-1", '{"access_token":"t"}');
+    expect([...tab.keys()]).toEqual(["vybe-auth-1-flow-abc-code-verifier"]);
+    expect(storage.getItem("vybe-auth-1")).toBe('{"access_token":"t"}');
+    storage.removeItem("vybe-auth-1-flow-abc-code-verifier");
+    expect(tab.size).toBe(0);
   });
 
   it("maps Auth error codes to player-facing text", () => {

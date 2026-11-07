@@ -5,3 +5,5 @@ export const AUTH_URL = `http://localhost:${AUTH_PORT}`;
 export const AUTH_ISSUER = `${AUTH_URL}/auth/v1`;
 /** Test-only publishable key. The fake server checks that clients send it. */
 export const AUTH_ANON_KEY = "vybe-e2e-anon-key";
+/** Header value that the `/__test` endpoints require (a test server only; not a real secret). */
+export const AUTH_TEST_SECRET = process.env["E2E_AUTH_TEST_SECRET"] ?? "vybe-e2e-test-only";

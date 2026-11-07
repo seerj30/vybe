@@ -1,5 +1,5 @@
 import { accessToken, createUser, updateUser } from "../fake-auth/users.ts";
-import { bearer, fillSignIn, guestPost, json, openNav } from "./account-flows.ts";
+import { bearer, confirmLink, fillSignIn, guestPost, json, openNav } from "./account-flows.ts";
 import { expect, newPlayer } from "./app.ts";
 import { playerId } from "./db.ts";
 import { test } from "./street-hoops.ts";
@@ -61,7 +61,9 @@ test("E12: a registered player confirms the deletion with a new sign-in (verific
   // The sign-in is 10 minutes old: older than the 5 minutes the API accepts for a deletion.
   const user = await createUser({ amrAgeSeconds: 600 });
   await openNav(page, "Settings");
-  await fillSignIn(page.getByRole("region", { name: "Account", exact: true }), user);
+  const account = page.getByRole("region", { name: "Account", exact: true });
+  await fillSignIn(account, user);
+  await confirmLink(account, user.email);
   await expect(page.getByTestId("account-kind")).toHaveText("Linked account");
 
   const section = page.getByRole("region", { name: "Delete account" });

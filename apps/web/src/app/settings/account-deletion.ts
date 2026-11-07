@@ -112,10 +112,7 @@ export class AccountDeletion {
     try {
       const { requestId } = await this.api.requestDeletion(this.key);
       remember(requestId);
-      // The guest cookie is revoked by the API; the Supabase session ends here.
-      if (this.registered()) await this.auth.signOut();
-      await this.player.refresh().catch(() => null);
-      await this.router.navigateByUrl(`/deletion/${encodeURIComponent(requestId)}`);
+      await this.leave(requestId);
     } catch (error: unknown) {
       if (isApiError(error, "reauthentication_required")) {
         this.step.set("verify");
@@ -125,6 +122,18 @@ export class AccountDeletion {
       this.error.set(errorMessage(error));
       this.step.set("confirm");
     }
+  }
+
+  /** The request exists: always reach the status page, even when the sign-out fails. */
+  private async leave(requestId: string): Promise<void> {
+    try {
+      // The API revoked the guest cookie; the Supabase session ends here.
+      if (this.registered()) await this.auth.signOut();
+      await this.player.refresh();
+    } catch (error: unknown) {
+      console.error("Sign-out after the deletion request failed", error);
+    }
+    await this.router.navigateByUrl(`/deletion/${encodeURIComponent(requestId)}`);
   }
 
   protected checked(event: Event): boolean {

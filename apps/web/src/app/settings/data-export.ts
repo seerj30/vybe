@@ -31,7 +31,7 @@ const POLL_MS = 2000;
         }
         @case ("ready") {
           <p class="notice" role="status">Your export is ready.</p>
-          @if (current.downloadUrl; as url) {
+          @if (safeUrl(current.downloadUrl); as url) {
             <p>
               <a class="button" [href]="url" download rel="noopener noreferrer">Download your data</a>
             </p>
@@ -78,6 +78,11 @@ export class DataExportPanel implements OnInit {
   ngOnInit(): void {
     const stored = this.storedId();
     if (stored !== null) void this.follow(stored);
+  }
+
+  /** Only https links (http and file only on a local dev host), so API data cannot become a script or data URL. */
+  protected safeUrl(url: string | null): string | null {
+    return safeDownloadUrl(url, location.hostname);
   }
 
   protected canRequest(): boolean {
@@ -160,4 +165,17 @@ export class DataExportPanel implements OnInit {
       // Storage blocked: the status shows until the page closes.
     }
   }
+}
+
+export function safeDownloadUrl(url: string | null, hostname: string): string | null {
+  if (url === null) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  const local = hostname === "localhost" || hostname === "127.0.0.1";
+  if (parsed.protocol === "https:" || (local && (parsed.protocol === "http:" || parsed.protocol === "file:"))) return parsed.href;
+  return null;
 }

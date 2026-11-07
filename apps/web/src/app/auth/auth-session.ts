@@ -1,6 +1,7 @@
 import { Injectable, InjectionToken, inject, signal } from "@angular/core";
 import type { Schemas } from "@vybe/contracts";
 import type { AuthError, Session, SupabaseClient } from "@supabase/supabase-js";
+import { ApiError } from "../api/api-client";
 import { type AuthConfig, loadAuthConfig } from "./runtime-config";
 
 export type AuthStatus = "loading" | "off" | "unavailable" | "signed-out" | "signed-in";
@@ -35,25 +36,75 @@ async function createSupabaseClient(config: AuthConfig): Promise<SupabaseClient>
   const { createClient } = await import("@supabase/supabase-js");
   return createClient(config.supabaseUrl, config.supabaseAnonKey, {
     auth: {
-      // Spec §11: no tokens in localStorage. The session lives in memory, so a reload asks to sign in again.
-      persistSession: false,
-      autoRefreshToken: true,
-      // The email confirmation link returns with the session in the URL fragment (implicit flow).
+      // PKCE: a sign-in result in the URL (`?code=`) counts only with the code verifier that this tab
+      // stored when it started the sign-up, so nobody can sign this browser in with a crafted link
+      // (login CSRF). `#access_token` links are refused.
+      flowType: "pkce",
       detectSessionInUrl: true,
-      flowType: "implicit",
+      autoRefreshToken: true,
+      // Spec §11: no tokens in web storage. Tokens stay in memory; only the PKCE verifier goes to
+      // sessionStorage (`tabStorage`). A reload asks to sign in again.
+      persistSession: true,
+      storage: tabStorage(),
+      // One key per tab: supabase-js shares session events between tabs with the same key.
+      storageKey: `vybe-auth-${tabId()}`,
     },
   });
 }
 
-/** True when the URL holds a Supabase sign-in result (the email confirmation link). */
+/** Storage adapter: PKCE verifier keys in sessionStorage (they must survive the email-link reload), the rest in memory. */
+export function tabStorage(session: Pick<Storage, "getItem" | "setItem" | "removeItem"> | null = sessionStorageOrNull()): TabStorage {
+  const memory = new Map<string, string>();
+  const store = (key: string): Pick<Storage, "getItem" | "setItem" | "removeItem"> | null =>
+    key.endsWith("-code-verifier") ? session : null;
+  return {
+    getItem: (key) => store(key)?.getItem(key) ?? memory.get(key) ?? null,
+    setItem: (key, value) => {
+      const target = store(key);
+      if (target === null) memory.set(key, value);
+      else target.setItem(key, value);
+    },
+    removeItem: (key) => {
+      store(key)?.removeItem(key);
+      memory.delete(key);
+    },
+  };
+}
+
+export interface TabStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
+
+function sessionStorageOrNull(): Storage | null {
+  try {
+    return typeof sessionStorage === "undefined" ? null : sessionStorage;
+  } catch {
+    return null; // storage blocked: PKCE verifiers stay in memory
+  }
+}
+
+/** A random id per tab, kept across reloads of the same tab. */
+function tabId(): string {
+  const storage = sessionStorageOrNull();
+  let id = storage?.getItem("vybe.tabId") ?? null;
+  if (id === null) {
+    id = crypto.randomUUID();
+    storage?.setItem("vybe.tabId", id);
+  }
+  return id;
+}
+
+/** True when the URL is a PKCE sign-in callback (`?code=`), for example from the email confirmation link. */
 function hasAuthResult(): boolean {
-  return typeof location !== "undefined" && /(^|[#&])(access_token|error_description)=/.test(location.hash.replace(/^#/, ""));
+  return typeof location !== "undefined" && new URLSearchParams(location.search).has("code");
 }
 
 /**
  * The Supabase Auth session of this tab (spec §2 J3, ADR 0005). Signed-in players call the API with
  * the access token; everyone else uses the guest cookie. The session lives in memory only, so without a
- * sign-in in this tab (or a sign-in result in the URL) there is no session and no client to load.
+ * sign-in in this tab (or a sign-in callback in the URL) there is no session and no client to load.
  */
 @Injectable({ providedIn: "root" })
 export class AuthSession {
@@ -62,21 +113,28 @@ export class AuthSession {
   private readonly userSignal = signal<AuthUser | null>(null);
   private config: Promise<AuthConfig | null> | null = null;
   private client: Promise<SupabaseClient> | null = null;
+  /** A session existed and the user did not sign out: a missing session now is an error, not "guest". */
+  private expectSession = false;
 
   readonly status = this.statusSignal.asReadonly();
   readonly user = this.userSignal.asReadonly();
 
-  /** Loads the runtime config once (sets `status`); picks up a sign-in result from the URL. */
+  /** Loads the runtime config once (sets `status`); picks up a sign-in callback from the URL. */
   async ready(): Promise<void> {
     if ((await this.loadConfig()) !== null && hasAuthResult()) await this.use();
   }
 
-  /** A valid access token (refreshed when needed), or null when signed out. */
+  /**
+   * A valid access token (refreshed when needed), or null when signed out. When the session ended
+   * without a sign-out (refresh token revoked), it throws: sending the guest cookie instead could act
+   * as another player.
+   */
   async accessToken(): Promise<string | null> {
     await this.ready();
     if (this.client === null) return null;
     const { data, error } = await (await this.client).auth.getSession();
     if (error !== null) throw error;
+    if (data.session === null && this.expectSession) throw new ApiError(401, "unauthenticated");
     return data.session?.access_token ?? null;
   }
 
@@ -109,6 +167,8 @@ export class AuthSession {
 
   /** Ends the session in Supabase too (all devices), so its refresh token stops working. */
   async signOut(): Promise<void> {
+    this.expectSession = false;
+    forgetAccount();
     if (this.client === null) return;
     const client = await this.client;
     const { error } = await client.auth.signOut();
@@ -175,6 +235,7 @@ export class AuthSession {
       role: role === "moderator" || role === "administrator" ? role : null,
     });
     this.statusSignal.set("signed-in");
+    this.expectSession = true;
     rememberAccount();
   }
 }
@@ -203,6 +264,14 @@ export function authErrorMessage(error: Pick<AuthError, "code" | "status">): str
       return error.status === 0 || error.status === undefined
         ? "No connection to the sign-in service. Check your connection and try again."
         : "Sign-in did not work. Try again.";
+  }
+}
+
+function forgetAccount(): void {
+  try {
+    localStorage.removeItem(ACCOUNT_FLAG);
+  } catch {
+    // Storage blocked: nothing to forget.
   }
 }
 

@@ -14,8 +14,10 @@ export interface LinkDone {
 }
 
 /**
- * J3 in the UI: sign in (or create an account), then connect the identity to a player. The guest
- * progress is linked, never merged; conflicts and temporary failures get their own states.
+ * J3 in the UI: sign in (or create an account), then connect the identity to a player. A link binds
+ * this browser's guest to the account for good, so it runs only after an explicit "Link this account"
+ * that shows the email. The guest progress is linked, never merged; conflicts and temporary failures
+ * get their own states.
  */
 @Component({
   selector: "vybe-account-link",
@@ -35,8 +37,26 @@ export interface LinkDone {
         @switch (state().kind) {
           @case ("idle") {
             @if (auth.status() === "signed-out") {
-              <vybe-sign-in-form (signedIn)="connect()" />
+              <vybe-sign-in-form (signedIn)="resolve()" />
             }
+          }
+          @case ("confirm") {
+            <div class="notice" role="alert">
+              <p>
+                Link
+                @if (confirmGuest(); as guest) {
+                  your guest <strong>{{ guest.handle }}</strong>
+                } @else {
+                  a new VYBE player
+                }
+                to the account <strong data-testid="link-email">{{ auth.user()?.email }}</strong>? The player keeps its id, coins
+                and items. Link only an account that is yours: you cannot undo this.
+              </p>
+            </div>
+            <div class="actions">
+              <button type="button" class="button" (click)="link()">Link this account</button>
+              <button type="button" class="button secondary" (click)="signOut()">Cancel and sign out</button>
+            </div>
           }
           @case ("connecting") {
             <p class="muted" role="status">Connecting your account…</p>
@@ -67,7 +87,7 @@ export interface LinkDone {
           }
           @case ("retry") {
             <p class="error" role="alert">{{ message() }}</p>
-            <button type="button" class="button" (click)="connect()">Try again</button>
+            <button type="button" class="button" (click)="retry()">Try again</button>
           }
           @case ("rejected") {
             <p class="error" role="alert">{{ message() }}</p>
@@ -81,7 +101,7 @@ export interface LinkDone {
 })
 export class AccountLinkPanel {
   protected readonly auth = inject(AuthSession);
-  private readonly link = inject(AccountLink);
+  private readonly flow = inject(AccountLink);
   private readonly player = inject(PlayerStore);
 
   /** The player to continue with, after a link, a sign-in or a choice. */
@@ -89,10 +109,16 @@ export class AccountLinkPanel {
   protected readonly state = signal<PanelState>({ kind: "idle" });
 
   constructor() {
-    // Back from the email confirmation link, or signed in on another screen: connect at once.
+    // Signed in already (another screen, or the email confirmation callback): look up the player. This
+    // only reads; a link still needs the user's "Link this account".
     void this.auth.ready().then(() => {
-      if (this.auth.status() === "signed-in" && this.state().kind === "idle") void this.connect();
+      if (this.auth.status() === "signed-in" && this.state().kind === "idle") void this.resolve();
     });
+  }
+
+  protected confirmGuest(): Me | null {
+    const state = this.state();
+    return state.kind === "confirm" ? state.guest : null;
   }
 
   protected choice(): { account: Me; guest: Me } | null {
@@ -108,9 +134,22 @@ export class AccountLinkPanel {
     return state.kind === "rejected" ? state.message : "";
   }
 
-  protected async connect(): Promise<void> {
+  protected resolve(): Promise<void> {
+    return this.run(() => this.flow.resolve());
+  }
+
+  protected link(): Promise<void> {
+    return this.run(() => this.flow.link());
+  }
+
+  protected retry(): Promise<void> {
+    const state = this.state();
+    return state.kind === "retry" && state.step === "link" ? this.link() : this.resolve();
+  }
+
+  private async run(step: () => Promise<LinkOutcome>): Promise<void> {
     this.state.set({ kind: "connecting" });
-    const outcome = await this.link.connect();
+    const outcome = await step();
     this.state.set(outcome);
     if (outcome.kind === "ready") this.done.emit({ me: outcome.me, isNew: outcome.isNew, signedIn: true });
   }

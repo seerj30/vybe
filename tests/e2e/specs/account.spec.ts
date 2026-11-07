@@ -1,5 +1,6 @@
-import { accessToken, createUser, updateUser } from "../fake-auth/users.ts";
-import { bearer, fillSignIn, guestPost, json, openNav, signInOnLanding } from "./account-flows.ts";
+import { AUTH_ANON_KEY, AUTH_URL } from "../fake-auth/config.ts";
+import { accessToken, confirmationUrl, createUser, updateUser } from "../fake-auth/users.ts";
+import { bearer, confirmLink, fillSignIn, guestPost, json, openNav, signInOnLanding } from "./account-flows.ts";
 import { expect, newPlayer, walletBalance } from "./app.ts";
 import { grantCoins, playerId } from "./db.ts";
 import { test } from "./street-hoops.ts";
@@ -29,7 +30,12 @@ test("E03: guest → sign in → link → same player id and inventory", async (
   const user = await createUser();
   await openNav(page, "Settings");
   await expect(page.getByTestId("account-kind")).toHaveText("Guest");
-  await fillSignIn(page.getByRole("region", { name: "Account", exact: true }), user);
+  const account = page.getByRole("region", { name: "Account", exact: true });
+  await fillSignIn(account, user);
+  // Nothing is linked before the explicit confirmation.
+  await expect(account.getByRole("button", { name: "Link this account" })).toBeVisible();
+  expect(await json<Me>(await page.request.get("/api/v1/me"))).toMatchObject({ id: guestId, kind: "guest" });
+  await confirmLink(account, user.email);
   await expect(page.getByText(`You are signed in as ${guest.handle}.`)).toBeVisible();
   await expect(page.getByTestId("account-kind")).toHaveText("Linked account");
   await expect(page.getByTestId("account-handle")).toHaveText(guest.handle);
@@ -78,6 +84,7 @@ test("an Auth outage during linking shows a retry; the guest stays valid", async
   await updateUser(user, { userFailures: 1 });
 
   await signInOnLanding(page, user);
+  await confirmLink(page, user.email);
   await expect(page.getByRole("alert")).toContainText("The sign-in service does not answer right now");
   expect(await playerId(page)).toBe(guestId);
 
@@ -96,6 +103,8 @@ test("a new account without a guest gets a new player; a reload asks to sign in 
   await form.getByLabel("Email").fill(`e2e-${crypto.randomUUID()}@vybe.test`);
   await form.getByLabel("Password").fill("a-long-password");
   await form.getByRole("button", { name: "Create account" }).click();
+  await expect(region.getByText("a new VYBE player")).toBeVisible();
+  await region.getByRole("button", { name: "Link this account" }).click();
   await expect(page.getByRole("heading", { name: "Create your avatar" })).toBeVisible();
 
   // The session is in memory only: a reload signs out, and the app asks to sign in (not "lost guest").
@@ -104,15 +113,68 @@ test("a new account without a guest gets a new player; a reload asks to sign in 
   await expect(page.getByRole("link", { name: "Start as guest" })).toBeVisible();
 });
 
-test("an account with an unconfirmed email waits for the confirmation link", async ({ page }) => {
+/** Sign-up with "Confirm email" on: the page asks to check the email. */
+async function signUpUnconfirmed(page: import("@playwright/test").Page, email: string): Promise<void> {
   await page.goto("/");
   await page.getByRole("button", { name: "Sign in" }).click();
   const region = page.getByRole("region", { name: "Sign in to VYBE" });
   await region.getByRole("button", { name: "Create an account instead" }).click();
-  await region.getByLabel("Email").fill(`e2e-${crypto.randomUUID()}+unconfirmed@vybe.test`);
+  await region.getByLabel("Email").fill(email);
   await region.getByLabel("Password").fill("a-long-password");
   await region.getByRole("button", { name: "Create account" }).click();
   await expect(region.getByRole("status")).toContainText("Check your email");
+}
+
+test("email confirmation (PKCE): the link signs in only the tab that signed up; the link needs a confirmation", async ({ page }) => {
+  await newPlayer(page);
+  const guestId = await playerId(page);
+  const email = `e2e-${crypto.randomUUID()}+unconfirmed@vybe.test`;
+  await signUpUnconfirmed(page, email);
+
+  // The email link: Auth confirms the address and redirects to the app with a one-time code.
+  await page.goto(await confirmationUrl(email));
+  await confirmLink(page, email);
+  await expect(page.getByRole("heading", { name: "Hub" })).toBeVisible();
+  const me = await json<Me>(await page.request.get("/api/v1/me", { headers: bearer(await accessToken({ id: "", email, password: "a-long-password" })) }));
+  expect(me).toMatchObject({ id: guestId, kind: "registered" });
+});
+
+test("a sign-in link with someone else's session does not sign in and links nothing (login CSRF)", async ({ page, browser }) => {
+  // The attacker starts a sign-up in their own browser and keeps the code of the confirmation link.
+  const attacker = await browser.newPage({ baseURL: test.info().project.use.baseURL });
+  const email = `e2e-${crypto.randomUUID()}+unconfirmed@vybe.test`;
+  await signUpUnconfirmed(attacker, email);
+  const redirect = await fetch(await confirmationUrl(email), { redirect: "manual" });
+  const codeLink = redirect.headers.get("Location") ?? "";
+  expect(codeLink).toMatch(/[?&]code=/);
+  const session = await json<Record<string, string | number>>(
+    await attacker.request.post(`${AUTH_URL}/auth/v1/token?grant_type=password`, {
+      headers: { apikey: AUTH_ANON_KEY },
+      data: { email, password: "a-long-password" },
+    }),
+  );
+  await attacker.close();
+
+  // The victim, a guest, opens the attacker's links: a PKCE code without this tab's verifier, and an implicit-flow fragment.
+  await newPlayer(page);
+  const guest = await json<Me>(await page.request.get("/api/v1/me"));
+  const fragment = new URLSearchParams({
+    access_token: String(session["access_token"]),
+    refresh_token: String(session["refresh_token"]),
+    expires_in: "3600",
+    token_type: "bearer",
+    type: "signup",
+  });
+  for (const link of [new URL(codeLink).pathname + new URL(codeLink).search, `/#${fragment.toString()}`]) {
+    await page.goto(link);
+    await expect(page.getByRole("link", { name: `Continue as ${guest.handle}` })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Link this account" })).toHaveCount(0);
+  }
+
+  expect(await json<Me>(await page.request.get("/api/v1/me"))).toMatchObject({ id: guest.id, kind: "guest" });
+  const attackerMe = await page.request.get("/api/v1/me", { headers: bearer(String(session["access_token"])) });
+  expect(attackerMe.status()).toBe(404); // the attacker's identity got no player
 });
 
 test("a wrong password is explained and nothing changes", async ({ page }) => {

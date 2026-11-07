@@ -16,6 +16,12 @@ export async function fillSignIn(scope: Locator | Page, user: TestUser): Promise
   await form.getByRole("button", { name: "Sign in" }).click();
 }
 
+/** Confirms the link of this browser's guest (or a new player) to the signed-in account `email`. */
+export async function confirmLink(scope: Locator | Page, email: string): Promise<void> {
+  await expect(scope.getByTestId("link-email")).toHaveText(email);
+  await scope.getByRole("button", { name: "Link this account" }).click();
+}
+
 /** Landing → "Sign in" → form. */
 export async function signInOnLanding(page: Page, user: TestUser): Promise<void> {
   await page.goto("/");

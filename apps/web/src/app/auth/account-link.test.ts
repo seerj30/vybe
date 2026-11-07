@@ -55,50 +55,55 @@ function setup(world: World): { link: AccountLink; log: string[] } {
 const noPlayer = new ApiError(404, "player_not_found");
 const noGuest = new ApiError(401, "unauthenticated");
 
-describe("AccountLink.connect", () => {
-  it("links the guest of this browser to a new identity: same player id", async () => {
+describe("AccountLink", () => {
+  it("resolve only reads: an identity without a player asks to confirm the link", async () => {
     const { link, log } = setup({ account: noPlayer, guest: GUEST });
-    const outcome = await link.connect();
+    expect(await link.resolve()).toEqual({ kind: "confirm", guest: GUEST });
+    expect(log).toEqual([]);
+  });
+
+  it("links the guest of this browser after the confirmation: same player id", async () => {
+    const { link, log } = setup({ account: noPlayer, guest: GUEST });
+    const outcome = await link.link();
     expect(outcome).toEqual({ kind: "ready", me: { ...GUEST, kind: "registered" }, isNew: false });
     expect(log).toEqual(["link:token-1"]);
   });
 
   it("creates a guest first when the browser has none", async () => {
     const { link, log } = setup({ account: noPlayer, guest: noGuest });
-    const outcome = await link.connect();
+    expect(await link.resolve()).toEqual({ kind: "confirm", guest: null });
+    const outcome = await link.link();
     expect(outcome.kind === "ready" && outcome.isNew).toBe(true);
     expect(log).toEqual(["createGuest", "link:token-1"]);
   });
 
   it("signs in to an identity that has a player, without linking", async () => {
     const { link, log } = setup({ account: ACCOUNT, guest: noGuest });
-    expect(await link.connect()).toEqual({ kind: "ready", me: ACCOUNT, isNew: false });
+    expect(await link.resolve()).toEqual({ kind: "ready", me: ACCOUNT, isNew: false });
     expect(log).toEqual([]);
   });
 
   it("asks the user to choose when the identity has a player and the browser has another guest", async () => {
     const { link, log } = setup({ account: ACCOUNT, guest: GUEST });
-    expect(await link.connect()).toEqual({ kind: "choose", account: ACCOUNT, guest: GUEST });
+    expect(await link.resolve()).toEqual({ kind: "choose", account: ACCOUNT, guest: GUEST });
     expect(log).toEqual([]);
   });
 
   it("explains a conflict and merges nothing (409 identity_already_linked)", async () => {
     const { link } = setup({ account: noPlayer, guest: GUEST, link: new ApiError(409, "identity_already_linked") });
-    expect(await link.connect()).toEqual({ kind: "conflict" });
+    expect(await link.link()).toEqual({ kind: "conflict" });
   });
 
-  it("offers a retry for auth_unavailable and rate_limited, with Retry-After", async () => {
+  it("offers a retry of the link for auth_unavailable and rate_limited, with Retry-After", async () => {
     for (const error of [new ApiError(503, "auth_unavailable", null, 30), new ApiError(429, "rate_limited", null, 12)]) {
       const { link } = setup({ account: noPlayer, guest: GUEST, link: error });
-      const outcome = await link.connect();
-      expect(outcome.kind).toBe("retry");
-      expect(outcome.kind === "retry" && outcome.retryAfterSeconds).toBe(error.retryAfterSeconds);
+      const outcome = await link.link();
+      expect(outcome).toMatchObject({ kind: "retry", step: "link", retryAfterSeconds: error.retryAfterSeconds });
     }
   });
 
   it("rejects an unconfirmed identity (422 invalid_link_proof); the guest stays valid", async () => {
     const { link } = setup({ account: noPlayer, guest: GUEST, link: new ApiError(422, "invalid_link_proof") });
-    const outcome = await link.connect();
-    expect(outcome.kind).toBe("rejected");
+    expect((await link.link()).kind).toBe("rejected");
   });
 });
