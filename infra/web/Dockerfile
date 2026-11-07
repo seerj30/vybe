@@ -1,9 +1,10 @@
 # syntax=docker/dockerfile:1
-# VYBE web image: the Angular production build behind Caddy, which also proxies /api to the API (ADR 0007).
+# VYBE web image: the Angular production build behind Caddy, which also proxies /api to the API (ADR 0008).
 # Build from the repository root (the build needs the workspace packages and the asset manifests):
 #   docker build -f infra/web/Dockerfile -t vybe-web .
 # Run: see infra/fly/web.fly.toml (Fly.io) and infra/docker-compose.yml (service "web", local).
 
+# Base images pinned by digest. To update: docker buildx imagetools inspect <image:tag>, copy the manifest-list digest.
 FROM node:22.23.4-alpine3.24@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 AS build
 WORKDIR /src
 # The pnpm version of package.json "packageManager".

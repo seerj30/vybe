@@ -1,16 +1,38 @@
-# Deploy to Fly.io (ADR 0007, docs/runbooks/deploy-and-rollback.md "Fly.io").
-# Runs only by hand (Actions > Deploy > Run workflow, on master or a v* tag) or on a pushed v* tag; never on pull
-# requests. The "production" environment has required reviewers, so every run waits for an approval.
-# Order: build both images -> API (release_command: migrate, then seed; bluegreen) -> web -> smoke test.
+# Deploy to Fly.io (ADR 0008, docs/runbooks/deploy-and-rollback.md "Fly.io").
+# Runs only by hand (Actions > Deploy > Run workflow) or on a pushed v* tag; never on pull requests. The commit must be
+# on master and have a green CI run. The "production" environment has required reviewers, so every run waits for an
+# approval. Modes:
+#   deploy        build both images -> release step on this runner (migrate, then seed, owner role) -> API -> web -> checks
+#   release-only  build the API image and run the release step only (first-deploy dry run; one-off seed or migrate)
+#   rollback      deploy the given image digests again, without the release step (image-only rollback)
 name: Deploy
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: deploy, release-only (migrate and seed only) or rollback (image digests below, no release step)
+        type: choice
+        options: [deploy, release-only, rollback]
+        default: deploy
+      first_deploy:
+        description: First deploy only; allows ReverseProxy__KnownNetworks__0 = fdaa::/16 until the /48 is known
+        type: boolean
+        default: false
+      api_image:
+        description: "rollback: registry.fly.io/<api app>@sha256:<digest> (from an earlier run summary)"
+        type: string
+        default: ""
+      web_image:
+        description: "rollback: registry.fly.io/<web app>@sha256:<digest> (from an earlier run summary)"
+        type: string
+        default: ""
   push:
     tags: ["v*"]
 
 permissions:
   contents: read
+  actions: read # the CI check of the commit
 
 # One deploy at a time; a second run waits and never cancels a deploy in progress.
 concurrency:
@@ -19,13 +41,15 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy to Fly.io (production)
+    name: Fly.io production (${{ inputs.mode || 'deploy' }})
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     environment:
       name: production
       url: ${{ vars.VYBE_PUBLIC_ORIGIN }}
     env:
+      MODE: ${{ inputs.mode || 'deploy' }}
+      FIRST_DEPLOY: ${{ inputs.first_deploy && 'true' || 'false' }}
       # flyctl from the GitHub release, checked against this SHA-256 (no install script, no "latest").
       FLYCTL_VERSION: 0.4.118
       FLYCTL_SHA256: 0f2fabbb29904a7bac8bd96009314d26751084c33e098fcc393e2dac6c472f60
@@ -40,13 +64,66 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0 # the ancestry check below needs origin/master
 
-      - name: Check infra/fly/*.fly.toml (region set)
+      # A v* tag can point at any commit: deploy only reviewed commits (on master) that passed CI.
+      - name: The commit is on master and CI passed on it
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          python3 infra/fly/check-config.py --require-region
-          python3 infra/fly/check-config.py --require-region --print-apps >> "$GITHUB_ENV"
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/master; then
+            echo "Commit $GITHUB_SHA is not on master." >&2
+            exit 1
+          fi
+          green=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" \
+            --status success --json databaseId --jq length)
+          if [ "$green" -lt 1 ]; then
+            echo "No successful CI run for $GITHUB_SHA." >&2
+            exit 1
+          fi
+
+      - name: Check infra/fly/*.fly.toml (region set, proxy network)
+        run: |
+          flags="--require-region"
+          if [ "$FIRST_DEPLOY" = true ]; then flags="$flags --first-deploy"; fi
+          python3 infra/fly/check-config.py $flags
+          python3 infra/fly/check-config.py $flags --print-apps >> "$GITHUB_ENV"
+
+      - name: Rollback images
+        if: env.MODE == 'rollback'
+        env:
+          API_INPUT: ${{ inputs.api_image }}
+          WEB_INPUT: ${{ inputs.web_image }}
+        run: |
+          case "$API_INPUT" in "registry.fly.io/${API_APP}@sha256:"*) ;; *) echo "api_image must be registry.fly.io/${API_APP}@sha256:<digest>" >&2; exit 1;; esac
+          case "$WEB_INPUT" in "registry.fly.io/${WEB_APP}@sha256:"*) ;; *) echo "web_image must be registry.fly.io/${WEB_APP}@sha256:<digest>" >&2; exit 1;; esac
+          for image in "$API_INPUT" "$WEB_INPUT"; do
+            printf '%s' "$image" | grep -Eq '^registry\.fly\.io/[a-z0-9-]+@sha256:[0-9a-f]{64}$' || { echo "not an image digest: $image" >&2; exit 1; }
+          done
+          { echo "API_IMAGE=$API_INPUT"; echo "WEB_IMAGE=$WEB_INPUT"; } >> "$GITHUB_ENV"
+
+      - name: Build the images
+        if: env.MODE != 'rollback'
+        run: |
+          docker build -f services/api/Dockerfile -t vybe-api:release .
+          if [ "$MODE" = deploy ]; then docker build -f infra/web/Dockerfile -t vybe-web:release .; fi
+
+      # The owner credential stays in the GitHub environment. It is never a Fly secret, so no API machine has it
+      # (ADR 0006 #2, ADR 0008 #6). "-e NAME" without a value: the value is not in the process arguments.
+      - name: Release step (migrate, then seed)
+        if: env.MODE != 'rollback'
+        env:
+          ConnectionStrings__Migrations: ${{ secrets.VYBE_MIGRATIONS_CONNECTION_STRING }}
+        run: |
+          if [ -z "$ConnectionStrings__Migrations" ]; then
+            echo "The environment secret VYBE_MIGRATIONS_CONNECTION_STRING is not set." >&2
+            exit 1
+          fi
+          docker run --rm --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true \
+            -e ConnectionStrings__Migrations vybe-api:release release
 
       - name: Install flyctl ${{ env.FLYCTL_VERSION }}
+        if: env.MODE != 'release-only'
         run: |
           archive="flyctl_${FLYCTL_VERSION}_Linux_x86_64.tar.gz"
           curl -fsSL -o "$RUNNER_TEMP/$archive" "https://github.com/superfly/flyctl/releases/download/v${FLYCTL_VERSION}/${archive}"
@@ -56,43 +133,68 @@ jobs:
           echo "$RUNNER_TEMP/flyctl" >> "$GITHUB_PATH"
 
       # Each app has its own deploy token (fly tokens create deploy -a <app>): a token reaches one app only.
-      - name: Build and push the API image
+      # Deploys use the digest from the push (immutable), and the run summary records it for a rollback.
+      - name: Push the API image
+        if: env.MODE == 'deploy'
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_API }}
         run: |
           flyctl auth docker
-          docker build -f services/api/Dockerfile -t "registry.fly.io/${API_APP}:${IMAGE_TAG}" .
-          docker push "registry.fly.io/${API_APP}:${IMAGE_TAG}"
+          ref="registry.fly.io/${API_APP}:${IMAGE_TAG}"
+          docker tag vybe-api:release "$ref"
+          digest=$(docker push "$ref" | sed -n 's/.*digest: \(sha256:[0-9a-f]\{64\}\).*/\1/p' | tail -n 1)
+          test -n "$digest"
+          echo "API_IMAGE=registry.fly.io/${API_APP}@${digest}" >> "$GITHUB_ENV"
 
-      - name: Build and push the web image
+      - name: Push the web image
+        if: env.MODE == 'deploy'
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_WEB }}
         run: |
           flyctl auth docker
-          docker build -f infra/web/Dockerfile -t "registry.fly.io/${WEB_APP}:${IMAGE_TAG}" .
-          docker push "registry.fly.io/${WEB_APP}:${IMAGE_TAG}"
+          ref="registry.fly.io/${WEB_APP}:${IMAGE_TAG}"
+          docker tag vybe-web:release "$ref"
+          digest=$(docker push "$ref" | sed -n 's/.*digest: \(sha256:[0-9a-f]\{64\}\).*/\1/p' | tail -n 1)
+          test -n "$digest"
+          echo "WEB_IMAGE=registry.fly.io/${WEB_APP}@${digest}" >> "$GITHUB_ENV"
 
-      # release_command "release" migrates and seeds first; a non-zero exit stops the deploy before any machine
-      # changes. --no-public-ips: the API is reachable only over the private network. --ha=false: one machine
-      # for the beta (scale to two with `fly scale count`; later deploys keep the count).
+      # --no-public-ips: the API is reachable only over the private network. --ha=false: one machine for the beta
+      # (scale to two with `fly scale count`; later deploys keep the count).
       - name: Deploy the API
+        if: env.MODE != 'release-only'
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_API }}
         run: >-
-          flyctl deploy --config infra/fly/api.fly.toml
-          --image "registry.fly.io/${API_APP}:${IMAGE_TAG}"
-          --env "Sentry__Release=${IMAGE_TAG}"
-          --no-public-ips --ha=false --wait-timeout 10m
+          flyctl deploy --config infra/fly/api.fly.toml --image "$API_IMAGE"
+          --env "Sentry__Release=${IMAGE_TAG}" --no-public-ips --ha=false --wait-timeout 10m
+
+      - name: The API has no public address
+        if: env.MODE != 'release-only'
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_API }}
+        run: |
+          # Any address that is not private fails the deploy (an unknown type counts as public).
+          public=$(flyctl ips list -a "$API_APP" --json \
+            | jq '[(. // [])[] | (.Type // .type // "unknown") | ascii_downcase | select(test("private") | not)] | length')
+          if [ "$public" != 0 ]; then
+            echo "$API_APP has $public public IP address(es): release them (fly ips release)." >&2
+            exit 1
+          fi
+          if curl -s -o /dev/null --max-time 10 "https://${API_APP}.fly.dev/health/live"; then
+            echo "https://${API_APP}.fly.dev answers: the API must not be public." >&2
+            exit 1
+          fi
 
       - name: Deploy the web app
+        if: env.MODE != 'release-only'
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_WEB }}
         run: >-
-          flyctl deploy --config infra/fly/web.fly.toml
-          --image "registry.fly.io/${WEB_APP}:${IMAGE_TAG}"
+          flyctl deploy --config infra/fly/web.fly.toml --image "$WEB_IMAGE"
           --ha=false --wait-timeout 10m
 
       - name: Smoke test through the public origin
+        if: env.MODE != 'release-only'
         env:
           ORIGIN: ${{ vars.VYBE_PUBLIC_ORIGIN }}
         run: |
@@ -102,4 +204,13 @@ jobs:
           grep -qi '^strict-transport-security: max-age=' headers.txt
           curl -fsS -o /dev/null "$origin/api/v1/catalog/items"
           test "$(curl -s -o /dev/null -w '%{http_code}' "$origin/health/ready")" = 404
-          echo "Deployed ${IMAGE_TAG} to $origin"
+
+      - name: Record the images
+        if: always() && env.MODE != 'release-only'
+        run: |
+          {
+            echo "### Fly.io ${MODE} of ${IMAGE_TAG}"
+            echo "- API image: \`${API_IMAGE:-not pushed}\`"
+            echo "- Web image: \`${WEB_IMAGE:-not pushed}\`"
+            echo "Rollback to this release: run Deploy with mode rollback and these two digests."
+          } >> "$GITHUB_STEP_SUMMARY"

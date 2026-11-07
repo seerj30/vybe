@@ -1,4 +1,4 @@
-# VYBE web host (ADR 0007): serves the Angular production build and proxies /api/* to the API on the same origin,
+# VYBE web host (ADR 0008): serves the Angular production build and proxies /api/* to the API on the same origin,
 # so the guest cookie (__Host-vybe_guest) is first-party. TLS ends at the Fly edge; Caddy listens on plain http.
 #
 # Environment (read once at start-up):
@@ -14,11 +14,29 @@
 		trusted_proxies static private_ranges
 		client_ip_headers Fly-Client-IP
 		trusted_proxies_strict
+		# Slow clients cannot hold connections open (bodies are at most 16 KB; see request_body below).
+		timeouts {
+			read_header 10s
+			read_body 30s
+			write 60s
+			idle 2m
+		}
 	}
-	# No access log: paths carry capabilities (/challenge/{token}, /deletion/{requestId}); the API logs requests redacted.
+	# No access log. Error and warning logs drop the request (paths carry capabilities: /challenge/{token},
+	# /deletion/{requestId}, /api/.../invites/{token}; headers carry cookies and tokens; addresses are personal data).
 	log {
 		output stdout
-		format json
+		format filter {
+			wrap json
+			fields {
+				request>uri delete
+				request>headers delete
+				request>remote_ip delete
+				request>remote_port delete
+				request>client_ip delete
+				uri delete
+			}
+		}
 		level WARN
 	}
 }
@@ -27,12 +45,21 @@
 	encode zstd gzip
 
 	# The API. Its own headers (strict CSP, no-store, HSTS on https) stay as the API sends them.
-	handle /api/* {
+	@api path /api /api/*
+	handle @api {
+		# The API refuses bodies over 16 KB (RequestBody.MaxBytes); stop bigger ones here, with margin.
+		request_body {
+			max_size 64KB
+		}
 		reverse_proxy {
 			dynamic a {
 				name {$VYBE_API_HOST}
 				port {$VYBE_API_PORT:8080}
 				refresh 5s
+			}
+			transport http {
+				dial_timeout 3s
+				response_header_timeout 30s
 			}
 			# One forwarded hop: the API (ForwardLimit 1) reads the last X-Forwarded-For value from this proxy only.
 			header_up X-Forwarded-For {client_ip}
@@ -45,7 +72,8 @@
 	}
 
 	# Probes stay private (ADR 0006 #3): the platform calls the API machines directly.
-	handle /health/* {
+	@health path /health /health/*
+	handle @health {
 		respond 404
 	}
 
@@ -70,12 +98,13 @@
 
 		# "route" keeps this order (directive sorting would run try_files first).
 		route {
-			# An old chunk after a deploy: 404, not index.html with a JavaScript name.
-			@missingAsset {
-				path *.js *.mjs *.css *.map
+			# A missing file (an old chunk after a deploy, a mistyped asset): 404, not index.html. Client routes
+			# have no file extension (handles are [a-z0-9_], tokens and ids have no dot).
+			@missingFile {
+				path_regexp \.[A-Za-z0-9]+$
 				not file
 			}
-			respond @missingAsset 404
+			respond @missingFile 404
 
 			# Single-page app: every other unknown path is a client route.
 			try_files {path} /index.html
@@ -88,6 +117,7 @@
 	# (apps/web/src/app/auth/content-security-policy.ts); frame-ancestors works only as a header.
 	header {
 		-Server
+		-Via
 		?Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' {$VYBE_SUPABASE_URL}; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 		?Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		?Referrer-Policy "no-referrer"

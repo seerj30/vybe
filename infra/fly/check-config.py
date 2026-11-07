@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Offline check of infra/fly/*.fly.toml (ADR 0007). Python 3.11+, standard library only.
+"""Offline check of infra/fly/*.fly.toml (ADR 0008). Python 3.11+, standard library only.
 
 `flyctl config validate` needs a Fly.io access token, so CI cannot run it on pull requests. This script
 parses both files, refuses unknown keys (typos), and checks the rules that the deployment depends on.
 
   python3 infra/fly/check-config.py                    # CI: the region may still be REGION-NOT-SET
-  python3 infra/fly/check-config.py --require-region   # deploy: the region must be set
+  python3 infra/fly/check-config.py --require-region   # deploy: the region must be set, and the API must trust
+                                                       # only the organization's /48 (not fdaa::/16)
+  python3 infra/fly/check-config.py --require-region --first-deploy   # the first deploy: fdaa::/16 is allowed
   python3 infra/fly/check-config.py --print-apps       # prints "API_APP=..." and "WEB_APP=..." lines
 """
 
@@ -17,6 +19,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 REGION_NOT_SET = "REGION-NOT-SET"
+# Fly private networking (6PN). Each organization has one /48 inside it.
+FLY_6PN = ipaddress.ip_network("fdaa::/16")
 APP_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$")
 REGION = re.compile(r"^[a-z]{3}$")
 # Values of these names belong in `fly secrets set`, never in a committed file.
@@ -24,8 +28,7 @@ SECRET_NAME = re.compile(r"(ConnectionStrings|Secret|Password|Token|Dsn|AccessKe
 
 ALLOWED = {
     "": {"app", "primary_region", "kill_signal", "kill_timeout", "deploy", "env", "http_service", "checks", "vm"},
-    "deploy": {"release_command", "release_command_timeout", "strategy", "release_command_vm"},
-    "deploy.release_command_vm": {"size", "memory"},
+    "deploy": {"strategy"},
     "http_service": {"internal_port", "force_https", "auto_stop_machines", "auto_start_machines",
                      "min_machines_running", "concurrency", "checks"},
     "http_service.concurrency": {"type", "soft_limit", "hard_limit"},
@@ -43,7 +46,7 @@ def unknown_keys(config: dict, errors: list[str], name: str) -> None:
                 errors.append(f"{name}: unknown key '{key}' in [{section or 'top level'}]")
 
     check(config, "")
-    for section in ("deploy", "deploy.release_command_vm", "http_service", "http_service.concurrency"):
+    for section in ("deploy", "http_service", "http_service.concurrency"):
         table = config
         for part in section.split("."):
             table = table.get(part, {}) if isinstance(table, dict) else {}
@@ -79,11 +82,11 @@ def common(config: dict, errors: list[str], name: str) -> None:
             errors.append(f"{name}: [env] {key} belongs in `fly secrets set`, not in the file")
 
 
-def check_api(api: dict, errors: list[str]) -> None:
+def check_api(api: dict, errors: list[str], deploy: bool, first_deploy: bool) -> None:
     name = "api.fly.toml"
     common(api, errors, name)
-    if api.get("deploy", {}).get("release_command") != "release":
-        errors.append(f"{name}: deploy.release_command must be \"release\" (migrate, then seed)")
+    if api.get("deploy", {}).get("strategy") != "bluegreen":
+        errors.append(f"{name}: deploy.strategy must be \"bluegreen\" (zero downtime with one machine)")
     paths = [c.get("path") for c in api.get("http_service", {}).get("checks", [])]
     if paths != ["/health/ready"]:
         errors.append(f"{name}: the service check must be GET /health/ready")
@@ -100,8 +103,11 @@ def check_api(api: dict, errors: list[str]) -> None:
         except ValueError:
             errors.append(f"{name}: {value} is not a CIDR network")
             continue
-        if not network.is_private or network.prefixlen == 0:
-            errors.append(f"{name}: {value} must be a private network, never /0 (ADR 0006 #8)")
+        if network.version != 6 or not network.subnet_of(FLY_6PN):
+            errors.append(f"{name}: {value} must be inside the Fly private network {FLY_6PN}, never /0 (ADR 0006 #8)")
+        elif deploy and not first_deploy and network.prefixlen < 48:
+            errors.append(f"{name}: {value} trusts every Fly organization's prefix; set the organization /48 "
+                          "(runbook, \"First deploy\"), or run the first deploy with first_deploy")
     if "ReverseProxy__TrustAnyHop" in api.get("env", {}):
         errors.append(f"{name}: ReverseProxy__TrustAnyHop must not be set")
 
@@ -121,9 +127,10 @@ def main(argv: list[str]) -> int:
     api = tomllib.loads((ROOT / "api.fly.toml").read_text(encoding="utf-8"))
     web = tomllib.loads((ROOT / "web.fly.toml").read_text(encoding="utf-8"))
     errors = []
-    check_api(api, errors)
+    deploy = "--require-region" in argv
+    check_api(api, errors, deploy, "--first-deploy" in argv)
     check_web(web, api, errors)
-    if "--require-region" in argv and api.get("primary_region") == REGION_NOT_SET:
+    if deploy and api.get("primary_region") == REGION_NOT_SET:
         errors.append(f"primary_region is {REGION_NOT_SET}: set the Supabase region in both fly.toml files first")
     if errors:
         for error in errors:

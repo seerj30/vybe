@@ -1,4 +1,4 @@
-# VYBE web app on Fly.io (decision 7, ADR 0007): the Angular build and the same-origin /api proxy (Caddy).
+# VYBE web app on Fly.io (decision 7, ADR 0008): the Angular build and the same-origin /api proxy (Caddy).
 # Image: infra/web/Dockerfile, built by .github/workflows/deploy.yml. Runbook: docs/runbooks/deploy-and-rollback.md.
 #
 # Before the first deploy, people set (in a PR):
