@@ -1,0 +1,97 @@
+# VYBE web host (ADR 0007): serves the Angular production build and proxies /api/* to the API on the same origin,
+# so the guest cookie (__Host-vybe_guest) is first-party. TLS ends at the Fly edge; Caddy listens on plain http.
+#
+# Environment (read once at start-up):
+#   VYBE_API_HOST, VYBE_API_PORT  the API machines (Fly: <api app>.internal, 8080; compose: api, 8080)
+#   VYBE_SUPABASE_URL             the Supabase origin for connect-src (checked by entrypoint.sh); empty = guest-only
+{
+	admin off
+	persist_config off
+	auto_https off
+	servers {
+		# The Fly edge connects from a private address and sets Fly-Client-IP to the client address.
+		# Only private peers can set it; {client_ip} is the peer address otherwise.
+		trusted_proxies static private_ranges
+		client_ip_headers Fly-Client-IP
+		trusted_proxies_strict
+	}
+	# No access log: paths carry capabilities (/challenge/{token}, /deletion/{requestId}); the API logs requests redacted.
+	log {
+		output stdout
+		format json
+		level WARN
+	}
+}
+
+:8080 {
+	encode zstd gzip
+
+	# The API. Its own headers (strict CSP, no-store, HSTS on https) stay as the API sends them.
+	handle /api/* {
+		reverse_proxy {
+			dynamic a {
+				name {$VYBE_API_HOST}
+				port {$VYBE_API_PORT:8080}
+				refresh 5s
+			}
+			# One forwarded hop: the API (ForwardLimit 1) reads the last X-Forwarded-For value from this proxy only.
+			header_up X-Forwarded-For {client_ip}
+			header_up -Fly-Client-IP
+			# A machine that stops (deploy, restart) is skipped for 30 s; a failed connect retries another machine.
+			fail_duration 30s
+			lb_try_duration 10s
+			lb_try_interval 250ms
+		}
+	}
+
+	# Probes stay private (ADR 0006 #3): the platform calls the API machines directly.
+	handle /health/* {
+		respond 404
+	}
+
+	# Sign-in settings of the web app (apps/web/README.md). Written by entrypoint.sh; missing = 404 = guest-only.
+	handle /runtime-config.json {
+		root * /tmp/vybe-runtime
+		header Cache-Control "no-store"
+		file_server
+	}
+
+	handle {
+		root * /srv
+
+		# Hashed build output (outputHashing "all"): content never changes under the same name.
+		@hashed {
+			path_regexp -[A-Za-z0-9_-]{8}\.(js|css|woff2?|ttf|png|jpe?g|svg|webp|avif)$
+			file
+		}
+		header @hashed Cache-Control "public, max-age=31536000, immutable"
+		# Everything else (index.html, routes): revalidate. "?" applies at response time, so @hashed wins.
+		header ?Cache-Control "no-cache"
+
+		# "route" keeps this order (directive sorting would run try_files first).
+		route {
+			# An old chunk after a deploy: 404, not index.html with a JavaScript name.
+			@missingAsset {
+				path *.js *.mjs *.css *.map
+				not file
+			}
+			respond @missingAsset 404
+
+			# Single-page app: every other unknown path is a client route.
+			try_files {path} /index.html
+			file_server
+		}
+	}
+
+	# Hosting headers. "?" sets a header only when the response has none, so /api responses keep the API's own
+	# (stricter) values. connect-src must match the runtime CSP of the app
+	# (apps/web/src/app/auth/content-security-policy.ts); frame-ancestors works only as a header.
+	header {
+		-Server
+		?Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' {$VYBE_SUPABASE_URL}; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		?Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		?Referrer-Policy "no-referrer"
+		?X-Content-Type-Options "nosniff"
+		?X-Frame-Options "DENY"
+	}
+}

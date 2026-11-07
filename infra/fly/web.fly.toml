@@ -1,0 +1,50 @@
+# VYBE web app on Fly.io (decision 7, ADR 0007): the Angular build and the same-origin /api proxy (Caddy).
+# Image: infra/web/Dockerfile, built by .github/workflows/deploy.yml. Runbook: docs/runbooks/deploy-and-rollback.md.
+#
+# Before the first deploy, people set (in a PR):
+#   app            the web app name, if "vybe-web" is taken
+#   primary_region the same region as infra/fly/api.fly.toml (the Supabase region). Not decided here.
+#   VYBE_API_HOST  <api app name>.internal
+#
+# Per-environment values come from `fly secrets set` on this app (names in the runbook):
+#   VYBE_SUPABASE_URL, VYBE_SUPABASE_ANON_KEY. Both are public values (the publishable key), not secrets; the
+#   container writes /runtime-config.json from them at start-up. Without both, sign-in is off (guest-only).
+
+app = "vybe-web"
+primary_region = "REGION-NOT-SET"
+# Caddy completes running requests on SIGTERM (graceful shutdown), then exits.
+kill_signal = "SIGTERM"
+kill_timeout = "35s"
+
+[deploy]
+  strategy = "bluegreen"
+
+[env]
+  # The API machines over the private network (6PN). Caddy resolves the AAAA records again every 5 s.
+  VYBE_API_HOST = "vybe-api.internal"
+  VYBE_API_PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  # The Fly edge terminates TLS and redirects http to https.
+  force_https = true
+  # Static files and a proxy: cheap to keep on. One machine always on, so the first visitor has no cold start.
+  auto_stop_machines = "off"
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 400
+    hard_limit = 500
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/"
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

@@ -73,6 +73,10 @@ Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'
 Referrer-Policy: no-referrer
 ```
 
+The production web image (`infra/web`, ADR 0008) sends these headers and serves `/runtime-config.json`.
+The production build does not inline critical CSS (`inlineCritical: false` in `angular.json`): the
+inlining adds an inline `<script>`, which `script-src 'self'` blocks.
+
 Local sign-in without a Supabase project: start the test Auth server
 (`E2E_AUTH_PORT=5290 E2E_WEB_PORT=4200 E2E_AUTH_TEST_SECRET=<random> node tests/e2e/fake-auth/server.ts`), start the API with
 `Auth__Supabase__Authority=http://localhost:5290/auth/v1`, and the dev server with `E2E_AUTH_PORT=5290`.

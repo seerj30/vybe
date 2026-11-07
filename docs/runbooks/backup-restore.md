@@ -5,8 +5,9 @@
 - Related: [incident-response.md](incident-response.md), [migrations.md](migrations.md),
   [secret-rotation.md](secret-rotation.md), [ADR 0006](../adr/0006-operations.md).
 
-Hosting is not signed yet ([decision 7](../decisions/07-hosting.md)). This runbook has a provider part
-(managed backups) and a provider-neutral part (logical dump with `pg_dump`). Do both.
+Hosting is signed ([decision 7](../decisions/07-hosting.md)): Supabase Pro for the database, Fly.io for the API
+([ADR 0008](../adr/0008-fly-deployment.md)). This runbook has a provider part (managed backups) and a
+provider-neutral part (logical dump with `pg_dump`). Do both. Fly.io specifics: section "Fly.io" at the end.
 
 ## What to back up
 
@@ -22,8 +23,10 @@ Hosting is not signed yet ([decision 7](../decisions/07-hosting.md)). This runbo
 Bucket lifecycle rules: a rule that deletes old exports must apply to the prefix `exports/` only. A rule for
 `deletion-log/` deletes objects after 90 days or more, never earlier.
 
-Supabase Pro: daily backups are included; the retention depends on the plan. Point-in-time recovery is an
-add-on. Check the current plan on the decision date and write the retention here: **retention: TBD**.
+Supabase Pro: daily backups are included; the retention depends on the plan (7 days on Pro on 2026-11-07,
+to check on the Supabase price page when the project is created). Point-in-time recovery is an add-on
+(cost: [deploy-and-rollback.md](deploy-and-rollback.md), "Cost estimate"). Write the retention of the
+production project here when it exists: **retention: TBD**.
 
 ## What a restore loses, and the deletion log
 
@@ -178,3 +181,26 @@ The rows between the restore point and the failure are gone, and VYBE has no oth
 4. Apply each compensation with the admin wallet adjustment (audited, with an `Idempotency-Key` per player),
    never with SQL.
 5. Write the gap, the number of players compensated and the total coins in the incident review.
+
+## Fly.io
+
+The API on Fly.io keeps no data: no volumes, and the release machine keeps nothing. Only the database
+(Supabase) and the export bucket (Supabase Storage) need backups. Images stay in `registry.fly.io` and can
+be built again from git.
+
+For "Restore production after data loss":
+
+- Step 1, stop writes: `fly scale count 0 -a vybe-api`. The web app stays up; `/api` answers 502.
+  Write down `fly scale show -a vybe-api` first, to scale back to the same count.
+- Step 2: on Supabase, use "Restore to a new project" (Database → Backups) if the plan offers it. An
+  in-place restore overwrites the damaged database: only with the approval of the incident lead.
+- Steps 3–6 (grants, `migrate`, `replay-deletions`): run them from a trusted machine with
+  `docker run --env-file <file>` and the image of the current release (`fly releases -a vybe-api --image`),
+  as in the drill, but with the production bucket settings. Do not use `fly machine run` here: it starts
+  the machine with the old connection strings of the app.
+- Step 7: put the new connection strings in with `fly secrets import --stage -a vybe-api` (see the
+  deploy runbook, one-time setup step 8). Then `fly secrets deploy -a vybe-api` and
+  `fly scale count <count> -a vybe-api --region <region>`. Check `fly checks list -a vybe-api`.
+- A new Supabase project has a new project ref: also change `Auth__Supabase__*`, `Storage__Exports__*`,
+  and the web settings `VYBE_SUPABASE_URL` and `VYBE_SUPABASE_ANON_KEY` (`fly secrets set -a vybe-web`).
+  Players must sign in again.

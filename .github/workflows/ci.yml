@@ -164,3 +164,42 @@ jobs:
           path: ${{ github.workspace }}/TestResults/**/coverage.cobertura.xml
           if-no-files-found: warn
           retention-days: 14
+
+  deploy-config:
+    name: Deployment config (Fly.io files, images)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # flyctl config validate needs a Fly.io token, so pull requests use the offline check (ADR 0007).
+      - name: Check infra/fly/*.fly.toml
+        run: python3 infra/fly/check-config.py
+
+      - name: Build the API image
+        run: docker build -f services/api/Dockerfile -t vybe-api:ci .
+
+      - name: Build the web image
+        run: docker build -f infra/web/Dockerfile -t vybe-web:ci .
+
+      - name: Web container serves the app with the hosting headers
+        run: |
+          docker run -d --name vybe-web --read-only --tmpfs /tmp --cap-drop ALL \
+            --security-opt no-new-privileges:true -e VYBE_API_HOST=localhost -p 127.0.0.1:8081:8080 vybe-web:ci
+          for _ in $(seq 1 20); do curl -fsS -o /dev/null http://127.0.0.1:8081/ && break; sleep 1; done
+          curl -fsS -D headers.txt -o index.html http://127.0.0.1:8081/hub
+          grep -q '<vybe-root>' index.html
+          grep -qi "^content-security-policy:.*frame-ancestors 'none'" headers.txt
+          grep -qi '^referrer-policy: no-referrer' headers.txt
+          grep -qi '^strict-transport-security: max-age=' headers.txt
+          grep -qi '^cache-control: no-cache' headers.txt
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/chunk-MISSING1.js)" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/runtime-config.json)" = 404
+          # No inline script: the CSP (script-src 'self') would block it.
+          if grep -q '<script>' index.html; then echo "index.html has an inline script" >&2; exit 1; fi
+
+      - name: Web container logs
+        if: failure()
+        run: docker logs vybe-web

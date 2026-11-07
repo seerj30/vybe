@@ -1,0 +1,78 @@
+# VYBE API on Fly.io (decision 7, ADR 0007). Image: services/api/Dockerfile, built by .github/workflows/deploy.yml.
+# Runbook: docs/runbooks/deploy-and-rollback.md, section "Fly.io".
+#
+# Before the first deploy, people set two values (in a PR):
+#   app            the API app name, if "vybe-api" is taken (then also VYBE_API_HOST in infra/fly/web.fly.toml)
+#   primary_region the Fly region of the Supabase project, the same in both fly.toml files. Not decided here.
+#                  If most players are in the EU, the recommendation is "fra" (Frankfurt) with Supabase
+#                  "eu-central-1". The deploy workflow stops while the value is REGION-NOT-SET.
+#
+# The API has no public address: deploy with --no-public-ips and keep `fly ips list` empty. Only the web app
+# (Caddy) calls it, over the private network (6PN). Every secret and per-environment value comes from
+# `fly secrets set` (names in the runbook); never write a value in this file.
+
+app = "vybe-api"
+primary_region = "REGION-NOT-SET"
+# Kestrel stops on SIGTERM and lets running requests complete (ASP.NET Core shutdown timeout: 30 s).
+kill_signal = "SIGTERM"
+kill_timeout = "35s"
+
+[deploy]
+  # Before any machine changes: migrate, then seed (rulesets, catalog, quests; idempotent), in one process.
+  # A non-zero exit stops the deploy. The release machine has the app's secrets (ConnectionStrings__Migrations).
+  release_command = "release"
+  release_command_timeout = "5m"
+  # Boot the new machine next to the old one; move to it after its checks pass. Zero downtime with one machine.
+  strategy = "bluegreen"
+
+  [deploy.release_command_vm]
+    size = "shared-cpu-1x"
+    memory = "512mb"
+
+[env]
+  ASPNETCORE_ENVIRONMENT = "Production"
+  # The callers are the web app machines on the organization's private network (6PN, fdaa::/16 addresses).
+  # The API reads X-Forwarded-For and X-Forwarded-Proto only from these addresses. Not /0 (ADR 0006 #8).
+  # Narrow it to the organization prefix (`fly ips private` shows fdaa:x:y::/48) after the first deploy.
+  ReverseProxy__KnownNetworks__0 = "fdaa::/16"
+  # Kestrel limits (the platform concurrency below does not apply: the web app calls machines directly).
+  Kestrel__Limits__MaxConcurrentConnections = "500"
+
+# No public IPs: this service exists for the health checks, which gate deploys (bluegreen) and restarts.
+[http_service]
+  internal_port = 8080
+  force_https = false
+  # Always on: the background workers (outbox, sweeper, privacy, idempotency cleanup, deletion log) run in the
+  # API process. A stopped machine stops them (decision 7).
+  auto_stop_machines = "off"
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  # Readiness: the database answers and every migration of this image is applied (ADR 0006 #3).
+  [[http_service.checks]]
+    method = "GET"
+    path = "/health/ready"
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "20s"
+
+# Liveness, for monitoring (`fly checks list`). No dependency, so a database outage does not restart machines.
+[checks]
+  [checks.live]
+    type = "http"
+    port = 8080
+    method = "GET"
+    path = "/health/live"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+
+# Beta size (decision 7: about 20 rps at the 10x load-test target). One machine now; two before the social beta.
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "1gb"

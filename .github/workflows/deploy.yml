@@ -1,0 +1,105 @@
+# Deploy to Fly.io (ADR 0007, docs/runbooks/deploy-and-rollback.md "Fly.io").
+# Runs only by hand (Actions > Deploy > Run workflow, on master or a v* tag) or on a pushed v* tag; never on pull
+# requests. The "production" environment has required reviewers, so every run waits for an approval.
+# Order: build both images -> API (release_command: migrate, then seed; bluegreen) -> web -> smoke test.
+name: Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+# One deploy at a time; a second run waits and never cancels a deploy in progress.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Fly.io (production)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    environment:
+      name: production
+      url: ${{ vars.VYBE_PUBLIC_ORIGIN }}
+    env:
+      # flyctl from the GitHub release, checked against this SHA-256 (no install script, no "latest").
+      FLYCTL_VERSION: 0.4.118
+      FLYCTL_SHA256: 0f2fabbb29904a7bac8bd96009314d26751084c33e098fcc393e2dac6c472f60
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - name: Only master or a v* tag
+        if: github.ref != 'refs/heads/master' && !startsWith(github.ref, 'refs/tags/v')
+        run: |
+          echo "Deploy only master or a v* tag (got ${GITHUB_REF})." >&2
+          exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check infra/fly/*.fly.toml (region set)
+        run: |
+          python3 infra/fly/check-config.py --require-region
+          python3 infra/fly/check-config.py --require-region --print-apps >> "$GITHUB_ENV"
+
+      - name: Install flyctl ${{ env.FLYCTL_VERSION }}
+        run: |
+          archive="flyctl_${FLYCTL_VERSION}_Linux_x86_64.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$archive" "https://github.com/superfly/flyctl/releases/download/v${FLYCTL_VERSION}/${archive}"
+          echo "${FLYCTL_SHA256}  $RUNNER_TEMP/$archive" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/flyctl"
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP/flyctl" flyctl
+          echo "$RUNNER_TEMP/flyctl" >> "$GITHUB_PATH"
+
+      # Each app has its own deploy token (fly tokens create deploy -a <app>): a token reaches one app only.
+      - name: Build and push the API image
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_API }}
+        run: |
+          flyctl auth docker
+          docker build -f services/api/Dockerfile -t "registry.fly.io/${API_APP}:${IMAGE_TAG}" .
+          docker push "registry.fly.io/${API_APP}:${IMAGE_TAG}"
+
+      - name: Build and push the web image
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_WEB }}
+        run: |
+          flyctl auth docker
+          docker build -f infra/web/Dockerfile -t "registry.fly.io/${WEB_APP}:${IMAGE_TAG}" .
+          docker push "registry.fly.io/${WEB_APP}:${IMAGE_TAG}"
+
+      # release_command "release" migrates and seeds first; a non-zero exit stops the deploy before any machine
+      # changes. --no-public-ips: the API is reachable only over the private network. --ha=false: one machine
+      # for the beta (scale to two with `fly scale count`; later deploys keep the count).
+      - name: Deploy the API
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_API }}
+        run: >-
+          flyctl deploy --config infra/fly/api.fly.toml
+          --image "registry.fly.io/${API_APP}:${IMAGE_TAG}"
+          --env "Sentry__Release=${IMAGE_TAG}"
+          --no-public-ips --ha=false --wait-timeout 10m
+
+      - name: Deploy the web app
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_WEB }}
+        run: >-
+          flyctl deploy --config infra/fly/web.fly.toml
+          --image "registry.fly.io/${WEB_APP}:${IMAGE_TAG}"
+          --ha=false --wait-timeout 10m
+
+      - name: Smoke test through the public origin
+        env:
+          ORIGIN: ${{ vars.VYBE_PUBLIC_ORIGIN }}
+        run: |
+          origin="${ORIGIN:-https://${WEB_APP}.fly.dev}"
+          curl -fsS -D headers.txt -o /dev/null "$origin/"
+          grep -qi "^content-security-policy:.*frame-ancestors 'none'" headers.txt
+          grep -qi '^strict-transport-security: max-age=' headers.txt
+          curl -fsS -o /dev/null "$origin/api/v1/catalog/items"
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$origin/health/ready")" = 404
+          echo "Deployed ${IMAGE_TAG} to $origin"
