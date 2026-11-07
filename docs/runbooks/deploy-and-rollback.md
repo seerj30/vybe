@@ -1,10 +1,11 @@
 # Runbook: deploy and rollback
 
 - Owner: stream D (operations). On-call names: see [incident-response.md](incident-response.md).
-- Applies to: the API container (`services/api/Dockerfile`) on any container host.
-  Hosting is not signed yet ([decision 7](../decisions/07-hosting.md)). The recommendation is
-  Supabase Pro + one always-on container, with `/api` on the same origin as the web app.
-- Related: [migrations.md](migrations.md), [secret-rotation.md](secret-rotation.md), [ADR 0006](../adr/0006-operations.md).
+- Applies to: the API container (`services/api/Dockerfile`) on any container host, and the Fly.io
+  deployment of [decision 7](../decisions/07-hosting.md) (signed: Supabase Pro + Fly.io, `/api` on the same
+  origin as the web app). Fly.io procedure: section [Fly.io](#flyio-decision-7).
+- Related: [migrations.md](migrations.md), [secret-rotation.md](secret-rotation.md), [ADR 0006](../adr/0006-operations.md),
+  [ADR 0008](../adr/0008-fly-deployment.md).
 
 ## What a release contains
 
@@ -13,6 +14,7 @@
 | Image | `docker build -f services/api/Dockerfile -t <registry>/vybe-api:<git-sha> .` (from the repository root) |
 | Migration step | `docker run --rm <env> <image> migrate` |
 | Seed step | `docker run --rm <env> <image> seed` (rulesets, catalog, quests; idempotent) |
+| Release step | `docker run --rm -e ConnectionStrings__Migrations <image> release` (migrate, then seed, in one process; on Fly.io the deploy workflow runs it on the runner) |
 | API | `<image>` with no command, port 8080 |
 
 Tag every image with the git commit SHA. Do not deploy `latest`.
@@ -114,6 +116,283 @@ If the previous image does not start on the new schema, the migration was not an
 as an incident (SEV-2 or higher): roll forward with a fix, and add the missing compatibility to the
 migration review.
 
+## Fly.io (decision 7)
+
+Decision 7 is signed: Supabase Pro (PostgreSQL and Auth) and an always-on API container on Fly.io in the
+same region, with `/api` on the same origin as the web app. Design: [ADR 0008](../adr/0008-fly-deployment.md).
+This section is the procedure for people. Nobody has created the accounts yet.
+
+Rules for every step with a secret:
+
+- Never put a password, key or token in a command argument, a connection string on the command line, a
+  file in `/tmp`, a ticket or a chat. Command arguments go to the shell history and the process list.
+- Paste a secret only at a prompt that reads stdin (`fly secrets import`, `gh secret set`, `read -rs`,
+  `\password` in psql), or let one command pipe it to the next.
+- For `psql`, use a service file and a password file (mode 600), as in [backup-restore.md](backup-restore.md).
+- If a step needs a temporary file, make a private directory first: `d=$(mktemp -d)` (mode 700), and
+  delete it afterwards: `rm -rf "$d"`.
+
+### What runs where
+
+| Part | Where | File |
+|---|---|---|
+| Web app and `/api` proxy (Caddy, non-root) | Fly app `vybe-web`, public, TLS at the Fly edge | [`infra/web/`](../../infra/web/), [`infra/fly/web.fly.toml`](../../infra/fly/web.fly.toml) |
+| API (one image: API, `release`, `seed`, `migrate`, `replay-deletions`) | Fly app `vybe-api`, **no public IP**, private network only | [`services/api/Dockerfile`](../../services/api/Dockerfile), [`infra/fly/api.fly.toml`](../../infra/fly/api.fly.toml) |
+| Release step (`release` = migrate, then seed, owner role) | The GitHub Actions runner, before `fly deploy` | [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml) |
+| PostgreSQL and Auth | Supabase Pro, same region | — |
+| Export bucket (J4 exports, deletion log) | Supabase Storage, S3 protocol | — |
+
+Request path: browser → Fly edge (TLS, sets `Fly-Client-IP`) → `vybe-web` (Caddy) → `vybe-api.internal:8080`
+over the private network (6PN). Caddy sends the client address as the only `X-Forwarded-For` value. The API
+reads it only from the organization's private prefix (`ReverseProxy__KnownNetworks__0` in `api.fly.toml`).
+
+The owner credential (`ConnectionStrings__Migrations`) is a secret of the GitHub environment `production`
+only. It is **not** a Fly secret: a Fly release machine and every API machine would get it.
+
+### One-time setup
+
+Do these steps in this order. Keep each value in the password manager of the team.
+
+1. **Region.** The product owner and the engineering lead choose the Supabase region. Then choose the Fly
+   region nearest to it. Measure the latency with the load test before the beta (decision 7: same region).
+
+   | Supabase region | Fly region |
+   |---|---|
+   | `eu-central-1` (Frankfurt). Recommended if most players are in the EU | `fra` |
+   | `eu-west-2` (London) | `lhr` |
+   | `eu-west-3` (Paris) | `cdg` |
+   | `us-east-1` (N. Virginia) | `iad` |
+
+   Open a PR that sets `primary_region` in both `infra/fly/*.fly.toml` files. The deploy workflow stops
+   while the value is `REGION-NOT-SET`.
+2. **Accounts.** Create a **dedicated** Fly.io organization for VYBE production, with no other apps.
+   Every machine of the organization shares its private network: a machine there can reach the API and
+   can send a `Fly-Client-IP` to the web app. Create a Supabase organization (Pro plan). Use the company
+   billing account. Turn on two-factor authentication for every member. Give access to the named on-call
+   people only ([incident-response.md](incident-response.md)).
+3. **Supabase project** in the chosen region:
+   - Settings → JWT keys: turn on the asymmetric signing keys (ES256 or RS256). The API does not accept HS256.
+   - Authentication → URL configuration: Site URL = the web origin; Redirect URLs = `<web origin>/`.
+   - Data API: do **not** add schema `vybe` to the exposed schemas.
+   - Compute: start with the smallest size; the load test decides ([load-test.md](load-test.md)).
+   - Network restrictions: if you turn them on, the release step runs on GitHub-hosted runners, which have
+     no fixed address. Keep the pooler open to them, or use a self-hosted runner with a fixed address.
+4. **Database roles.** Connect with `psql` as `postgres` through a service file and a password file. Make
+   the roles without a password, then set each password at the `\password` prompt:
+   ```sql
+   CREATE ROLE vybe_owner LOGIN;            -- owns schema vybe; migrations and seed only
+   GRANT CREATE ON DATABASE postgres TO vybe_owner;
+   CREATE ROLE vybe_api LOGIN;              -- the API: data access only (infra/db/grants.sql)
+   \password vybe_owner
+   \password vybe_api
+   ```
+5. **Connection strings** (Supavisor, IPv4; the user name has the form `role.<project ref>`). Make them in
+   the password manager:
+   - API, transaction pooler, port 6543:
+     `Host=<pooler host>;Port=6543;Database=postgres;Username=vybe_api.<ref>;Password=<password>;SSL Mode=Require;Max Auto Prepare=0;Maximum Pool Size=20`
+   - Owner, session pooler, port 5432, never 6543:
+     `Host=<pooler host>;Port=5432;Database=postgres;Username=vybe_owner.<ref>;Password=<password>;SSL Mode=Require`
+   - With two API machines, the total pool (2 × 20) must stay below the pooler client limit of the compute size.
+6. **Export bucket.** Supabase Storage → new **private** bucket (for example `vybe-exports`). Storage →
+   S3 connection: write down the endpoint (`https://<ref>.storage.supabase.co/storage/v1/s3`) and the
+   region, and create an S3 access key. Lifecycle rules: see [backup-restore.md](backup-restore.md)
+   (`exports/` only; `deletion-log/` 90 days or more).
+7. **Fly apps.** On a trusted machine with `flyctl` (`fly auth login`):
+   ```bash
+   fly apps create vybe-api --org <vybe org>
+   fly apps create vybe-web --org <vybe org>
+   ```
+   If a name is taken, use another name and change `app` (and `VYBE_API_HOST` in `web.fly.toml`) in a PR.
+8. **API secrets.** Run the command, paste the `NAME=VALUE` lines from the password manager, then press
+   Ctrl-D. The values go through stdin only. `--stage` keeps them for the first deploy.
+   ```bash
+   fly secrets import --stage -a vybe-api
+   ```
+   | Name | Value |
+   |---|---|
+   | `ConnectionStrings__Vybe` | step 5, API (transaction pooler, `vybe_api`) |
+   | `Auth__Supabase__Authority` | `https://<ref>.supabase.co/auth/v1` |
+   | `Auth__Supabase__ApiKey` | the publishable (anon) key |
+   | `Auth__Supabase__ServiceRoleKey` | the secret (service role) key. Needed when stream J (J4 deletes the Supabase Auth user) is on `master` |
+   | `Challenges__InviteSecret` | 32 random bytes in base64 (`openssl rand -base64 32`, pasted, not typed into an argument) |
+   | `Challenges__ShareBaseUrl` | `https://<web origin>` |
+   | `Storage__Exports__Bucket`, `Storage__Exports__Region`, `Storage__Exports__ServiceUrl` | step 6 |
+   | `Storage__Exports__AccessKeyId`, `Storage__Exports__SecretAccessKey` | step 6 |
+   | `Sentry__Dsn`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS` | optional |
+
+   Do **not** set `ConnectionStrings__Migrations` on Fly (step 10). Check the names with
+   `fly secrets list -a vybe-api` (names and digests only, never values). The settings table above describes
+   every setting. `api.fly.toml` sets `ASPNETCORE_ENVIRONMENT`, `ReverseProxy__KnownNetworks__0` and the
+   Kestrel limit. The workflow sets `Sentry__Release`.
+9. **Web settings** (public values, but per environment, so not in the repository). Same way:
+   `fly secrets import --stage -a vybe-web` with `VYBE_SUPABASE_URL=https://<ref>.supabase.co` and
+   `VYBE_SUPABASE_ANON_KEY=<publishable key>`. The container writes `/runtime-config.json` from them and adds
+   the origin to `connect-src`. A wrong format stops the container with a message. Without both, sign-in
+   is off (guest-only).
+10. **GitHub environment `production`** (Settings → Environments):
+    - Required reviewers: the engineering lead and the on-call primary; "Prevent self-review" on.
+    - Deployment branches and tags: `master` and `v*` only.
+    - Variable `VYBE_PUBLIC_ORIGIN` = `https://<web origin>`.
+    - Secrets (environment only, not repository secrets). The pipes keep the values off the screen:
+      ```bash
+      fly tokens create deploy -a vybe-api -x 8760h | gh secret set FLY_API_TOKEN_API --env production -R seerj30/vybe
+      fly tokens create deploy -a vybe-web -x 8760h | gh secret set FLY_API_TOKEN_WEB --env production -R seerj30/vybe
+      gh secret set VYBE_MIGRATIONS_CONNECTION_STRING --env production -R seerj30/vybe   # paste the owner string (step 5)
+      ```
+    - Write the token expiry date in the record of [secret-rotation.md](secret-rotation.md).
+11. **Dry run: release step only.** GitHub → Actions → Deploy → Run workflow on `master`, mode
+    `release-only`. A reviewer approves. The run builds the API image and runs `release` on the runner. This
+    proves that the chiseled ENTRYPOINT passes the argument (`dotnet Vybe.Api.dll release`), that the owner
+    string works, and it creates the schema. The log must show "The database schema is up to date" and
+    "Seeded … rulesets, … catalog items".
+12. **Grants.** The API machine is ready only when the API role has its grants. As the owner role, with
+    the service `vybe-owner` in `~/.pg_service.conf` and the password in `~/.pgpass` (both mode 600):
+    ```bash
+    PGSERVICE=vybe-owner psql -v ON_ERROR_STOP=1 -v api_role=vybe_api -f infra/db/grants.sql
+    ```
+    The grants also apply to tables of later migrations (default privileges of `vybe_owner`).
+
+### First deploy
+
+1. Make sure that steps 1–12 are done and that CI on `master` is green.
+2. Deploy → Run workflow on `master`, mode `deploy`, **`first_deploy` on**. A reviewer approves.
+3. The workflow:
+   1. checks that the commit is on `master` and has a green CI run;
+   2. builds both images and runs `release` on the runner (owner role from the environment secret);
+   3. pushes both images and deploys **by digest** (the run summary lists both digests: keep them for a
+      rollback);
+   4. deploys the API with `--no-public-ips`. The new machine gets traffic only after `GET /health/ready`
+      passes (bluegreen);
+   5. fails if the API app has a public IP or if `https://vybe-api.fly.dev` answers;
+   6. deploys the web app, then does the smoke test.
+4. Domain and certificates:
+   ```bash
+   fly ips allocate-v4 --shared -a vybe-web    # if the first deploy did not allocate IPs
+   fly ips allocate-v6 -a vybe-web
+   fly certs add <web domain> -a vybe-web
+   fly certs setup <web domain> -a vybe-web    # the DNS records to make
+   fly certs check <web domain> -a vybe-web    # repeat until the certificate is issued
+   ```
+   Then set `Challenges__ShareBaseUrl` (API secret), the Supabase Site URL and Redirect URL, and
+   `VYBE_PUBLIC_ORIGIN` to this origin. `Security__HstsIncludeSubDomains` is `true` by default: set it to
+   `false` (API secret) and change the `Strict-Transport-Security` line in `infra/web/Caddyfile` if another
+   subdomain is not on https.
+5. **Narrow the proxy network (required).** `fly ips private -a vybe-web` shows the private addresses of
+   the web machines (`fdaa:x:y:…`). The first three groups are the organization prefix. Open a PR that sets
+   `ReverseProxy__KnownNetworks__0` in `api.fly.toml` to `fdaa:x:y::/48`. Until then, every deploy without
+   `first_deploy` fails (`check-config.py --require-region` refuses a prefix shorter than /48). Deploy the
+   PR normally (without `first_deploy`).
+
+### One-off commands
+
+| Command | How |
+|---|---|
+| `migrate`, `seed`, `release` | Deploy workflow, mode `release-only` (owner role from the GitHub environment). Never on Fly: the API app has no owner credential. |
+| `replay-deletions` (after a restore) | It uses the API role and the bucket, which are Fly secrets, so a temporary machine of the API app can run it (below). |
+
+```bash
+fly releases -a vybe-api --image          # the image digest of the current release
+fly machine run registry.fly.io/vybe-api@sha256:<digest> replay-deletions -a vybe-api --region <region> \
+  --rm --restart no --vm-size shared-cpu-1x
+fly logs -a vybe-api                      # "Deletion replay: …" and the exit; non-zero = failed
+```
+
+The temporary machine runs the same image with the same secrets as the API, in the same dedicated
+organization. It does not listen on port 8080, so the web proxy skips it.
+
+### Smoke test
+
+The workflow checks `/` (CSP with `frame-ancestors 'none'`, HSTS), `/api/v1/catalog/items`, that
+`/health/ready` is not public and that the API has no public address. After each production deploy, also do
+these checks by hand:
+
+1. `fly status -a vybe-api` and `fly checks list -a vybe-api`: every machine is started, both checks pass.
+2. Open the web origin in a private browser window. The landing page shows with its styles. The browser
+   console shows no CSP error.
+3. Guest with the age gate: "Start as guest", give the birth month and year of an adult. The avatar page
+   opens. By command: `POST <origin>/api/v1/guests` with `X-Requested-With: vybe-web` and the age-gate body
+   of the contract (`packages/contracts`) gives 201 and `Set-Cookie: __Host-vybe_guest`.
+4. Profile: save the avatar, open `/hub`, open your own profile; the level and wallet show.
+5. Sign-in: create an account with a test email, confirm it, link the guest ("Link this account"). The
+   player id stays the same in `/settings`. Delete the test account afterwards in `/settings`.
+6. Client address: send 11 guest creations (step 3) within one minute from one machine, each with another
+   forged `Fly-Client-IP` header. The 11th answer must be 429: the Fly edge replaces the header. If all are
+   201, stop and treat it as a SEV-2 (the guest rate limit does not work). The test guests expire like
+   other unused guests.
+
+### Rollback on Fly.io
+
+A rollback never reverts the database (see "Rollback procedure" above). Migrations are forward-only, and a
+rollback does **not** run the release step: the seed of an older image can fail on content that a newer
+release published ("ruleset … changed after activation"), and its migrate has nothing to do.
+
+1. Find the digests of the last good release: the summary of its Deploy run, or
+   `fly releases -a vybe-api --image` and `fly releases -a vybe-web --image`.
+2. Deploy → Run workflow on `master`, mode `rollback`, with `api_image` and `web_image` =
+   `registry.fly.io/<app>@sha256:<digest>`. The run deploys these images without a build and without the
+   release step, with the same checks as a deploy.
+3. Without GitHub (an outage of GitHub Actions): a person with Fly access runs the same deploy:
+   ```bash
+   fly deploy -c infra/fly/api.fly.toml -a vybe-api --image registry.fly.io/vybe-api@sha256:<digest> --no-public-ips --ha=false
+   fly deploy -c infra/fly/web.fly.toml -a vybe-web --image registry.fly.io/vybe-web@sha256:<digest> --ha=false
+   ```
+   Use the `fly.toml` files of the good commit if they changed (`git show <sha>:infra/fly/api.fly.toml`).
+4. Roll forward instead (fix and deploy a new release) when:
+   - the old image does not become ready on the new schema: the migration was not an expand step
+     (SEV-2 or higher; never run a down migration against production);
+   - the old image needs content (rulesets, catalog, quests) that the new seed changed: publish the fix as
+     new content versions;
+   - the bad release changed data, not code: use [backup-restore.md](backup-restore.md) with the incident lead.
+5. A web-only problem: roll back `vybe-web` only (the API digest of the current release stays).
+
+Tested on 2026-11-07 with the compose stack: the database was migrated and seeded by the current image;
+the image of b1487eb (before stream I) then started without a release step, `/health/ready` gave 200,
+`GET /api/v1/catalog/items` 200 and `POST /api/v1/guests` 201. The `seed` of that older image failed, as
+expected.
+
+### Scaling before the social beta
+
+Decision 7 asks for a second API machine before the social beta (availability target 99.5 %):
+
+```bash
+fly scale count 2 -a vybe-api --region <region>
+fly scale count 2 -a vybe-web --region <region>
+```
+
+- The background workers are safe on many machines (`SKIP LOCKED`, compare-and-swap writes).
+- Caddy reads the AAAA records of `vybe-api.internal` every 5 s and spreads requests; a stopped machine is
+  skipped for 30 s and a failed connect tries another machine.
+- Check that 2 × `Maximum Pool Size` stays below the pooler client limit.
+- Bigger machines: `fly scale vm shared-cpu-4x -a vybe-api` or `fly scale memory 2048 -a vybe-api`,
+  then change `[[vm]]` in `api.fly.toml` in a PR, so the next deploy keeps the size.
+- Run the load test against the beta environment again after a change ([load-test.md](load-test.md)).
+
+### Cost estimate (USD per month, estimates of 2026-11-07)
+
+These are estimates from the vendors' public price pages as remembered on 2026-11-07, not quotes. Check
+each price page before the budget review. Ceiling: USD 150 per month (decision 7).
+
+| Component | Size | Estimate |
+|---|---|---|
+| Supabase Pro plan | base fee, includes Micro compute credit | 25 |
+| Supabase compute | Small (if the load test needs more than Micro) | 0–15 |
+| Supabase point-in-time recovery (7 days) | add-on; needs Small compute or bigger | 100 (optional, see below) |
+| Fly API machine | 1 × `shared-cpu-2x`, 1 GB, always on | 7–12 |
+| Fly API, second machine (social beta) | 1 × `shared-cpu-2x`, 1 GB | 7–12 |
+| Fly web machine | 1 × `shared-cpu-1x`, 256 MB (2 at the social beta) | 2–4 |
+| Fly outbound data | about 100 GB in EU/North America | 2 |
+| Fly IPv4 | shared IPv4 for http: free; dedicated IPv4 only if needed | 0–2 |
+| Fly certificate | one hostname | 0–1 |
+| Domain | annual fee per month | 1–2 |
+| Sentry | Developer (free) or Team | 0–26 |
+| OTLP backend | a free tier (optional) | 0 |
+| **Total without point-in-time recovery** | | **about 45–100** |
+| **Total with point-in-time recovery** | | **about 145–200** |
+
+Point-in-time recovery is in the backup runbook as "use before the social beta". With it, the budget stays
+under USD 150 only with Sentry Developer and without a bigger compute size. The product owner decides this
+before the social beta.
+
 ## Local run
 
 ```bash
@@ -121,4 +400,5 @@ docker compose -f infra/docker-compose.yml up --build
 ```
 
 The compose file runs `db`, then `migrate`, then `seed`, then the API on `http://localhost:8080` in the
-Development environment.
+Development environment, and the production web image (`infra/web`) on `http://localhost:8081`, which
+serves the app and proxies `/api` to the API like Fly.io.

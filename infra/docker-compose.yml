@@ -1,6 +1,7 @@
 # Local API + PostgreSQL, the same image and deploy steps as production.
 #   docker compose -f infra/docker-compose.yml up --build
-# Order: db (healthy) -> migrate -> seed -> api. API: http://localhost:8080 (probes: /health/live, /health/ready).
+# Order: db (healthy) -> migrate -> seed -> api -> web. API: http://localhost:8080 (probes: /health/live, /health/ready).
+# Web (infra/web, the production web image): http://localhost:8081 serves the app and proxies /api to the API.
 # Local only: the password below is not a secret. Never put real secrets in this file; see docs/runbooks/.
 name: vybe
 
@@ -62,6 +63,25 @@ services:
     ports: ["127.0.0.1:8080:8080"]
     depends_on:
       seed: { condition: service_completed_successfully }
+
+  web:
+    image: vybe-web:local
+    build:
+      context: ..
+      dockerfile: infra/web/Dockerfile
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    environment:
+      VYBE_API_HOST: api
+      # Empty = guest-only. Set both to try sign-in against a Supabase project (public values only).
+      VYBE_SUPABASE_URL: ${VYBE_SUPABASE_URL:-}
+      VYBE_SUPABASE_ANON_KEY: ${VYBE_SUPABASE_ANON_KEY:-}
+    ports: ["127.0.0.1:8081:8080"]
+    depends_on:
+      api: { condition: service_started }
 
 volumes:
   db-data:
