@@ -95,11 +95,16 @@ jobs:
           API_INPUT: ${{ inputs.api_image }}
           WEB_INPUT: ${{ inputs.web_image }}
         run: |
-          case "$API_INPUT" in "registry.fly.io/${API_APP}@sha256:"*) ;; *) echo "api_image must be registry.fly.io/${API_APP}@sha256:<digest>" >&2; exit 1;; esac
-          case "$WEB_INPUT" in "registry.fly.io/${WEB_APP}@sha256:"*) ;; *) echo "web_image must be registry.fly.io/${WEB_APP}@sha256:<digest>" >&2; exit 1;; esac
-          for image in "$API_INPUT" "$WEB_INPUT"; do
-            printf '%s' "$image" | grep -Eq '^registry\.fly\.io/[a-z0-9-]+@sha256:[0-9a-f]{64}$' || { echo "not an image digest: $image" >&2; exit 1; }
-          done
+          # Whole-string matches ([[ =~ ]]), so a second line cannot reach GITHUB_ENV.
+          digest='@sha256:[0-9a-f]{64}$'
+          if ! [[ "$API_INPUT" =~ ^registry\.fly\.io/${API_APP}${digest} ]]; then
+            echo "api_image must be registry.fly.io/${API_APP}@sha256:<digest>" >&2
+            exit 1
+          fi
+          if ! [[ "$WEB_INPUT" =~ ^registry\.fly\.io/${WEB_APP}${digest} ]]; then
+            echo "web_image must be registry.fly.io/${WEB_APP}@sha256:<digest>" >&2
+            exit 1
+          fi
           { echo "API_IMAGE=$API_INPUT"; echo "WEB_IMAGE=$WEB_INPUT"; } >> "$GITHUB_ENV"
 
       - name: Build the images
