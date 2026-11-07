@@ -68,3 +68,4 @@ beta gate, in an isolated environment, with production-like compute.
 | Date | Target (where) | Duration | Requests/s | Read p95 | Write p95 | Failures | Result |
 |---|---|---|---|---|---|---|---|
 | 2026-11-06 | Local compose on a developer laptop (Apple silicon, Docker Desktop) | 90 s trial | 14.9 (ramp-up included) | 5 ms | 16 ms | 0 % | Pass (script check, not a capacity result) |
+| 2026-11-07 | Local compose on a developer laptop (Apple silicon, Docker Desktop), master 4cfd254 (streams A–H) | 5 min | 17.6 (ramp-up included) | 4.2 ms | 16.3 ms | 0 % (0 of 5,798) | Pass: all thresholds, 5,796 of 5,796 checks (not a capacity result) |

@@ -23,6 +23,22 @@ branch and opens PRs. The orchestrator session reviews, tests and merges them.
 | Stream B security review fixes | #23 |
 | Configurable E2E ports and database for parallel worktrees | #25 |
 | Stream D: container image, migrate/seed commands, production configuration check, S3 export storage, health checks, OpenTelemetry, logs, Sentry, CORS, security headers, per-player limits, idempotency cleanup, runbooks, k6 load test | #24, #26, #27 (ADR 0006) |
+| Stream D security review fixes: deletion log and `replay-deletions` after a restore, telemetry scrubbing, proxy trust, read limits, restore and grants | #31 |
+| Stream G: web challenges, invites, daily quests, profiles (report, block), saved outfits; E04, E07 in a browser | #29 |
+| Stream H: web sign-in (Supabase, PKCE), J3 linking, settings (blocks, export, deletion), deletion status, admin; fake Auth for E2E; E03, E08, E12 in a browser | #30 |
+| Flaky retry test fix | #33 |
+
+## P0 social beta gate (spec §16)
+
+| Gate item | Status |
+|---|---|
+| Critical browser E2E (E01–E12) | In CI on every PR and on master (`tests/e2e/specs`) |
+| Load review | Local 5-minute k6 run passed (`docs/runbooks/load-test.md`); repeat on the chosen hosting |
+| Security review | Independent reviews of streams A, B, D, G, H; all findings fixed (#17, #23, #29, #30, #31) |
+| Telemetry, backup/restore, incident runbook | Merged (stream D, `docs/runbooks/`, ADR 0006) |
+| Privacy policy and age policy | Open: needs sign-off of `docs/decisions/` 1, 6, 8 (human decision) |
+| Hosting, deployment, production secrets | Open: needs sign-off of decision 7; then deploy with `docs/runbooks/deploy-and-rollback.md` |
+| 3D avatar art | Open: needs sign-off of decision 3; the 2D fallback is in use |
 
 ## Streams
 
@@ -31,10 +47,10 @@ branch and opens PRs. The orchestrator session reviews, tests and merges them.
 | **A. Challenges and quests** | J2 challenges: create, invite preview, accept, recipient session, completion, rematch, `/me/challenges`; outbox worker (`challenge-resolved`); sweepers (sessions, challenges, elapsed suspensions); daily quests: progress in the verification transaction, `/me/quests`, claim | `Features/Challenge*`, `Features/Quest*`, `Features/GameplayEndpoints.cs`, `Features/RewardService.cs`, `Jobs/` | E04, E07, quest claim | merged (review fixes in #17) |
 | **B. Accounts and safety** | J3 account linking (Supabase); public profiles; blocks (cancel challenges under `PairLock`) and reports; saved outfits; J4 data export and deletion (anonymization, ADR 0002 #11); admin endpoints | `Features/IdentityEndpoints.cs`, `Features/{Account,Profile,Safety,Outfit,Privacy,Admin}*` | E03, E08, E12 | merged (security review fixes in #23) |
 | **C. Web app on the API** | App shell and routes (§3), guest onboarding, avatar creator (2D fallback until 3D art), hub, Street Hoops on API sessions, shop, wardrobe, wallet; typed client from `packages/contracts`; browser E2E against the real API and PostgreSQL in CI | `apps/web`, `tests/e2e`, the e2e job in `.github/workflows/ci.yml` | E01, E02, E05, E06, E09, E10 in a browser | merged |
-| **D. Operations** | Container image, deployment (hosting-agnostic until §17 #7), OpenTelemetry, structured logs, Sentry, CORS and security headers, per-player rate limits, idempotency cleanup, backup/restore and incident runbooks, load test | `services/api/Dockerfile`, `infra/`, `docs/runbooks/`, hosting hooks in `ServiceSetup.cs` | load/security review | merged; follow-up PR for security review findings in progress |
+| **D. Operations** | Container image, deployment (hosting-agnostic until §17 #7), OpenTelemetry, structured logs, Sentry, CORS and security headers, per-player rate limits, idempotency cleanup, backup/restore and incident runbooks, load test | `services/api/Dockerfile`, `infra/`, `docs/runbooks/`, hosting hooks in `ServiceSetup.cs` | load/security review | merged (security review fixes in #31) |
 | **E. Sign-off pack** | Options and recommendations for every §17 decision (age policy, guest lifetime, art, tuning, economy, profile visibility, hosting, legal wording) | `docs/decisions/` | — | merged; waiting for sign-off (record in `docs/decisions/README.md`) |
-| **G. Web social** | `/challenges`, `/challenge/:token`, daily quests on `/hub`, `/profile/:handle` (challenge, report, block), saved outfits in `/wardrobe`; browser E2E | `apps/web/src/app/{challenges,quests,profiles,outfits}/`, `pages/{challenges,invite,profile,hub,wardrobe}.ts`, `api/social-api.ts`, small hooks in `street-hoops/`, its specs | E04, E07, quest claim in a browser | proposed (waiting for the user to start it) |
-| **H. Web account** | Supabase sign-in, J3 linking, `/settings` (blocks, export, deletion), deletion status, `/admin`; fake Supabase Auth for E2E | `apps/web/src/app/{auth,settings,admin}/`, `pages/{landing,settings,admin,deletion-status}.ts`, `api/account-api.ts`, bearer hook in `api-client.ts`, `tests/e2e/fake-auth/`, its specs and config lines | E03, E08, E12 in a browser | proposed (waiting for the user to start it) |
+| **G. Web social** | `/challenges`, `/challenge/:token`, daily quests on `/hub`, `/profile/:handle` (challenge, report, block), saved outfits in `/wardrobe`; browser E2E | `apps/web/src/app/{challenges,quests,profiles,outfits}/`, `pages/{challenges,invite,profile,hub,wardrobe}.ts`, `api/social-api.ts`, small hooks in `street-hoops/`, its specs | E04, E07, quest claim in a browser | merged (review fixes in #29) |
+| **H. Web account** | Supabase sign-in, J3 linking, `/settings` (blocks, export, deletion), deletion status, `/admin`; fake Supabase Auth for E2E | `apps/web/src/app/{auth,settings,admin}/`, `pages/{landing,settings,admin,deletion-status}.ts`, `api/account-api.ts`, bearer hook in `api-client.ts`, `tests/e2e/fake-auth/`, its specs and config lines | E03, E08, E12 in a browser | merged (two security reviews, fixes in #30) |
 | **F. API extras from PR #7** | IPv6 /64 rate-limit grouping; midnight and multi-level reward tests | `ServiceSetup.cs` (rate limiter only), `tests/Vybe.Api.Tests` | — | merged |
 
 ## Rules for every stream
