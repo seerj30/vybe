@@ -2,27 +2,44 @@ import { newIdempotencyKey } from "../api/api-client";
 
 const PREFIX = "vybe.challengeKey.";
 
+/** One create (or rematch) request: the key belongs to this exact body, never to another one. */
+export interface CreateRequest {
+  sessionId: string;
+  rematchOf?: string;
+  to?: string;
+}
+
+type KeyStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+/** The storage name of a request's key. Handles match case-insensitively on the server. */
+export function keyName(request: CreateRequest): string {
+  return PREFIX + JSON.stringify([request.sessionId, request.rematchOf ?? null, request.to?.toLowerCase() ?? null]);
+}
+
 /**
- * One Idempotency-Key per creator run, kept for the browser tab. A reload or a retry of the same
- * create sends the same key, so the API answers with the same share link (ADR 0004 #2).
+ * One Idempotency-Key per create request, kept for the browser tab. A reload or a retry of the same
+ * request sends the same key, so the API answers with the same share link (ADR 0004 #2). The key stays
+ * after a success on purpose: the replay is the only way to show the creator the link again, and it
+ * sends the same body, so it cannot mismatch.
  */
-export function challengeKey(sessionId: string): string {
+export function challengeKey(request: CreateRequest, storage: KeyStorage | undefined = globalThis.sessionStorage): string {
   try {
-    const stored = sessionStorage.getItem(PREFIX + sessionId);
+    if (storage === undefined) return newIdempotencyKey();
+    const stored = storage.getItem(keyName(request));
     if (stored !== null) return stored;
     const key = newIdempotencyKey();
-    sessionStorage.setItem(PREFIX + sessionId, key);
+    storage.setItem(keyName(request), key);
     return key;
   } catch {
-    // Storage blocked: the key lives for this call only; a repeat answers session_already_used.
+    // Storage blocked: the key lives for this page only; a reload answers session_already_used.
     return newIdempotencyKey();
   }
 }
 
-/** Forgets the key after a known failure: no challenge exists, so a fresh key is safe (and the body may change). */
-export function forgetChallengeKey(sessionId: string): void {
+/** Forgets the key after a known failure: no challenge exists, so a fresh key is safe. */
+export function forgetChallengeKey(request: CreateRequest, storage: KeyStorage | undefined = globalThis.sessionStorage): void {
   try {
-    sessionStorage.removeItem(PREFIX + sessionId);
+    storage?.removeItem(keyName(request));
   } catch {
     // Storage blocked: nothing was stored.
   }

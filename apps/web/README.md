@@ -59,12 +59,15 @@ server's ruleset.
 
 1. After a verified online run with at least `minShotsForRewards` shots, the gameplay screen shows
    "Challenge a friend with this run". It opens `/challenges?session={sessionId}`.
-2. `/challenges` creates the challenge. The `Idempotency-Key` is kept per run in `sessionStorage`,
-   so a reload or retry gets the same share link (ADR 0004 #2). The page shows the link to copy.
+2. `/challenges` creates the challenge. The `Idempotency-Key` is kept per request body (run,
+   recipient, rematch) in `sessionStorage`, so a reload or retry gets the same share link (ADR 0004 #2).
+   A known failure forgets the key. The page shows the link to copy.
 3. The share link is `{ShareBaseUrl}/challenge/{token}`. The app opens the token on its own origin.
-4. `/challenge/:token` shows the preview. A visitor without a player can start as a guest and accept
+4. `index.html` sets `<meta name="referrer" content="no-referrer">`, so the token in the path never goes
+   out in a `Referer` header (spec §11). `/challenge/:token` shows the preview. A visitor without a player can start as a guest and accept
    in one step. An unknown token, a block and a wrong recipient show the same "not available" state.
-5. The recipient plays at `/arcade/street-hoops?challenge={challengeId}`: one run on the creator's
+5. "Refresh" and a return to the tab read the challenge again, so the creator sees the accept and
+   the result without a reload. The recipient plays at `/arcade/street-hoops?challenge={challengeId}`: one run on the creator's
    seed and ruleset, without "Play again". The result shows in `/challenges` and on the invite page.
 6. A rematch (`?rematchOf=`) and a profile challenge (`?to=`) also start with a run. The gameplay
    screen passes the value on to `/challenges`.

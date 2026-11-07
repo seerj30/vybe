@@ -8,6 +8,7 @@ import { AvatarPortrait } from "../avatar/avatar-portrait";
 import { pickPresets } from "../avatar/presets";
 import { PlayerStore } from "../player/player-store";
 import { playerName } from "../profiles/player-name";
+import { Generations } from "../challenges/generations";
 import { isBlocked, REPORT_REASONS } from "../profiles/safety";
 
 type PublicProfile = Schemas["PublicProfile"];
@@ -154,8 +155,8 @@ export class Profile {
   protected readonly blockCheckFailed = signal(false);
   private readonly injector = inject(Injector);
   private readonly safetyHeading = viewChild<ElementRef<HTMLElement>>("safety");
-  /** Only the newest load may set the page (the handle can change while one runs). */
-  private generation = 0;
+  /** Only the newest load may set the page; an action answer for an earlier handle is dropped. */
+  private readonly loads = new Generations();
   protected readonly busy = signal(false);
   protected readonly message = signal<Message | null>(null);
   protected readonly reportOpen = signal(false);
@@ -181,9 +182,10 @@ export class Profile {
   }
 
   protected async load(): Promise<void> {
-    const generation = ++this.generation;
+    const isCurrent = this.loads.next();
     const handle = this.handle();
     this.state.set({ kind: "loading" });
+    this.busy.set(false);
     this.message.set(null);
     this.reportOpen.set(false);
     this.confirmBlock.set(false);
@@ -196,7 +198,7 @@ export class Profile {
       state = isApiError(error, "not_found") ? { kind: "unavailable" } : { kind: "failed", message: errorMessage(error) };
     }
     const isBlockedResult = await blocked;
-    if (generation !== this.generation) return;
+    if (!isCurrent()) return;
     this.blocked.set(isBlockedResult === true);
     this.blockCheckFailed.set(isBlockedResult === null);
     this.state.set(state);
@@ -224,42 +226,58 @@ export class Profile {
     const reason = this.reason();
     if (reason === null) return;
     const details = this.details().trim();
-    await this.act(async () => {
-      await this.social.report({ targetHandle: profile.handle, reason, ...(details === "" ? {} : { details }) });
-      this.reportOpen.set(false);
-      return "Thank you. VYBE moderators will review your report.";
-    });
+    await this.act(
+      () => this.social.report({ targetHandle: profile.handle, reason, ...(details === "" ? {} : { details }) }),
+      () => {
+        this.reportOpen.set(false);
+        return "Thank you. VYBE moderators will review your report.";
+      },
+    );
   }
 
   protected async block(profile: PublicProfile): Promise<void> {
-    await this.act(async () => {
-      await this.social.block(profile.handle);
-      this.blocked.set(true);
-      this.confirmBlock.set(false);
-      return `You blocked ${playerName(profile)}.`;
-    });
+    await this.act(
+      () => this.social.block(profile.handle),
+      () => {
+        this.blocked.set(true);
+        this.confirmBlock.set(false);
+        return `You blocked ${playerName(profile)}.`;
+      },
+    );
   }
 
   protected async unblock(profile: PublicProfile): Promise<void> {
-    await this.act(async () => {
-      await this.social.unblock(profile.handle);
-      this.blocked.set(false);
-      return `You unblocked ${playerName(profile)}. Challenges that ended do not come back.`;
-    });
+    await this.act(
+      () => this.social.unblock(profile.handle),
+      () => {
+        this.blocked.set(false);
+        return `You unblocked ${playerName(profile)}. Challenges that ended do not come back.`;
+      },
+    );
   }
 
   protected textValue(event: Event): string {
     return (event.target as HTMLTextAreaElement).value;
   }
 
-  private async act(action: () => Promise<string>): Promise<void> {
+  /**
+   * Sends one safety request, then changes the page with `applied`. When the handle changed while the
+   * request ran, the answer is for another profile: the new page stays as it is.
+   */
+  private async act(request: () => Promise<unknown>, applied: () => string): Promise<void> {
+    const isCurrent = this.loads.snapshot();
     this.busy.set(true);
     this.message.set(null);
+    let message: Message;
     try {
-      this.message.set({ text: await action(), error: false });
+      await request();
+      if (!isCurrent()) return;
+      message = { text: applied(), error: false };
     } catch (error: unknown) {
-      this.message.set({ text: errorMessage(error), error: true });
+      if (!isCurrent()) return;
+      message = { text: errorMessage(error), error: true };
     }
+    this.message.set(message);
     this.busy.set(false);
     this.focusSafety();
   }

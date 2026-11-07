@@ -4,7 +4,7 @@ import type { Schemas } from "@vybe/contracts";
 import { isApiError } from "../api/api-client";
 import { errorMessage } from "../api/messages";
 import { SOCIAL_API } from "../api/social-api";
-import { challengeKey, forgetChallengeKey } from "../challenges/challenge-keys";
+import { challengeKey, type CreateRequest, forgetChallengeKey } from "../challenges/challenge-keys";
 import {
   type Challenge,
   inviteToken,
@@ -18,6 +18,8 @@ import {
 } from "../challenges/challenge-view";
 import { PlayerStore } from "../player/player-store";
 import { playerName } from "../profiles/player-name";
+import { Generations } from "../challenges/generations";
+import { whenVisible } from "../challenges/when-visible";
 
 interface Row {
   challenge: Challenge;
@@ -95,6 +97,7 @@ const PAGE_SIZE = 20;
       </p>
       <div class="actions top">
         <a class="button" routerLink="/arcade/street-hoops">Play a run to challenge</a>
+        <button type="button" class="button secondary" [disabled]="refreshing()" (click)="refresh()">Refresh</button>
       </div>
 
       @if (listError(); as error) {
@@ -153,6 +156,9 @@ const PAGE_SIZE = 20;
           }
         </ul>
         @if (nextCursor()) {
+          @if (moreError(); as error) {
+            <p class="error" role="alert">{{ error }}</p>
+          }
           <button type="button" class="button secondary" [disabled]="loadingMore()" (click)="loadMore()">Show more</button>
         }
       }
@@ -198,9 +204,11 @@ export class Challenges {
   protected readonly nextCursor = signal<string | null>(null);
   protected readonly listError = signal<string | null>(null);
   protected readonly loadingMore = signal(false);
+  protected readonly moreError = signal<string | null>(null);
+  protected readonly refreshing = signal(false);
   private createKey: string | null = null;
-  /** Only the newest request may change the page (the query can change while one runs). */
-  private generation = 0;
+  /** Only the newest request may change the page (the query can change, or a refresh starts, while one runs). */
+  private readonly loads = new Generations();
 
   protected readonly rows = computed((): Row[] | null => {
     const list = this.challenges();
@@ -234,35 +242,44 @@ export class Challenges {
       this.rematchOf();
       this.to();
       untracked(() => {
-        this.generation++;
         this.createState.set(null);
         this.copyStatus.set("");
         this.createKey = null;
         void (sessionId === undefined ? this.load() : this.create());
       });
     });
+    // Open and accepted challenges change through the other player: read them again when the tab is back.
+    whenVisible(() => this.refresh());
+  }
+
+  protected async refresh(): Promise<void> {
+    if (this.createState()?.kind === "creating" || this.refreshing()) return;
+    this.refreshing.set(true);
+    await this.load();
+    this.refreshing.set(false);
   }
 
   protected async create(): Promise<void> {
     const sessionId = this.session();
     if (sessionId === undefined) return;
-    const generation = this.generation;
-    const key = (this.createKey ??= challengeKey(sessionId));
-    this.createState.set({ kind: "creating" });
+    const isCurrent = this.loads.next();
     const rematchOf = this.rematchOf();
     const to = this.to();
+    const request: CreateRequest = { sessionId, ...(rematchOf === undefined ? {} : { rematchOf }), ...(to === undefined ? {} : { to }) };
+    const key = (this.createKey ??= challengeKey(request));
+    this.createState.set({ kind: "creating" });
     try {
       const created =
         rematchOf === undefined
           ? await this.social.createChallenge({ creatorSessionId: sessionId, ...(to === undefined ? {} : { recipientHandle: to }) }, key)
           : await this.social.createRematch(rematchOf, { creatorSessionId: sessionId }, key);
-      if (generation !== this.generation) return;
+      if (!isCurrent()) return;
       this.createState.set({ kind: "created", created });
     } catch (error: unknown) {
-      if (generation !== this.generation) return;
+      if (!isCurrent()) return;
       const retry = isApiError(error) && error.retryable;
       if (!retry) {
-        forgetChallengeKey(sessionId);
+        forgetChallengeKey(request);
         this.createKey = null;
       }
       // The rematch is not possible, but the verified run can still start a normal challenge.
@@ -272,31 +289,38 @@ export class Challenges {
     await this.load();
   }
 
+  /** The first page again; it replaces the list and makes a running "Show more" stale. */
   protected async load(): Promise<void> {
-    const generation = this.generation;
+    const isCurrent = this.loads.next();
     this.listError.set(null);
+    this.moreError.set(null);
     try {
       const page = await this.social.listMyChallenges({ limit: PAGE_SIZE });
-      if (generation !== this.generation) return;
+      if (!isCurrent()) return;
       this.challenges.set(page.items);
       this.nextCursor.set(page.nextCursor);
     } catch (error: unknown) {
-      if (generation === this.generation) this.listError.set(errorMessage(error));
+      if (isCurrent()) this.listError.set(errorMessage(error));
     }
+    if (isCurrent()) this.loadingMore.set(false);
   }
 
   protected async loadMore(): Promise<void> {
     const cursor = this.nextCursor();
     if (cursor === null) return;
+    const isCurrent = this.loads.snapshot();
     this.loadingMore.set(true);
+    this.moreError.set(null);
     try {
       const page = await this.social.listMyChallenges({ cursor, limit: PAGE_SIZE });
+      if (!isCurrent()) return;
       this.challenges.update((list) => [...(list ?? []), ...page.items]);
       this.nextCursor.set(page.nextCursor);
     } catch (error: unknown) {
-      this.listError.set(errorMessage(error));
+      // The list stays; the error shows next to "Show more".
+      if (isCurrent()) this.moreError.set(errorMessage(error));
     }
-    this.loadingMore.set(false);
+    if (isCurrent()) this.loadingMore.set(false);
   }
 
   protected async copy(url: string): Promise<void> {

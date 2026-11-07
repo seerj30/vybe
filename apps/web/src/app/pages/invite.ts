@@ -8,6 +8,8 @@ import { SOCIAL_API } from "../api/social-api";
 import { type Challenge, OUTCOME_LABELS, outcomeFor, shortTime, sideOf } from "../challenges/challenge-view";
 import { PlayerStore } from "../player/player-store";
 import { playerName } from "../profiles/player-name";
+import { Generations } from "../challenges/generations";
+import { whenVisible } from "../challenges/when-visible";
 
 type Preview = Schemas["ChallengePreview"];
 
@@ -33,6 +35,7 @@ type View =
     <section class="page invite">
       <h1>Street Hoops challenge</h1>
       @let v = view();
+      <div class="state" #state tabindex="-1">
       @switch (v.kind) {
         @case ("loading") {
           <p class="muted" role="status">Loading the challenge…</p>
@@ -55,7 +58,7 @@ type View =
             <p class="muted">Play the same 60-second court. The higher verified score wins.</p>
           </div>
 
-          <div class="state" #state tabindex="-1">
+          <div class="detail">
           @switch (v.kind) {
             @case ("expired") {
               <p class="notice" role="status">This challenge has expired. Nobody can accept it any more.</p>
@@ -65,7 +68,10 @@ type View =
             }
             @case ("own") {
               <p class="notice" role="status">This is your challenge. Send the link to a friend; you cannot accept it yourself.</p>
-              <a class="button secondary" routerLink="/challenges">My challenges</a>
+              <div class="actions">
+                <button type="button" class="button secondary" (click)="refresh()">Refresh</button>
+                <a class="button secondary" routerLink="/challenges">My challenges</a>
+              </div>
             }
             @case ("open") {
               <p class="muted">Accept by {{ time(p.acceptDeadline) }}. You get one run for this challenge.</p>
@@ -100,13 +106,17 @@ type View =
                 <p class="notice" role="status">This challenge has expired without a result.</p>
               } @else {
                 <p class="notice" role="status">Waiting for the run of {{ c.recipient ? name(c.recipient) : "the other player" }}.</p>
-                <a class="button secondary" routerLink="/challenges">My challenges</a>
+                <div class="actions">
+                  <button type="button" class="button secondary" (click)="refresh()">Refresh</button>
+                  <a class="button secondary" routerLink="/challenges">My challenges</a>
+                </div>
               }
             }
           }
           </div>
         }
       }
+      </div>
     </section>
   `,
   styles: `
@@ -119,7 +129,7 @@ type View =
     .scores div { display: grid; }
     .scores dt { color: #aab1c8; font-size: 13px; }
     .scores dd { margin: 0; font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; }
-    .card + * { margin-top: 16px; }
+    .detail { margin-top: 16px; }
     .state:focus { outline: none; }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -140,7 +150,7 @@ export class Invite {
   /** One key per accept, reused while the outcome is unknown (spec §2 J1). */
   private acceptKey: string | null = null;
   /** Only the newest load may set the view (the token can change while one runs). */
-  private generation = 0;
+  private readonly loads = new Generations();
   private readonly injector = inject(Injector);
   private readonly stateRegion = viewChild<ElementRef<HTMLElement>>("state");
 
@@ -155,11 +165,18 @@ export class Invite {
         void this.load();
       });
     });
+    // The other player's accept or run changes this page: show it when the player comes back to the tab.
+    whenVisible(() => this.refresh());
+  }
+
+  /** Reads the challenge again without the loading state; skipped during an accept. */
+  protected refresh(): void {
+    if (!this.busy() && this.view().kind !== "loading") void this.load(true);
   }
 
   /** `quiet` keeps the current view until the new one is known (after an accept), so focus has a place. */
   protected async load(quiet = false): Promise<void> {
-    const generation = ++this.generation;
+    const isCurrent = this.loads.next();
     if (!quiet) this.view.set({ kind: "loading" });
     let view: View;
     try {
@@ -168,23 +185,28 @@ export class Invite {
     } catch (error: unknown) {
       view = isApiError(error, "challenge_unavailable", "not_found") ? { kind: "unavailable" } : { kind: "failed", message: errorMessage(error) };
     }
-    if (generation === this.generation) this.view.set(view);
+    if (isCurrent()) this.view.set(view);
   }
 
   protected async accept(signedIn: boolean): Promise<void> {
+    // The token can change while the accept runs: an old answer must not change the new page.
+    const isCurrent = this.loads.snapshot();
+    const token = this.token();
     this.busy.set(true);
     this.actionError.set(null);
     try {
       if (!signedIn) {
         await this.startGuest();
         const current = this.view();
-        if (current.kind === "open") this.view.set({ ...current, signedIn: true });
+        if (isCurrent() && current.kind === "open") this.view.set({ ...current, signedIn: true });
       }
       this.acceptKey ??= newIdempotencyKey();
-      await this.social.acceptInvite(this.token(), this.acceptKey);
+      await this.social.acceptInvite(token, this.acceptKey);
+      if (!isCurrent()) return;
       this.acceptKey = null;
       await this.load(true);
     } catch (error: unknown) {
+      if (!isCurrent()) return;
       if (!(isApiError(error) && error.retryable)) this.acceptKey = null;
       this.acceptFailed(error);
     }

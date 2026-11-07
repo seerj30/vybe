@@ -1,5 +1,5 @@
 import { expect, newPlayer, openOnlineStreetHoops, RUN_TIMEOUT, shoot, summaryValue } from "./app.ts";
-import { acceptStatus, completeAsRecipient, createChallenge, expireInvite, me, otherPlayer, tokenOf, verifiedRun } from "./social.ts";
+import { acceptStatus, completeAsRecipient, createChallenge, expireInvite, loseFirstAnswer, me, otherPlayer, tokenOf, verifiedRun } from "./social.ts";
 import { powerMeter, startRun, test } from "./street-hoops.ts";
 
 const VERIFIED = "Run verified by VYBE";
@@ -52,8 +52,8 @@ test("E04: creator challenge → share link → second player accepts → verifi
   await expect(received).toContainText(expected.recipient);
   await expect(received.getByRole("link", { name: /^Rematch/ })).toBeVisible();
 
-  // The creator sees the same result.
-  await page.goto("/challenges");
+  // The creator, still on the page of the new challenge, sees the same result after a refresh.
+  await page.getByRole("button", { name: "Refresh" }).click();
   const sent = page.getByRole("list", { name: "My challenges" }).getByRole("listitem").first();
   await expect(sent).toContainText("Finished");
   await expect(sent).toContainText(expected.creator);
@@ -144,4 +144,51 @@ test("rematch: one per participant; the run can still become a new challenge", a
   await page.getByRole("link", { name: "Send this run as a new challenge" }).click();
   await expect(page.getByRole("heading", { name: "Your challenge is ready" })).toBeVisible();
   await opponent.context().close();
+});
+
+test("a designated challenge is not available to another player; the invite page sends no Referer", async ({ page, browser }) => {
+  test.setTimeout(90_000);
+  await newPlayer(page);
+  const recipient = await otherPlayer(browser);
+  const stranger = await otherPlayer(browser);
+  const { token } = await createChallenge(page.request, (await me(recipient.request)).handle);
+
+  // The token is in the path: the document and every request from it carry no Referer (spec §11).
+  const preview = stranger.waitForRequest((request) => request.url().includes(`/api/v1/invites/${token}`));
+  await stranger.goto(`/challenge/${token}`);
+  // Without the policy, Chromium sends the page URL with the token here.
+  expect((await preview).headers()["referer"] ?? "").toBe("");
+  await expect(stranger.locator('meta[name="referrer"]')).toHaveAttribute("content", "no-referrer");
+  await expect(stranger.getByText("This challenge is not available.")).toBeVisible();
+  expect(await acceptStatus(stranger.request, token)).toEqual({ status: 404, code: "challenge_unavailable" });
+  await recipient.context().close();
+  await stranger.context().close();
+});
+
+test("a lost accept or create answer is retried with the same Idempotency-Key", async ({ page, browser }) => {
+  test.setTimeout(90_000);
+  await newPlayer(page);
+
+  // Create: the challenge exists, but the page never got the link. "Try again" replays it.
+  const creates = await loseFirstAnswer(page, "**/api/v1/challenges");
+  const run = await verifiedRun(page.request);
+  await page.goto(`/challenges?session=${run}`);
+  await expect(page.getByText(/No connection to VYBE/)).toBeVisible();
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByRole("heading", { name: "Your challenge is ready" })).toBeVisible();
+  expect(creates).toHaveLength(2);
+  expect(creates[1]).toBe(creates[0]);
+  const token = tokenOf(await page.getByRole("textbox", { name: "Invite link" }).inputValue());
+
+  // Accept: the recipient is bound, but the page never got the answer. The retry replays it.
+  const recipient = await otherPlayer(browser);
+  const accepts = await loseFirstAnswer(recipient, "**/api/v1/invites/*/accept");
+  await recipient.goto(`/challenge/${token}`);
+  await recipient.getByRole("button", { name: "Accept challenge" }).click();
+  await expect(recipient.getByText(/No connection to VYBE/)).toBeVisible();
+  await recipient.getByRole("button", { name: "Accept challenge" }).click();
+  await expect(recipient.getByRole("link", { name: "Play your challenge run" })).toBeVisible();
+  expect(accepts).toHaveLength(2);
+  expect(accepts[1]).toBe(accepts[0]);
+  await recipient.context().close();
 });

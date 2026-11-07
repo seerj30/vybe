@@ -7,8 +7,14 @@ describe("saved outfit helpers", () => {
   });
 
   it("names items and marks the ones that are not in the inventory", () => {
-    const names = new Map([["t", "Starter Tee"]]);
-    expect(itemNames(["t", "x"], names)).toBe("Starter Tee, an item you do not own");
+    const names = new Map([
+      ["t", "Starter Tee"],
+      ["b", "Starter Shorts"],
+    ]);
+    expect(itemNames(["t"], names)).toBe("Starter Tee");
+    expect(itemNames(["t", "b"], names)).toBe("Starter Tee and Starter Shorts");
+    expect(itemNames(["t", "b", "x"], names)).toBe("Starter Tee, Starter Shorts and 1 item you no longer own");
+    expect(itemNames(["x", "y"], names)).toBe("2 items you no longer own");
     expect(itemNames([], names)).toBe("no items");
   });
 });

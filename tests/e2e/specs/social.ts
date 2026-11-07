@@ -87,6 +87,23 @@ export async function completeAsRecipient(request: APIRequestContext, challenge:
   await verifiedRun(request, challenge.challengeId);
 }
 
+/**
+ * Fault injection: the server applies the first matching request, but its answer never reaches the
+ * page (spec §2 J1). Returns the Idempotency-Key of every matching request, in order.
+ */
+export async function loseFirstAnswer(page: Page, url: string): Promise<string[]> {
+  const keys: string[] = [];
+  await page.route(url, async (route) => {
+    const request = route.request();
+    if (request.method() !== "POST") return route.continue();
+    keys.push((await request.allHeaders())["idempotency-key"] ?? "");
+    if (keys.length > 1) return route.continue();
+    await route.fetch();
+    await route.abort("connectionreset");
+  });
+  return keys;
+}
+
 async function withDb<T>(work: (client: pg.Client) => Promise<T>): Promise<T> {
   const client = new pg.Client({ connectionString: DATABASE_URL });
   await client.connect();

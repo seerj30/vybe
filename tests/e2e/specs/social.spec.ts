@@ -1,5 +1,5 @@
 import { expect, newPlayer, walletBalance } from "./app.ts";
-import { completeQuest, createChallenge, me, otherPlayer, removeOwnedItem, reportCount } from "./social.ts";
+import { completeQuest, createChallenge, loseFirstAnswer, me, otherPlayer, removeOwnedItem, reportCount } from "./social.ts";
 import { test } from "./street-hoops.ts";
 
 test("quest claim: a completed daily quest pays once, then shows as claimed", async ({ page }) => {
@@ -82,7 +82,7 @@ test("saved outfit: save, wear again, and fail gracefully when an item is gone",
   await removeOwnedItem(page, "Starter Kicks");
   await page.reload();
   const outfit = page.getByRole("listitem", { name: "Starter look" });
-  await expect(outfit).toContainText("You cannot wear this outfit now: an item you do not own");
+  await expect(outfit).toContainText("You cannot wear this outfit now. Not available: 1 item you no longer own.");
   await expect(outfit.getByRole("button", { name: "Wear outfit Starter look" })).toBeDisabled();
   const outfitId = ((await (await page.request.get("/api/v1/me/outfits")).json()) as { outfits: { id: string }[] }).outfits[0]?.id;
   const avatar = (await (await page.request.get("/api/v1/me/avatar")).json()) as { revision: number };
@@ -95,4 +95,38 @@ test("saved outfit: save, wear again, and fail gracefully when an item is gone",
 
   await outfit.getByRole("button", { name: "Delete outfit Starter look" }).click();
   await expect(page.getByText("No saved outfits.")).toBeVisible();
+});
+
+test("quest claim: a lost answer is retried with the same Idempotency-Key and pays once", async ({ page }) => {
+  await newPlayer(page);
+  await completeQuest(page, "score_1500");
+  const claims = await loseFirstAnswer(page, "**/api/v1/me/quests/*/claim");
+  await page.reload();
+  const quest = page.locator('[data-quest="score_1500"]');
+  await quest.getByRole("button", { name: /^Claim/ }).click();
+  await expect(page.getByText(/No connection to VYBE/)).toBeVisible();
+  await quest.getByRole("button", { name: /^Claim/ }).click();
+  await expect(page.getByText("Quest claimed: +100 V-Coins, +60 XP.")).toBeVisible();
+  expect(claims).toHaveLength(2);
+  expect(claims[1]).toBe(claims[0]);
+  await expect(walletBalance(page)).toHaveText("100");
+});
+
+test("saved outfit: an item lost after the list loaded → Wear fails with a message and changes nothing", async ({ page }) => {
+  await newPlayer(page);
+  await page.goto("/wardrobe");
+  await page.getByRole("textbox", { name: "Outfit name" }).fill("Full kit");
+  await page.getByRole("button", { name: "Save current outfit" }).click();
+  await expect(page.getByText('Outfit "Full kit" saved.')).toBeVisible();
+  await page.getByRole("button", { name: "Take off Starter Kicks" }).click();
+  await expect(page.getByRole("button", { name: "Wear Starter Kicks" })).toBeVisible();
+
+  // The list on screen still says the outfit is valid.
+  await removeOwnedItem(page, "Starter Kicks");
+  await page.getByRole("button", { name: "Wear outfit Full kit" }).click();
+  await expect(page.getByText("Some items in this outfit are not yours any more or do not fit. Nothing changed.")).toBeVisible();
+  // The list is read again and now names the problem; what the player wears did not change.
+  await expect(page.getByRole("listitem", { name: "Full kit" })).toContainText("Not available: 1 item you no longer own.");
+  await expect(page.getByRole("button", { name: "Take off Starter Tee" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Take off Starter Kicks" })).toHaveCount(0);
 });

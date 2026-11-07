@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, input, output, signal } from "@angular/core";
+import { afterNextRender, ChangeDetectionStrategy, Component, type ElementRef, inject, Injector, input, output, signal, viewChild } from "@angular/core";
 import type { Schemas } from "@vybe/contracts";
 import { isApiError } from "../api/api-client";
 import { errorMessage } from "../api/messages";
@@ -15,10 +15,19 @@ export function outfitItemIds(equipped: Equipped): string[] {
   return ids.filter((id): id is string => id !== null);
 }
 
-/** Names of items; an item that is not in the inventory any more is "an item you do not own". */
+/**
+ * Names of items from the inventory. Items that are not in the inventory any more have no name here,
+ * so they are counted: "Starter Tee, Starter Shorts and 1 item you no longer own".
+ */
 export function itemNames(ids: readonly string[], names: ReadonlyMap<string, string>): string {
   if (ids.length === 0) return "no items";
-  return ids.map((id) => names.get(id) ?? "an item you do not own").join(", ");
+  const known = ids.flatMap((id) => {
+    const name = names.get(id);
+    return name === undefined ? [] : [name];
+  });
+  const unknown = ids.length - known.length;
+  const parts = unknown === 0 ? known : [...known, `${unknown} ${unknown === 1 ? "item" : "items"} you no longer own`];
+  return parts.length === 1 ? (parts[0] ?? "") : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
 }
 
 /**
@@ -30,7 +39,7 @@ export function itemNames(ids: readonly string[], names: ReadonlyMap<string, str
   selector: "vybe-outfits-panel",
   template: `
     <section class="outfits" aria-labelledby="outfits-title">
-      <h2 id="outfits-title">Saved outfits</h2>
+      <h2 id="outfits-title" #heading tabindex="-1">Saved outfits</h2>
       <p aria-live="polite" [class.error]="message()?.error" [class.notice]="message() && !message()?.error">{{ message()?.text }}</p>
       @if (loadError(); as error) {
         <p class="error" role="alert">Saved outfits could not load. {{ error }}</p>
@@ -46,7 +55,8 @@ export function itemNames(ids: readonly string[], names: ReadonlyMap<string, str
               <p class="muted small">{{ names(ids(outfit)) }}</p>
               @if (!outfit.valid) {
                 <p class="notice small">
-                  You cannot wear this outfit now: {{ names(outfit.invalidItemIds) }} is no longer yours or does not fit your body.
+                  You cannot wear this outfit now. Not available: {{ names(outfit.invalidItemIds) }}.
+                  An item is not available when you do not own it, it is withdrawn, or it does not fit your body.
                   Delete the outfit or save a new one.
                 </p>
               }
@@ -79,6 +89,7 @@ export function itemNames(ids: readonly string[], names: ReadonlyMap<string, str
   `,
   styles: `
     h2 { font-size: 18px; margin: 16px 0 8px; }
+    h2:focus { outline: none; }
     ul { display: grid; gap: 12px; padding: 0; margin: 0 0 12px; list-style: none; }
     h3 { margin: 0 0 4px; font-size: 16px; }
     .small { font-size: 13px; margin: 0 0 8px; }
@@ -99,12 +110,14 @@ export class OutfitsPanel {
   readonly locked = input(false);
   /** The new equipment after a successful apply. */
   readonly applied = output<Schemas["EquipmentUpdated"]>();
-  /** The avatar changed elsewhere (409): the wardrobe reloads it. */
+  /** The avatar or the inventory changed elsewhere (409, 422): the wardrobe reloads them. */
   readonly stale = output<void>();
   /** True while an outfit action runs, so the wardrobe does not equip with the same revision at the same time. */
   readonly working = output<boolean>();
 
   private readonly social = inject(SOCIAL_API);
+  private readonly injector = inject(Injector);
+  private readonly heading = viewChild<ElementRef<HTMLElement>>("heading");
   protected readonly max = MAX_OUTFITS;
   protected readonly outfits = signal<Outfit[] | null>(null);
   protected readonly loadError = signal<string | null>(null);
@@ -171,10 +184,13 @@ export class OutfitsPanel {
       this.message.set({ text: await action(), error: false });
     } catch (error: unknown) {
       this.message.set({ text: errorMessage(error), error: true });
-      if (isApiError(error, "revision_conflict")) this.stale.emit();
+      // Another tab changed the avatar, or the inventory changed: the wardrobe reads both again.
+      if (isApiError(error, "revision_conflict", "outfit_items_invalid")) this.stale.emit();
     }
     await this.load();
     this.busy.set(false);
     this.working.emit(false);
+    // A deleted outfit takes its buttons with it: focus continues at the panel heading, the message follows it.
+    afterNextRender(() => this.heading()?.nativeElement.focus(), { injector: this.injector });
   }
 }
