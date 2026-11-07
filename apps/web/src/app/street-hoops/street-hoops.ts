@@ -28,7 +28,7 @@ import { errorMessage as playerMessage } from "../api/messages";
 import { PlayerStore } from "../player/player-store";
 import { ballEndPoint, courtPoint, POWER_GUIDES, type CourtPoint } from "./court";
 import { HoopsScene } from "./hoops-scene";
-import { type OnlineRun, OnlineSessions, rejectionText, type RunOutcome } from "./online-session";
+import { isRewardEligible, noCoinsText, type OnlineRun, OnlineSessions, rejectionText, type RunOutcome } from "./online-session";
 import { aimFromFraction, chargePower, stepAim } from "./input";
 import { applyOverrides, loadRuleset, TUNABLE_KEYS, type Overrides, type RulesetFile, type TunableKey } from "./ruleset";
 import {
@@ -130,13 +130,13 @@ export class StreetHoops implements OnInit {
   protected readonly onlineError = signal<string | null>(null);
   protected readonly canRetrySubmit = signal(false);
   protected readonly rejectionText = rejectionText;
+  protected readonly noCoinsText = noCoinsText;
   /** Query parameters for `/challenges` when the last run can start a challenge (spec §2 J2), else null. */
   protected readonly challengeParams = computed((): Record<string, string> | null => {
     const outcome = this.outcome();
     const sessionId = this.verifiedSessionId();
-    const minShots = this.ruleset()?.config.minShotsForRewards;
-    if (this.challenge() !== undefined || outcome?.status !== "verified" || sessionId === null || minShots === undefined) return null;
-    if ((this.summary()?.eventCount ?? 0) < minShots) return null;
+    if (this.challenge() !== undefined || outcome?.status !== "verified" || sessionId === null) return null;
+    if (!isRewardEligible(outcome.rewards)) return null;
     const params: Record<string, string> = { session: sessionId };
     const rematchOf = this.rematchOf();
     const to = this.to();

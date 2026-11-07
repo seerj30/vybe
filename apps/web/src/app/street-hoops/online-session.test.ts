@@ -2,11 +2,11 @@ import type { Schemas } from "@vybe/contracts";
 import { describe, expect, it, vi } from "vitest";
 import fixture from "../../../../../packages/game-rules/fixtures/rulesets/street-hoops-v1.json";
 import type { ApiClient } from "../api/api-client";
-import { OnlineSessions, rejectionText, sessionOutcome } from "./online-session";
+import { isRewardEligible, noCoinsText, OnlineSessions, rejectionText, sessionOutcome } from "./online-session";
 import type { RulesetFile } from "./ruleset";
 
 const SESSION_ID = "0190a000-0000-7000-8000-000000000001";
-const REWARDS = { coins: 30, xp: 15, levelAfter: 1 };
+const REWARDS: Schemas["Rewards"] = { coins: 30, xp: 15, levelAfter: 1, noCoinsReason: null };
 
 function session(overrides: Partial<Schemas["GameSession"]>): Schemas["GameSession"] {
   return {
@@ -131,5 +131,25 @@ describe("sessionOutcome", () => {
 describe("rejectionText", () => {
   it("explains a reason in words", () => {
     expect(rejectionText("submitted_too_early")).toBe("it claimed more game time than had passed");
+  });
+});
+
+describe("noCoinsText", () => {
+  it("names each reason with the ruleset numbers", () => {
+    expect(noCoinsText("run_too_short", fixture.config)).toMatch(/^No coins: run too short\./);
+    expect(noCoinsText("score_below_minimum", fixture.config)).toMatch(/^No coins: score below 500\. Your XP and quest progress still count\./);
+    expect(noCoinsText("too_few_shots", fixture.config)).toContain("at least 5 shots");
+    expect(noCoinsText("daily_limit", fixture.config)).toContain("00:00 UTC");
+  });
+});
+
+describe("isRewardEligible", () => {
+  it("is false only for runs that are not reward-eligible", () => {
+    const rewardsWith = (noCoinsReason: Schemas["Rewards"]["noCoinsReason"]) => isRewardEligible({ ...REWARDS, coins: 0, noCoinsReason });
+    expect(rewardsWith("too_few_shots")).toBe(false);
+    expect(rewardsWith("run_too_short")).toBe(false);
+    expect(rewardsWith("score_below_minimum")).toBe(true);
+    expect(rewardsWith("daily_limit")).toBe(true);
+    expect(isRewardEligible(REWARDS)).toBe(true);
   });
 });
