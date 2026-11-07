@@ -12,6 +12,8 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: ErrorCode,
     readonly problem: Problem | null = null,
+    /** Seconds from the `Retry-After` header (429, 503), else null. */
+    readonly retryAfterSeconds: number | null = null,
   ) {
     super(problem?.title ?? code);
     this.name = "ApiError";
@@ -33,7 +35,12 @@ export interface RequestOptions {
   body?: unknown;
   idempotencyKey?: string;
   query?: Query;
+  /** Sends only the guest cookie, never the bearer token (`createGuest`, `linkAccount`). */
+  guestOnly?: boolean;
 }
+
+/** Supabase access token of the signed-in player, or null for the guest cookie path. */
+export type AccessTokenProvider = () => Promise<string | null>;
 
 export interface ApiResponse<T> {
   status: number;
@@ -45,8 +52,12 @@ export type SubmitResponse = Schemas["SubmitResult"] | Schemas["SubmitAccepted"]
 /**
  * Typed client for the VYBE API (contract: packages/contracts). The guest session is an HttpOnly
  * cookie, so every request sends same-origin credentials. Unsafe methods send the CSRF header.
+ * A signed-in player also sends the Supabase access token as a bearer token (ADR 0005).
  */
 export class ApiClient {
+  /** Set by the app (`api.ts`) to the Supabase session; the API prefers the bearer token to the cookie. */
+  accessToken: AccessTokenProvider = () => Promise.resolve(null);
+
   constructor(
     private readonly fetchFn: typeof fetch = (input, init) => fetch(input, init),
     private readonly baseUrl = "/api/v1",
@@ -54,7 +65,7 @@ export class ApiClient {
   ) {}
 
   createGuest(): Promise<Schemas["GuestCreated"]> {
-    return this.data("POST", "/guests");
+    return this.data("POST", "/guests", { guestOnly: true });
   }
 
   getMe(): Promise<Schemas["Me"]> {
@@ -115,6 +126,16 @@ export class ApiClient {
     if (UNSAFE_METHODS.has(method)) headers["X-Requested-With"] = "vybe-web";
     if (options.body !== undefined) headers["Content-Type"] = "application/json";
     if (options.idempotencyKey !== undefined) headers["Idempotency-Key"] = options.idempotencyKey;
+    if (options.guestOnly !== true) {
+      let token: string | null;
+      try {
+        token = await this.accessToken();
+      } catch (error: unknown) {
+        // No token (refresh failed, session ended): sending the guest cookie instead could act as another player.
+        throw error instanceof ApiError ? error : new ApiError(0, "network_error");
+      }
+      if (token !== null) headers["Authorization"] = `Bearer ${token}`;
+    }
 
     let response: Response;
     try {
@@ -195,8 +216,14 @@ async function problemError(response: Response): Promise<ApiError> {
   } catch {
     // Not JSON: a proxy or gateway error page.
   }
-  if (isProblem(body)) return new ApiError(response.status, body.code, body);
-  return new ApiError(response.status, response.status >= 500 ? "internal_error" : "unexpected_response");
+  const retryAfter = retryAfterSeconds(response.headers.get("Retry-After"));
+  if (isProblem(body)) return new ApiError(response.status, body.code, body, retryAfter);
+  return new ApiError(response.status, response.status >= 500 ? "internal_error" : "unexpected_response", null, retryAfter);
+}
+
+function retryAfterSeconds(header: string | null): number | null {
+  if (header === null || !/^\d{1,6}$/.test(header.trim())) return null; // the API sends delta-seconds
+  return Number(header.trim());
 }
 
 function isProblem(body: unknown): body is Problem {

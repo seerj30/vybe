@@ -20,7 +20,7 @@ export class PlayerStore {
 
   readonly me = this.meSignal.asReadonly();
 
-  /** The player, loaded once; null when there is no valid guest session. Other failures throw. */
+  /** The player, loaded once; null without a valid guest session or linked account. Other failures throw. */
   ensure(): Promise<Me | null> {
     this.loaded ??= this.load();
     return this.loaded;
@@ -29,6 +29,13 @@ export class PlayerStore {
   refresh(): Promise<Me | null> {
     this.loaded = this.load();
     return this.loaded;
+  }
+
+  /** Forgets the player (sign-out), so no screen shows the old one; the next `ensure()` loads again. */
+  clear(): void {
+    this.generation++;
+    this.loaded = null;
+    this.meSignal.set(null);
   }
 
   /** Called after `createGuest` succeeded. */
@@ -61,7 +68,8 @@ export class PlayerStore {
     try {
       me = await this.api.getMe();
     } catch (error: unknown) {
-      if (!isApiError(error, "unauthenticated")) throw error;
+      // player_not_found: a Supabase identity without a player yet; it links a guest first (J3).
+      if (!isApiError(error, "unauthenticated", "player_not_found")) throw error;
       me = null;
     }
     if (generation === this.generation) this.meSignal.set(me);

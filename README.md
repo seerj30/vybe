@@ -76,6 +76,9 @@ pnpm --filter @vybe/e2e db:up        # throwaway PostgreSQL on port 55432 with t
 pnpm --filter @vybe/e2e test:e2e
 ```
 
+The browser tests also start a fake Supabase Auth on port 5290 (`tests/e2e/fake-auth`, tests only;
+`E2E_AUTH_PORT` sets another port). It issues the tokens for sign-in, linking and admin roles.
+
 Regenerate the golden fixtures after a deliberate rules change, then review the diff:
 
 ```bash

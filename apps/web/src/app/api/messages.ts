@@ -20,6 +20,16 @@ const MESSAGES: Partial<Record<ErrorCode, string>> = {
   item_inactive: "This item cannot be worn any more.",
   item_already_equipped: "You already wear this item on the other attachment point.",
   incompatible_equipment: "Some equipped items do not fit this body. Unequip them in the wardrobe first.",
+  // Accounts, privacy and admin (stream H).
+  forbidden: "You do not have access to this.",
+  not_found: "VYBE did not find this.",
+  player_not_found: "This account has no VYBE player yet.",
+  identity_already_linked: "This account already belongs to another VYBE player. Nothing was merged.",
+  invalid_link_proof: "VYBE could not confirm this account. Confirm your email address, then sign in again.",
+  auth_unavailable: "The sign-in service does not answer right now. Your guest progress is safe. Try again in a moment.",
+  export_in_progress: "Your data export is still being prepared.",
+  reauthentication_required: "Sign in again to confirm that it is you.",
+  idempotency_key_mismatch: "This request was already used for another action. Start again.",
   // Challenges, quests, safety and saved outfits (stream G).
   challenge_unavailable: "This challenge is not available.",
   challenge_expired: "This challenge has expired.",

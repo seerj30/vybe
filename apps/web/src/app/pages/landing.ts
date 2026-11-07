@@ -1,14 +1,16 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from "@angular/core";
-import { RouterLink } from "@angular/router";
+import { ChangeDetectionStrategy, Component, effect, inject, signal } from "@angular/core";
+import { Router, RouterLink } from "@angular/router";
 import { errorMessage } from "../api/messages";
+import { AccountLinkPanel, type LinkDone } from "../auth/account-link-panel";
+import { AuthSession } from "../auth/auth-session";
 import { type Me, PlayerStore } from "../player/player-store";
 
 type State = { kind: "loading" } | { kind: "player"; me: Me } | { kind: "new" } | { kind: "unavailable"; message: string };
 
-/** `/` (spec §3): start as guest or continue; `loading` and `unavailable` states. */
+/** `/` (spec §3): start as guest, continue, or sign in (J3 links the guest); `loading` and `unavailable` states. */
 @Component({
   selector: "vybe-landing",
-  imports: [RouterLink],
+  imports: [RouterLink, AccountLinkPanel],
   template: `
     <section class="page landing">
       <h1>VYBE</h1>
@@ -32,7 +34,23 @@ type State = { kind: "loading" } | { kind: "player"; me: Me } | { kind: "new" } 
               <a class="button" routerLink="/play">Start as guest</a>
             }
             <a class="button secondary" routerLink="/practice">Practice Street Hoops</a>
+            @if (canSignIn() && !signingIn() && !auth.linkFailed()) {
+              <button type="button" class="button secondary" (click)="signingIn.set(true)">Sign in</button>
+            }
           </div>
+          @if (auth.linkFailed()) {
+            <p class="notice" role="alert">
+              This sign-in link works only in the browser tab where you created the account. Your email address is
+              confirmed: sign in with your password, or open the link in that tab.
+            </p>
+          }
+          @if (signingIn() || (auth.status() === "signed-in" && me() === null)) {
+            <section class="card sign-in" aria-labelledby="sign-in-title">
+              <h2 id="sign-in-title">Sign in to VYBE</h2>
+              <p class="muted">Sign in or create an account. A guest in this browser keeps its progress when it links.</p>
+              <vybe-account-link (done)="continue($event)" />
+            </section>
+          }
         }
       }
     </section>
@@ -42,20 +60,38 @@ type State = { kind: "loading" } | { kind: "player"; me: Me } | { kind: "new" } 
     h1 { font-size: clamp(48px, 12vw, 96px); letter-spacing: 0.1em; margin: 0; }
     .tagline { font-size: 18px; color: #c8cde0; }
     .actions { justify-content: center; }
+    .sign-in { max-width: 480px; margin: 24px auto 0; text-align: left; }
+    .sign-in h2 { margin-top: 0; }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class Landing {
   private readonly player = inject(PlayerStore);
+  private readonly router = inject(Router);
+  protected readonly auth = inject(AuthSession);
   protected readonly state = signal<State>({ kind: "loading" });
+  protected readonly signingIn = signal(false);
 
   constructor() {
+    // An email link that this tab cannot use: open the sign-in form, and keep it open after the sign-in.
+    effect(() => {
+      if (this.auth.linkFailed()) this.signingIn.set(true);
+    });
     void this.load();
   }
 
   protected me(): Me | null {
     const state = this.state();
     return state.kind === "player" ? state.me : null;
+  }
+
+  /** A signed-in player has nothing to sign in to; everyone else may sign in or link. */
+  protected canSignIn(): boolean {
+    return this.auth.status() !== "off" && this.me()?.kind !== "registered";
+  }
+
+  protected async continue(done: LinkDone): Promise<void> {
+    await this.router.navigateByUrl(done.isNew ? "/avatar/create?welcome=1" : "/hub");
   }
 
   protected message(): string {

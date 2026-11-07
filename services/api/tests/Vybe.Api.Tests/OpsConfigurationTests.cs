@@ -50,6 +50,10 @@ public sealed class OpsConfigurationTests
     [InlineData("Storage:Exports:ServiceUrl", "ftp://storage.example")]
     [InlineData("Storage:Exports:ServiceUrl", "http://storage.example")]
     [InlineData("Storage:Exports:SecretAccessKey", "")]
+    [InlineData("Auth:Supabase:Authority", "http://ref.supabase.co/auth/v1")]
+    [InlineData("Auth:Supabase:MetadataAddress", "http://ref.supabase.co/auth/v1/.well-known/openid-configuration")]
+    [InlineData("Auth:Supabase:Issuer", "http://ref.supabase.co/auth/v1")]
+    [InlineData("Auth:Supabase:Authority", "ref.supabase.co/auth/v1")]
     [InlineData("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector.example:4318")]
     [InlineData("OTEL_EXPORTER_OTLP_ENDPOINT", "not a url")]
     public void InvalidValue_IsAProblem(string key, string value)
