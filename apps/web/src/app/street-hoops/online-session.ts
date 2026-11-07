@@ -1,5 +1,5 @@
 import type { Schemas } from "@vybe/contracts";
-import type { ShotEvent } from "@vybe/game-rules";
+import type { ShotEvent, StreetHoopsConfig } from "@vybe/game-rules";
 import { type ApiClient, newIdempotencyKey } from "../api/api-client";
 import { type RulesetFile, verifyRuleset } from "./ruleset";
 
@@ -111,4 +111,23 @@ const REJECTION_TEXT: Record<Schemas["RejectionReason"], string> = {
 
 export function rejectionText(reason: Schemas["RejectionReason"]): string {
   return REJECTION_TEXT[reason];
+}
+
+/** Why a verified run earned no V-Coins (spec v1.4 §7); the numbers come from the run's ruleset. */
+export function noCoinsText(reason: Schemas["NoCoinsReason"], config: StreetHoopsConfig): string {
+  switch (reason) {
+    case "too_few_shots":
+      return `No coins: too few shots. Take at least ${config.minShotsForRewards} shots to earn V-Coins, XP and quest progress.`;
+    case "run_too_short":
+      return "No coins: run too short. Play the full run to earn V-Coins, XP and quest progress.";
+    case "score_below_minimum":
+      return `No coins: score below ${config.minScoreForCoins}. Your XP and quest progress still count.`;
+    case "daily_limit":
+      return "No coins: you reached today's limit of rewarded runs. The limit resets at 00:00 UTC.";
+  }
+}
+
+/** A verified run can start a challenge only when it is reward-eligible (spec v1.4 §7). */
+export function isRewardEligible(rewards: Schemas["Rewards"]): boolean {
+  return rewards.noCoinsReason !== "too_few_shots" && rewards.noCoinsReason !== "run_too_short";
 }

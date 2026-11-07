@@ -1,5 +1,6 @@
 import type { APIResponse } from "@playwright/test";
 import { expect, newPlayer, openOnlineStreetHoops, RUN_TIMEOUT, shoot, summaryValue, walletBalance } from "./app.ts";
+import { backdateRunStart, rewriteShots } from "./shots.ts";
 import { startRun, test } from "./street-hoops.ts";
 
 const VERIFIED = "Run verified by VYBE";
@@ -19,6 +20,7 @@ async function ledgerReasons(response: APIResponse): Promise<string[]> {
 test("E01: guest → avatar → tutorial → verified game → wallet", async ({ page }) => {
   test.setTimeout(150_000);
   await newPlayer(page);
+  await rewriteShots(page, "aimed"); // a skilled player: score ≥ 500, so the run earns coins
   await page.getByRole("link", { name: "Play Street Hoops" }).click();
   // The overlay is the tutorial: it explains aim and shoot before the first run.
   await expect(page.getByText(/Aim: move the pointer or finger/)).toBeVisible();
@@ -50,6 +52,7 @@ test("E05: a lost submit response, retried, and duplicate submits pay the reward
     expect(response.status()).toBe(200);
     await route.abort("connectionreset");
   });
+  await rewriteShots(page, "aimed"); // runs before the handler above; score ≥ 500, so the run earns coins
 
   await openOnlineStreetHoops(page);
   await startRun(page);
@@ -97,7 +100,7 @@ test("a trace that claims more game time than has passed is rejected and pays no
   await expect(walletBalance(page)).toHaveText("0");
 });
 
-test("a short run is verified without rewards and says why", async ({ page }) => {
+test("a run with too few shots is verified without rewards and says why", async ({ page }) => {
   await newPlayer(page);
   await page.clock.install();
   await openOnlineStreetHoops(page);
@@ -106,8 +109,47 @@ test("a short run is verified without rewards and says why", async ({ page }) =>
   await page.clock.fastForward("01:01");
 
   await expect(page.getByText(VERIFIED)).toBeVisible();
-  await expect(page.getByText(/No rewards for this run: take at least 5 shots/)).toBeVisible();
+  await expect(page.getByText(/^No coins: too few shots\. Take at least 5 shots/)).toBeVisible();
   expect(await summaryValue(page, "V-Coins")).toBe(0);
+});
+
+test("a run that ends before 58 s of real time is verified without rewards and says why", async ({ page }) => {
+  await newPlayer(page);
+  await rewriteShots(page, "aimed"); // a high score does not help: the run is too short
+  // Only the page clock jumps: the run ends on the client after a few seconds of real time.
+  await page.clock.install();
+  await openOnlineStreetHoops(page);
+  await startRun(page);
+  await shoot(page, 5);
+  await page.clock.fastForward("01:01");
+
+  await expect(page.getByText(VERIFIED)).toBeVisible();
+  await expect(page.getByText("No coins: run too short. Play the full run to earn V-Coins, XP and quest progress.")).toBeVisible();
+  expect(await summaryValue(page, "V-Coins")).toBe(0);
+  expect(await summaryValue(page, "XP")).toBe(0);
+  await expect(page.getByRole("link", { name: "Challenge a friend with this run" })).toHaveCount(0);
+});
+
+test("a full-length run below 500 points earns XP but no coins and says why", async ({ page }) => {
+  await newPlayer(page);
+  await rewriteShots(page, "missed");
+  await page.clock.install();
+  await openOnlineStreetHoops(page);
+  const started = page.waitForResponse((r) => /\/api\/v1\/games\/sessions\/[^/]+\/start$/.test(new URL(r.url()).pathname));
+  await startRun(page);
+  const sessionId = /sessions\/([^/]+)\/start$/.exec((await started).url())?.[1] ?? "";
+  // Test data: the server sees a full-length run without 60 s of waiting (the production check is unchanged).
+  await backdateRunStart(sessionId, 60_000);
+  await shoot(page, 5);
+  await page.clock.fastForward("01:01");
+
+  await expect(page.getByText(VERIFIED)).toBeVisible();
+  await expect(page.getByText("No coins: score below 500. Your XP and quest progress still count.")).toBeVisible();
+  expect(await summaryValue(page, "Score")).toBe(0);
+  expect(await summaryValue(page, "V-Coins")).toBe(0);
+  expect(await summaryValue(page, "XP")).toBeGreaterThan(0);
+  // A reward-eligible run can start a challenge, whatever its coin tier.
+  await expect(page.getByRole("link", { name: "Challenge a friend with this run" })).toBeVisible();
 });
 
 test("a failed session start shows the reason, and Start works again", async ({ page }) => {

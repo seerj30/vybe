@@ -39,7 +39,7 @@ branch and opens PRs. The orchestrator session reviews, tests and merges them.
 | Privacy policy and age policy | Signed 2026-11-07 (decisions 1, 6, 8; spec v1.4). Code: stream J. Open: counsel country list and final notice |
 | Hosting, deployment, production secrets | Signed 2026-11-07 (decision 7: Supabase Pro + always-on container). Container host: Fly.io (stream K prepares the config). Open: region, accounts and secrets (people), then deploy with `docs/runbooks/deploy-and-rollback.md` |
 | 3D avatar art | Signed 2026-11-07 (decision 3: contractor work-for-hire). Open: contract and production (people); the 2D fallback is in use |
-| Low-effort run fix, review flags, catalog prices (decisions 4, 5) | Signed 2026-11-07. Code: stream I |
+| Low-effort run fix, review flags, catalog prices (decisions 4, 5) | Signed 2026-11-07. Code: stream I. Open: the catalog has 7 priced items (5 common, 2 rare, 0 epic); 23 more priced items (with epics) are necessary to reach 30 at beta. They need art (decision 3) |
 | Guest lifetime, age gate, profile visibility, Auth user deletion (decisions 1, 2, 6, 8) | Signed 2026-11-07. Code: stream J |
 
 ## Streams

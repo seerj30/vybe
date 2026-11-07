@@ -72,8 +72,9 @@ public sealed class HardeningTests(ApiFactory api)
     public async Task SameKeyConcurrentPurchase_ExecutesOnce()
     {
         var player = await Player.CreateGuestAsync(api);
-        await player.PlayPerfectRunAsync(); // 150 coins
-        var emote = await player.CatalogItemIdAsync("acc_sweatband"); // 100 coins; one run pays 150
+        await player.PlayPerfectRunAsync();
+        await player.PlayPerfectRunAsync(); // 2 × 150 coins + level 2 bonus 100
+        var emote = await player.CatalogItemIdAsync("acc_sweatband"); // 300 coins
         var key = Guid.NewGuid();
 
         var responses = await Task.WhenAll(player.PurchaseAsync(emote, key), player.PurchaseAsync(emote, key));
@@ -96,7 +97,8 @@ public sealed class HardeningTests(ApiFactory api)
     {
         var player = await Player.CreateGuestAsync(api);
         await player.PlayPerfectRunAsync();
-        var emote = await player.CatalogItemIdAsync("acc_sweatband"); // 100 coins; one run pays 150
+        await player.PlayPerfectRunAsync(); // 2 × 150 coins + level 2 bonus 100
+        var emote = await player.CatalogItemIdAsync("acc_sweatband"); // 300 coins
         var key = Guid.NewGuid();
         var body = $"{{\"itemId\":\"{emote}\"}}";
 

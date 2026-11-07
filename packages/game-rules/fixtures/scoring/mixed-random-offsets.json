@@ -89,7 +89,9 @@
       "streakMax": 100,
       "minGapMs": 650,
       "maxEvents": 93,
-      "minShotsForRewards": 5
+      "minShotsForRewards": 5,
+      "minRunMsForRewards": 58000,
+      "minScoreForCoins": 500
     },
     "rulesetId": "street-hoops-v1",
     "seed": 99,

@@ -18,7 +18,8 @@ public sealed record SessionCreated(Guid SessionId, string Status, string Rulese
 
 public sealed record SessionStarted(long Seed, DateTime StartedAt, DateTime SubmitDeadline);
 
-public sealed record RewardsResponse(long Coins, int Xp, int LevelAfter);
+/// <summary>Run rewards; <paramref name="NoCoinsReason"/> says why <paramref name="Coins"/> is 0 (null when coins were earned).</summary>
+public sealed record RewardsResponse(long Coins, int Xp, int LevelAfter, NoCoinsReason? NoCoinsReason);
 
 public sealed record GameSessionResponse(
     Guid SessionId, string GameId, string RulesetId, GameSessionStatus Status, Guid? ChallengeId, DateTime CreatedAt,
@@ -279,8 +280,16 @@ public static class GameplayEndpoints
                 return await FinishRejectedAsync(db, session, now, Map(result.Reason!.Value), eventsJson, shots.Count, cancellationToken);
         }
 
-        var rewards = await RewardService.GrantForRunAsync(db, session, config, result.Score!.Value, shots.Count, result.MaxStreak ?? 0, now,
-            cancellationToken);
+        var (rewards, runNumber) = await RewardService.GrantForRunAsync(
+            db, session, config, result.Score!.Value, shots.Count, result.MaxStreak ?? 0, now, cancellationToken);
+        var flags = ReviewFlags.ForRun(result.Shots!);
+        if (runNumber is { } n
+            && await ReviewFlags.IsDailyCapStreakAsync(db, playerId, DateOnly.FromDateTime(session.StartedAt!.Value), n, cancellationToken))
+        {
+            flags.Add(ReviewFlags.DailyCapStreak);
+        }
+
+        session.ReviewFlags = [.. flags];
         session.Status = GameSessionStatus.Verified;
         session.SubmittedAt = now;
         session.VerifiedAt = now;
@@ -321,8 +330,9 @@ public static class GameplayEndpoints
                 sessionId = session.Id,
                 status = "verified",
                 score = session.Score,
-                rewards = new RewardsResponse(session.RewardCoins, session.RewardXp,
-                    await db.Players.Where(p => p.Id == session.PlayerId).Select(p => p.Level).SingleAsync(cancellationToken)),
+                rewards = await StoredRewardsAsync(db, session,
+                    await db.Players.Where(p => p.Id == session.PlayerId).Select(p => p.Level).SingleAsync(cancellationToken),
+                    cancellationToken),
             }),
             GameSessionStatus.Rejected => new OperationResult(200, new
             {
@@ -340,9 +350,23 @@ public static class GameplayEndpoints
         var s = await db.GameSessions.AsNoTracking().SingleOrDefaultAsync(x => x.Id == sessionId && x.PlayerId == playerId, cancellationToken)
             ?? throw Problem.Of(404, "not_found");
         var level = await db.Players.Where(p => p.Id == playerId).Select(p => p.Level).SingleAsync(cancellationToken);
-        var rewards = s.Status == GameSessionStatus.Verified ? new RewardsResponse(s.RewardCoins, s.RewardXp, level) : null;
+        var rewards = s.Status == GameSessionStatus.Verified ? await StoredRewardsAsync(db, s, level, cancellationToken) : null;
         return new GameSessionResponse(s.Id, s.GameId, s.RulesetId, s.Status, s.ChallengeId, s.CreatedAt, s.StartDeadline,
             s.StartedAt, s.SubmitDeadline, s.Score, rewards, s.RejectionReason);
+    }
+
+    /// <summary>Rewards of a stored verified session; the no-coins reason is derived from the stored run (no extra column).</summary>
+    private static async Task<RewardsResponse> StoredRewardsAsync(VybeDbContext db, GameSession session, int level, CancellationToken cancellationToken)
+    {
+        NoCoinsReason? noCoins = null;
+        if (session.RewardCoins == 0)
+        {
+            var config = RulesetConfig.Parse(await RulesetJsonAsync(db, session.RulesetId, cancellationToken));
+            noCoins = Rewards.NoCoins(config, session.RewardCoins, session.Score ?? 0, session.EventCount ?? 0,
+                session.StartedAt!.Value, session.SubmittedAt!.Value);
+        }
+
+        return new RewardsResponse(session.RewardCoins, session.RewardXp, level, noCoins);
     }
 
     private static async Task<string> RulesetJsonAsync(VybeDbContext db, string rulesetId, CancellationToken cancellationToken) =>

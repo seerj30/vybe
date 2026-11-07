@@ -106,8 +106,11 @@ server's ruleset.
 
 ## Challenges (spec §2 J2)
 
-1. After a verified online run with at least `minShotsForRewards` shots, the gameplay screen shows
+1. After a reward-eligible online run (verified, at least `minShotsForRewards` shots, at least
+   `minRunMsForRewards` of real time; spec v1.4 §7), the gameplay screen shows
    "Challenge a friend with this run". It opens `/challenges?session={sessionId}`.
+   When a verified run earns no V-Coins, the result names the reason from `rewards.noCoinsReason`
+   (too few shots, run too short, score below `minScoreForCoins`, daily limit).
 2. `/challenges` creates the challenge. The `Idempotency-Key` is kept per request body (run,
    recipient, rematch) in `sessionStorage`, so a reload or retry gets the same share link (ADR 0004 #2).
    A known failure forgets the key. The page shows the link to copy.
