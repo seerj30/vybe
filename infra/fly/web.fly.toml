@@ -2,7 +2,7 @@
 # Image: infra/web/Dockerfile, built by .github/workflows/deploy.yml. Runbook: docs/runbooks/deploy-and-rollback.md.
 #
 # Before the first deploy, people set (in a PR):
-#   app            the web app name, if "vybe-web" is taken
+#   app            the web app name ("vybe-web" was taken on Fly.io)
 #   primary_region the same region as infra/fly/api.fly.toml (the Supabase region). Not decided here.
 #   VYBE_API_HOST  <api app name>.internal
 #
@@ -10,7 +10,7 @@
 #   VYBE_SUPABASE_URL, VYBE_SUPABASE_ANON_KEY. Both are public values (the publishable key), not secrets; the
 #   container writes /runtime-config.json from them at start-up. Without both, sign-in is off (guest-only).
 
-app = "vybe-web"
+app = "vybe-prod-web"
 primary_region = "fra"
 # Caddy completes running requests on SIGTERM (graceful shutdown), then exits.
 kill_signal = "SIGTERM"
@@ -21,7 +21,7 @@ kill_timeout = "35s"
 
 [env]
   # The API machines over the private network (6PN). Caddy resolves the AAAA records again every 5 s.
-  VYBE_API_HOST = "vybe-api.internal"
+  VYBE_API_HOST = "vybe-prod-api.internal"
   VYBE_API_PORT = "8080"
 
 [http_service]

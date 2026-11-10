@@ -22,13 +22,13 @@ files prepare everything else.
 
 ## Decision
 
-1. **Two Fly apps in a dedicated organization.** `vybe-web` is public: Caddy serves the Angular build and
+1. **Two Fly apps in a dedicated organization** (`vybe-prod`; the apps are `vybe-prod-web` and `vybe-prod-api`, because `vybe-web` and `vybe-api` were taken). `vybe-prod-web` is public: Caddy serves the Angular build and
    proxies `/api` and `/api/*`. `vybe-api` has **no public IP**: the workflow deploys it with
    `--no-public-ips`, then fails when `fly ips list` shows any address that is not private or when
    `https://<api app>.fly.dev` answers. Only the web app reaches it, over the private network (6PN) at
-   `vybe-api.internal:8080`. The Fly organization holds only these two apps, because every machine of an
+   `vybe-prod-api.internal:8080`. The Fly organization holds only these two apps, because every machine of an
    organization shares its private network.
-2. **Direct 6PN, not Flycast.** Caddy resolves the AAAA records of `vybe-api.internal` every 5 s and
+2. **Direct 6PN, not Flycast.** Caddy resolves the AAAA records of `vybe-prod-api.internal` every 5 s and
    spreads requests over the machines. Then the API's peer is always a Caddy machine, and Caddy sends one
    `X-Forwarded-For` value. With Flycast, the Fly proxy would be one more hop with an address that Fly
    does not document, and `ForwardLimit = 1` would read the wrong value. Caddy runs no active health checks
