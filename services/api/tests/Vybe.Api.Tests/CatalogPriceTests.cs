@@ -24,4 +24,21 @@ public sealed class CatalogPriceTests
         });
         Assert.All(catalog.Items.Where(i => i.Starter), item => Assert.Equal(0, item.Price));
     }
+
+    /// <summary>Spec v1.4 §8: at least 30 priced items at beta; the 3D asset fields of §9 do not break the loader.</summary>
+    [Fact]
+    public void Catalog_HasTheBetaItemCount_AndKeepsTheVersion1Skus()
+    {
+        var catalog = new ContentCatalog(new ContentOptions { Root = ApiFactory.RepoRoot }).Catalog;
+
+        Assert.True(catalog.CatalogVersion >= 2, $"catalog version {catalog.CatalogVersion}");
+        Assert.True(catalog.Items.Count(i => !i.Starter) >= 30, "fewer than 30 priced items");
+        Assert.Equal(catalog.Items.Length, catalog.Items.Select(i => i.Sku).Distinct(StringComparer.Ordinal).Count());
+        string[] version1 =
+        [
+            "top_starter_tee", "bottom_starter_shorts", "shoes_starter_kicks", "top_court_jersey", "top_neon_hoodie",
+            "hair_high_top", "shoes_gold_high", "acc_sweatband", "acc_chain", "emote_swish",
+        ];
+        Assert.All(version1, sku => Assert.Contains(catalog.Items, i => i.Sku == sku));
+    }
 }

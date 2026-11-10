@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Vybe.Api.Content;
 using Vybe.Data;
 using Vybe.Data.Entities;
 
@@ -111,7 +112,8 @@ public sealed class EconomyTests(ApiFactory api)
         }
         while (cursor is not null);
 
-        Assert.Equal(7, seen.Count); // 10 catalog items minus 3 free starters
+        var priced = new ContentCatalog(new ContentOptions { Root = ApiFactory.RepoRoot }).Catalog.Items.Count(i => !i.Starter);
+        Assert.Equal(priced, seen.Count); // every catalog item except the free starters
         Assert.Equal(seen.Count, seen.Distinct().Count());
         await Contract.AssertProblemAsync(
             await anonymous.GetAsync("/api/v1/catalog/items?slot=cape"), HttpStatusCode.UnprocessableEntity, "validation_failed");
