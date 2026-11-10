@@ -22,7 +22,7 @@ logs without request paths, deploys of reviewed commits by digest.
 ## Decision
 
 1. **One VM, Docker Compose, two containers.** `VM.Standard.A1.Flex` (2 OCPU, 12 GB, within the free limit),
-   Ubuntu 24.04 aarch64, home region `eu-frankfurt-1` (Supabase is in `eu-central-1`). `infra/oracle/compose.yml`
+   Ubuntu 24.04 or 26.04 LTS aarch64 (production: 26.04 since 2026-11-10), home region `eu-frankfurt-1` (Supabase is in `eu-central-1`). `infra/oracle/compose.yml`
    runs `api` (no published port) and `web` (the existing web image, ports 80 and 443). Both: read-only root,
    `tmpfs` at `/tmp`, all capabilities dropped, `no-new-privileges`, `init`, `restart: unless-stopped`, memory,
    CPU and PID limits (API 2 GB / 1.5 CPU; web 512 MB / 0.5 CPU), 35 s stop grace.

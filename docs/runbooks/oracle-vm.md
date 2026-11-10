@@ -112,7 +112,8 @@ Do the steps in this order. Keep each value in the password manager.
    record), the GitHub variables and the host key line all use this IP; a reserved IP stays when you replace the
    VM. Check on the price list that it costs nothing in your account (the budget alert also tells you).
 5. **VM.** Compute → Instances → Create instance:
-   - Image: Canonical **Ubuntu 24.04** (aarch64; the "Minimal" image is also good).
+   - Image: Canonical **Ubuntu 26.04** or **24.04** LTS (aarch64; the "Minimal" image is also good). Production runs
+     26.04 since 2026-11-10.
    - Shape: **VM.Standard.A1.Flex** (Ampere), **2 OCPU, 12 GB** memory. The Always Free limit is 4 OCPU and
      24 GB in total, so a second VM of the same size for a drill or staging is also free.
    - Boot volume: 50 GB (the free total is 200 GB).
@@ -290,6 +291,11 @@ Log rotation: Docker's `local` log driver keeps at most 5 × 20 MB per container
 `df -h /` and `sudo docker system df`.
 
 ## OS and Docker updates
+
+**Release upgrades** (for example 24.04 → 26.04) are never automatic: `bootstrap.sh` sets `Prompt=never`, so the login
+message does not offer `do-release-upgrade`. Do one only as a planned change: back up, run it in `screen`, reboot,
+run `bootstrap.sh` again (it accepts 24.04 and 26.04 and switches the Docker repository to the new release), then
+deploy. On 2026-11-10 an unplanned upgrade from the login offer moved production to 26.04 between two deploy steps.
 
 - Security updates install every day (unattended-upgrades). A reboot, when necessary, happens at 04:30 UTC;
   the containers start again by themselves (about one minute without service).
