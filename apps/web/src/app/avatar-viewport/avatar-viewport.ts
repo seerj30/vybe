@@ -10,6 +10,7 @@ import {
   inject,
   input,
   signal,
+  untracked,
   viewChild,
 } from "@angular/core";
 import { AVATAR_3D, itemAsset } from "../avatar/asset-manifest";
@@ -114,7 +115,10 @@ export class AvatarViewport {
 
   private readonly canvas = viewChild.required<ElementRef<HTMLCanvasElement>>("canvas");
   protected readonly mode = signal<Mode>("loading");
-  protected readonly stats = signal<RenderStats | null>(null);
+  // Equal numbers are not a change: the idle loop renders every frame.
+  protected readonly stats = signal<RenderStats | null>(null, {
+    equal: (a, b) => a?.triangles === b?.triangles && a?.drawCalls === b?.drawCalls,
+  });
   protected readonly playing = signal(false);
   protected readonly lostWithoutRestore = signal(false);
   /** A lost WebGL context cannot be replaced on the same canvas: a restart renders a new one. */
@@ -129,7 +133,11 @@ export class AvatarViewport {
   private lostTimer: ReturnType<typeof setTimeout> | undefined;
   private destroyed = false;
 
-  protected readonly look = computed((): Look => resolveLook(this.presets(), fallbackOutfit(this.outfit(), this.failed())));
+  protected readonly look = computed((): Look => resolveLook(this.presets(), fallbackOutfit(this.outfit(), this.failed())), {
+    equal: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+  });
+  private autoPlayed: string | null = null;
+  private emoteRun = 0;
   protected readonly shownItems = computed(() => this.shown().join(" "));
   protected readonly emoteName = computed(() => {
     const sku = this.emote();
@@ -153,11 +161,17 @@ export class AvatarViewport {
     afterNextRender(() => void this.mount());
     effect(() => {
       const look = this.look();
-      if (this.renderer !== null && this.mode() !== "fallback") void this.show(look);
+      untracked(() => {
+        if (this.renderer !== null && this.mode() !== "fallback") void this.show(look);
+      });
     });
+    // A new emote preview plays once by itself (not with reduced motion); the button plays it again.
     effect(() => {
       const sku = this.emote();
-      if (sku !== null && !this.reducedMotion && this.mode() === "3d") void this.playEmote();
+      const ready = this.mode() === "3d";
+      if (sku === null || !ready || this.reducedMotion || sku === this.autoPlayed) return;
+      this.autoPlayed = sku;
+      untracked(() => void this.playEmote());
     });
     inject(DestroyRef).onDestroy(() => {
       this.destroyed = true;
@@ -189,11 +203,14 @@ export class AvatarViewport {
 
   protected async playEmote(): Promise<void> {
     const url = itemAsset(this.emote() ?? "")?.assetUrl;
-    if (url === undefined || this.renderer === null || this.playing()) return;
+    if (url === undefined || this.renderer === null) return;
+    const run = ++this.emoteRun;
     this.playing.set(true);
-    const ok = await this.renderer.playEmote(url);
+    const result = await this.renderer.playEmote(url);
+    // A newer emote (another preview) replaced this one: it owns the state now.
+    if (run !== this.emoteRun || this.destroyed) return;
     this.playing.set(false);
-    if (!ok && !this.destroyed) this.problem.set("items");
+    if (result === "failed") this.problem.set("items");
   }
 
   /** After a context loss without a restore: a new renderer and canvas state (spec §10 reloadable scene). */
@@ -201,6 +218,7 @@ export class AvatarViewport {
     this.lostWithoutRestore.set(false);
     this.unmount();
     this.problem.set(null);
+    this.failed.set(new Set());
     this.canvasKey.update((key) => key + 1);
     this.mode.set("loading");
     afterNextRender(() => void this.mount(), { injector: this.injector });
@@ -231,7 +249,18 @@ export class AvatarViewport {
   private async show(look: Look): Promise<void> {
     const renderer = this.renderer;
     if (renderer === null) return;
-    const report = await renderer.show(look);
+    let report;
+    try {
+      report = await renderer.show(look);
+    } catch {
+      // A scene error must not become an uncaught rejection: the 2D portrait is the safe state.
+      if (renderer === this.renderer && !this.destroyed) {
+        this.problem.set("base");
+        this.mode.set("fallback");
+        this.unmount();
+      }
+      return;
+    }
     if (!report.current || this.destroyed || renderer !== this.renderer) return;
     if (report.baseFailed) {
       this.problem.set("base");
@@ -265,5 +294,6 @@ export class AvatarViewport {
   private unmount(): void {
     this.renderer?.dispose();
     this.renderer = null;
+    this.playing.set(false);
   }
 }

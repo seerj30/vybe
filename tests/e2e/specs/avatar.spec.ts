@@ -74,6 +74,21 @@ test("the shop preview tries an item on without buying it", async ({ page }) => 
   expect(inventory.items.map((i) => i.sku)).not.toContain("top_varsity_jacket");
 });
 
+test("an emote preview plays once, then its button plays it again", async ({ page }) => {
+  await newPlayer(page);
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Shop" }).click();
+  await page.getByRole("listitem", { name: "Wave" }).getByRole("button", { name: "Preview Wave" }).click();
+  await expect3d(page);
+  const play = page.getByRole("button", { name: "Play Wave" });
+  // The emote is 1.5 s long: the button is off while it plays, then stays on (no replay loop).
+  await expect(play).toBeEnabled({ timeout: 10_000 });
+  await page.waitForTimeout(2_000);
+  await expect(play).toBeEnabled();
+  await play.click();
+  await expect(play).toBeDisabled();
+  await expect(play).toBeEnabled({ timeout: 10_000 });
+});
+
 test("E10: an item file fails to load → the starter item shows with a notice; equipment stays", async ({ page }) => {
   await newPlayer(page);
   await buyAndWearJersey(page);

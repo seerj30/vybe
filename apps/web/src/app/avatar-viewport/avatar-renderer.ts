@@ -17,6 +17,9 @@ export interface ShowReport {
   current: boolean;
 }
 
+/** done: played to the end; stopped: replaced or disposed; failed: the file did not load. */
+export type EmoteResult = "done" | "stopped" | "failed";
+
 export interface RenderStats {
   triangles: number;
   drawCalls: number;
@@ -77,6 +80,7 @@ export class AvatarRenderer {
   private base: Base | null = null;
   private baseLoad: Promise<Base> | null = null;
   private emote: THREE.AnimationAction | null = null;
+  private emoteEnd: ((completed: boolean) => void) | null = null;
   private token = 0;
   private frame = 0;
   private disposed = false;
@@ -147,17 +151,18 @@ export class AvatarRenderer {
   }
 
   /** Plays an emote file once, then returns to the idle loop (or the rest pose with reduced motion). */
-  async playEmote(url: string): Promise<boolean> {
-    if (this.base === null) return false;
+  async playEmote(url: string): Promise<EmoteResult> {
+    if (this.base === null) return "failed";
     let clip: THREE.AnimationClip | undefined;
     try {
       clip = (await this.load(url)).animations[0];
     } catch {
-      return false;
+      return "failed";
     }
     const base = this.base;
-    if (clip === undefined || this.disposed || base !== this.base) return false;
-    this.emote?.stop();
+    if (clip === undefined) return "failed";
+    if (this.disposed || base !== this.base) return "stopped";
+    this.settleEmote(false);
     const action = base.mixer.clipAction(clip);
     action.setLoop(THREE.LoopOnce, 1);
     action.reset().fadeIn(0.15).play();
@@ -166,16 +171,25 @@ export class AvatarRenderer {
     this.request();
     return new Promise((resolve) => {
       const done = (event: { action: THREE.AnimationAction }) => {
-        if (event.action !== action) return;
+        if (event.action === action) this.settleEmote(true);
+      };
+      this.emoteEnd = (completed: boolean) => {
         base.mixer.removeEventListener("finished", done);
         action.stop();
-        if (this.emote === action) this.emote = null;
-        base.idle?.reset().fadeIn(0.25).play();
-        this.request();
-        resolve(true);
+        if (completed && !this.options.reducedMotion) base.idle?.reset().fadeIn(0.25).play();
+        resolve(completed ? "done" : "stopped");
       };
       base.mixer.addEventListener("finished", done);
     });
+  }
+
+  /** Ends the running emote: completed (back to idle) or replaced/disposed (the caller learns it did not finish). */
+  private settleEmote(completed: boolean): void {
+    const end = this.emoteEnd;
+    this.emoteEnd = null;
+    this.emote = null;
+    end?.(completed);
+    this.request();
   }
 
   /** Turns the avatar around its vertical axis (radians, positive = to the right). */
@@ -187,6 +201,7 @@ export class AvatarRenderer {
 
   dispose(): void {
     if (this.disposed) return;
+    this.settleEmote(false);
     this.disposed = true;
     this.token++;
     cancelAnimationFrame(this.frame);
@@ -281,12 +296,16 @@ export class AvatarRenderer {
       if ((object as THREE.SkinnedMesh).isSkinnedMesh) sources.push(object as THREE.SkinnedMesh);
     });
     if (sources.length === 0) throw new Error(`${part.sku}: no skinned mesh`);
-    return sources.map((source) => {
-      const bones = source.skeleton.bones.map((bone) => {
+    // Check every bone first, so a rig mismatch never leaves half an item in the scene.
+    const skeletons = sources.map((source) =>
+      source.skeleton.bones.map((bone) => {
         const target = base.bones.get(bone.name);
         if (target === undefined) throw new Error(`${part.sku}: bone ${bone.name} is not in the rig`);
         return target;
-      });
+      }),
+    );
+    return sources.map((source, i) => {
+      const bones = skeletons[i]!;
       const mesh = new THREE.SkinnedMesh(source.geometry, Array.isArray(source.material) ? source.material.map((m) => this.toon(m)) : this.toon(source.material));
       mesh.name = source.name;
       mesh.frustumCulled = false;
@@ -306,6 +325,8 @@ export class AvatarRenderer {
     for (const mesh of part.objects) {
       mesh.removeFromParent();
       mesh.skeleton.dispose();
+      // Shared with the cached file: disposing frees the GPU buffers; three uploads them again if reused.
+      mesh.geometry.dispose();
       for (const m of materialsOf(mesh)) m.dispose();
     }
     this.shown.delete(part.id);
