@@ -29,8 +29,13 @@ const VISUAL_SPEC = /visual\.spec\.ts/;
 // Fixed locale, time zone and motion, so screenshots do not depend on the machine.
 const VISUAL_USE = { locale: "en-US", timezoneId: "UTC", reducedMotion: "reduce", colorScheme: "dark" } as const;
 const MOBILE = { viewport: { width: 375, height: 812 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true };
-// Headless Firefox on a Linux runner (no GPU) blocks WebGL, and the court needs it (Three.js).
-const FIREFOX = { ...devices["Desktop Firefox"], launchOptions: { firefoxUserPrefs: { "webgl.force-enabled": true } } };
+// Headless Firefox on a Linux runner (no GPU, no display) has no WebGL, and the court needs it (Three.js).
+// e2e-browsers.yml runs Firefox headed in Xvfb (E2E_FIREFOX_HEADED=1) with Mesa software OpenGL.
+const FIREFOX = {
+  ...devices["Desktop Firefox"],
+  headless: process.env["E2E_FIREFOX_HEADED"] !== "1",
+  launchOptions: { firefoxUserPrefs: { "webgl.force-enabled": true } },
+};
 
 const chromiumProjects: Project[] = [
   {

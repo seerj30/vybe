@@ -5,9 +5,9 @@ import { powerMeter, startButton, test } from "./street-hoops.ts";
 /**
  * Visual regression of the main screens (spec §14), at desktop and phone sizes (one Playwright project each,
  * playwright.config.ts). Stable baselines: every test makes a new guest with the default avatar and the seeded
- * catalog; locale, time zone and reduced motion are fixed by the project; CSS animations are off; text that
- * differs per run (handle, dates, the HUD clock and score) is masked, and the game canvas (random basket path per
- * seed) is hidden. Baselines: tests/e2e/specs/__screenshots__/<project>/. Update: docs/runbooks/visual-baselines.md.
+ * catalog in name order; locale, time zone and reduced motion are fixed by the project; CSS animations are off;
+ * the handle and dates get fixed text, the HUD clock and score are masked, and the game canvas (random basket path
+ * per seed) is hidden. Baselines: tests/e2e/specs/__screenshots__/<project>/. Update: docs/runbooks/visual-baselines.md.
  */
 
 /**
@@ -33,13 +33,38 @@ async function settled(page: Page): Promise<void> {
   });
 }
 
-/** Per-run text of a signed-in guest: the handle in the shell and pages, the guest expiry date. */
-function playerText(page: Page): Locator[] {
-  return [page.locator(".handle"), page.getByTestId("guest-expiry"), page.getByTestId("account-handle")];
+/**
+ * Replaces per-run text with fixed text: the random handle (its length changes the layout, so a mask is not
+ * enough) and dates such as the guest expiry ("Dec 10, 2026").
+ */
+async function fixText(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    for (const element of Array.from(document.querySelectorAll('.handle, [data-testid="account-handle"]'))) element.textContent = "visual_guest";
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      const text = node.textContent ?? "";
+      const fixed = text.replace(/\b[A-Z][a-z]{2} \d{1,2}, \d{4}\b/g, "Jan 1, 2030");
+      if (fixed !== text) node.textContent = fixed;
+    }
+  });
+}
+
+/**
+ * The catalog comes in id order, and every new database gives new ids. Test data: the shop gets the same
+ * items sorted by name, so the order is the same in every run.
+ */
+async function sortCatalog(page: Page): Promise<void> {
+  await page.route("**/api/v1/catalog/items*", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { items: { name: string }[] };
+    body.items.sort((a, b) => a.name.localeCompare(b.name, "en"));
+    await route.fulfill({ response, json: body });
+  });
 }
 
 async function snap(page: Page, name: string, mask: Locator[] = []): Promise<void> {
   await settled(page);
+  await fixText(page);
   await expect(page).toHaveScreenshot(`${name}.png`, { fullPage: true, mask, maskColor: "#ff00ff" });
 }
 
@@ -58,22 +83,23 @@ test("age gate", async ({ page }) => {
 test("hub", async ({ page }) => {
   await newPlayer(page);
   await expect(page.getByTestId("wallet-balance")).toBeVisible();
-  await snap(page, "hub", playerText(page));
+  await snap(page, "hub");
 });
 
 test("shop", async ({ page }) => {
   await newPlayer(page);
+  await sortCatalog(page);
   await page.goto("/shop");
   await expect(page.getByRole("heading", { name: "Shop" })).toBeVisible();
   await expect(page.getByRole("listitem").first()).toBeVisible();
-  await snap(page, "shop", playerText(page));
+  await snap(page, "shop");
 });
 
 test("wardrobe", async ({ page }) => {
   await newPlayer(page);
   await page.goto("/wardrobe");
   await expect(page.getByRole("heading", { name: "Wardrobe" })).toBeVisible();
-  await snap(page, "wardrobe", playerText(page));
+  await snap(page, "wardrobe");
 });
 
 test("gameplay HUD", async ({ page }) => {
@@ -90,5 +116,5 @@ test("settings", async ({ page }) => {
   await newPlayer(page);
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
-  await snap(page, "settings", playerText(page));
+  await snap(page, "settings");
 });

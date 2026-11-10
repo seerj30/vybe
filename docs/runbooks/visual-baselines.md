@@ -26,16 +26,20 @@ Chromium protocol (CDP) and runs in Chromium only.
 `e2e-browsers.yml` serves the web app over HTTPS (`E2E_WEB_HTTPS=1`, a self-signed certificate of the Angular
 dev server). WebKit does not keep a `Secure` cookie on `http://localhost` (Chromium and Firefox do), so without
 HTTPS WebKit loses the guest cookie (`__Host-vybe_guest`) after `POST /guests`. Production is always HTTPS.
-Headless Firefox on a Linux runner has no GPU and blocks WebGL, so the Street Hoops court cannot start. The
-Firefox projects set the preference `webgl.force-enabled` (software rendering).
+Headless Firefox on a Linux runner has no GPU and no display, so it has no WebGL and the Street Hoops court
+cannot start. In `e2e-browsers.yml`, Firefox runs headed in Xvfb (`E2E_FIREFOX_HEADED=1`) with Mesa software
+OpenGL, and the Firefox projects set the preference `webgl.force-enabled`.
 
 ## Stable screenshots
 
 - Each test makes a new guest with the default avatar; the catalog comes from the seed.
 - The visual projects fix the locale (`en-US`), the time zone (UTC), the color scheme and reduced motion.
   CSS animations are off and the text caret is hidden.
-- Masks (magenta in the baseline): the handle, the guest expiry date and the HUD values (clock and score).
-  The game canvas is hidden in the HUD screenshot: the basket path depends on a random seed.
+- Fixed text: the random handle becomes `visual_guest` (its length changes the layout, so a mask is not
+  enough), and every date of the form `Dec 10, 2026` becomes `Jan 1, 2030`.
+- The shop gets the catalog sorted by name: the API returns it in id order, and each new database has new ids.
+- Masks (magenta in the baseline): the HUD values (clock and score). The game canvas is hidden in the HUD
+  screenshot: the basket path depends on a random seed.
 - Tolerance: at most 1 % of the pixels may differ (`maxDiffPixelRatio: 0.01`, color `threshold: 0.2`).
 - The baselines are Linux screenshots (system fonts differ per OS). So the visual projects run only on Linux,
   or when `E2E_VISUAL=1` is set. On macOS and Windows, the local suite skips them.

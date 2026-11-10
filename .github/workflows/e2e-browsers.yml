@@ -91,9 +91,12 @@ jobs:
 
       # Headless Firefox needs a system OpenGL driver for WebGL (the court); Mesa llvmpipe renders in software.
       # Chromium and WebKit bring their own software renderer.
-      - name: Install Mesa (software OpenGL)
+      - name: Install Mesa (software OpenGL) and Xvfb
         if: ${{ matrix.browser == 'firefox' }}
-        run: sudo apt-get install -y --no-install-recommends libgl1-mesa-dri libegl1 libegl-mesa0 libglx-mesa0
+        run: |
+          sudo apt-get install -y --no-install-recommends libgl1-mesa-dri libglx-mesa0 xvfb
+          echo "E2E_FIREFOX_HEADED=1" >> "$GITHUB_ENV"
+          echo "XVFB=xvfb-run --auto-servernum --server-args=-screen 0 1920x1080x24" >> "$GITHUB_ENV"
 
       # Project names per engine (playwright.config.ts). BROWSER is a fixed matrix value, never user input.
       - name: Projects
@@ -112,11 +115,11 @@ jobs:
 
       - name: Playwright tests
         if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.update_snapshots) }}
-        run: pnpm --filter @vybe/e2e exec playwright test $FUNCTIONAL $VISUAL
+        run: $XVFB pnpm --filter @vybe/e2e exec playwright test $FUNCTIONAL $VISUAL
 
       - name: Rewrite the visual baselines
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.update_snapshots }}
-        run: pnpm --filter @vybe/e2e exec playwright test $VISUAL --update-snapshots=all
+        run: $XVFB pnpm --filter @vybe/e2e exec playwright test $VISUAL --update-snapshots=all
 
       # The baselines of this run: new ones (missing before) and rewritten ones. Commit them from this artifact
       # (docs/runbooks/visual-baselines.md).
