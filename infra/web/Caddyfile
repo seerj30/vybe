@@ -94,6 +94,18 @@
 			file
 		}
 		header @hashed Cache-Control "public, max-age=31536000, immutable"
+		# Avatar and catalog art (docs/art/README.md): content-addressed names <name>.<12 hex of sha256>.<ext>, never
+		# changed in place. glTF binary has its own media type (the mime database of the image may not know .glb).
+		@art {
+			path_regexp ^/assets/3d/[a-z]+/[a-z0-9_]+\.[0-9a-f]{12}\.(glb|png)$
+			file
+		}
+		header @art Cache-Control "public, max-age=31536000, immutable"
+		@glb {
+			path *.glb
+			file
+		}
+		header @glb Content-Type "model/gltf-binary"
 		# Everything else (index.html, routes): revalidate. "?" applies at response time, so @hashed wins.
 		header ?Cache-Control "no-cache"
 
