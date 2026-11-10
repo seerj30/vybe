@@ -26,6 +26,10 @@ public static class ProductionConfiguration
         {
             problems.Add("ConnectionStrings:Vybe is not configured");
         }
+        else if (TransactionPoolerProblem(configuration.GetConnectionString("Vybe")!) is { } poolerProblem)
+        {
+            problems.Add(poolerProblem);
+        }
 
         if (string.IsNullOrWhiteSpace(configuration["Auth:Supabase:Authority"]) && string.IsNullOrWhiteSpace(configuration["Auth:Supabase:MetadataAddress"]))
         {
@@ -110,6 +114,33 @@ public static class ProductionConfiguration
             throw new InvalidOperationException(
                 $"The {environment.EnvironmentName} configuration is not complete: {string.Join("; ", problems)}");
         }
+    }
+
+    /// <summary>
+    /// The Supabase transaction pooler (Supavisor, port 6543) rejects Npgsql's session reset ("DISCARD ALL cannot run
+    /// inside a transaction block") and server-side prepared statements; the broken connection then hangs every
+    /// later query until the command timeout. Both settings are required there. The message names settings only.
+    /// </summary>
+    internal static string? TransactionPoolerProblem(string connectionString)
+    {
+        Npgsql.NpgsqlConnectionStringBuilder builder;
+        try
+        {
+            builder = new Npgsql.NpgsqlConnectionStringBuilder(connectionString);
+        }
+        catch (ArgumentException)
+        {
+            return "ConnectionStrings:Vybe is not a valid connection string";
+        }
+
+        if (builder.Port != 6543)
+        {
+            return null;
+        }
+
+        return builder.NoResetOnClose && builder.MaxAutoPrepare == 0
+            ? null
+            : "ConnectionStrings:Vybe uses the transaction pooler (port 6543): add 'No Reset On Close=true' and 'Max Auto Prepare=0'";
     }
 
     private static bool IsInviteSecret(string? value)
