@@ -104,6 +104,7 @@ public static class ServiceSetup
         OutfitEndpoints.Map(api);
         PrivacyEndpoints.Map(api);
         AdminEndpoints.Map(api);
+        ReviewFlagEndpoints.Map(api);
         return app;
     }
 

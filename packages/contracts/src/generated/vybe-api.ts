@@ -881,6 +881,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/flagged-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List verified runs with review flags
+         * @description Spec §7 and §17 decision 4: the server writes `review_flags` on a verified run; the flags start no
+         *     automatic action. Newest first (by verification time). Runs of deleting or deleted players are not
+         *     listed. A read: it writes no audit log row.
+         */
+        get: operations["adminListFlaggedRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1507,6 +1529,31 @@ export interface components {
         };
         AuditLogPage: {
             items: components["schemas"]["AuditLogEntry"][];
+            nextCursor: components["schemas"]["NextCursor"];
+        };
+        /**
+         * @description Anti-automation signal (spec §17 decision 4): perfect_rate_high = more than 60 % perfect shots in a run
+         *     of 30 or more shots; gap_variance_low = standard deviation of the shot gaps under 25 ms; aim_variance_low
+         *     = standard deviation of aim and power both under 10 (20 or more shots); daily_cap_streak = the 20th
+         *     reward-eligible run of a day after 6 days with 20 or more.
+         * @enum {string}
+         */
+        ReviewFlag: "perfect_rate_high" | "gap_variance_low" | "aim_variance_low" | "daily_cap_streak";
+        FlaggedRun: {
+            sessionId: components["schemas"]["Uuid"];
+            player: components["schemas"]["PlayerRef"];
+            flags: components["schemas"]["ReviewFlag"][];
+            score: number;
+            eventCount: number;
+            startedAt: components["schemas"]["Timestamp"];
+            submittedAt: components["schemas"]["Timestamp"];
+            /** @description submittedAt − startedAt on the server clock. */
+            runMs: number;
+            rewardCoins: number;
+            challengeId: components["schemas"]["NullableUuid"];
+        };
+        FlaggedRunPage: {
+            items: components["schemas"]["FlaggedRun"][];
             nextCursor: components["schemas"]["NextCursor"];
         };
     };
@@ -3107,6 +3154,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuditLogPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    adminListFlaggedRuns: {
+        parameters: {
+            query?: {
+                /** @description Only runs with this flag. */
+                flag?: components["schemas"]["ReviewFlag"];
+                /** @description Opaque cursor from the previous page's `nextCursor`. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of flagged runs, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlaggedRunPage"];
                 };
             };
             401: components["responses"]["Unauthorized"];

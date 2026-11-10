@@ -1,5 +1,5 @@
-// VYBE API load test (k6): guest creation, Street Hoops runs (create, start, submit) and purchases at about
-// 20 requests/s in total, the closed-beta target of docs/decisions/07-hosting.md.
+// VYBE API load test (k6): guest creation, Street Hoops runs (create, start, submit), purchases and challenge
+// acceptance (spec §13) at about 20 requests/s in total, the closed-beta target of docs/decisions/07-hosting.md.
 // How to run: docs/runbooks/load-test.md. Local targets only: the script stops for any other host.
 import http from 'k6/http';
 import { check, fail, sleep } from 'k6';
@@ -25,8 +25,14 @@ export const options = {
     guests: { executor: 'constant-arrival-rate', exec: 'guestJourney', rate: 2, timeUnit: '1s', duration: DURATION, preAllocatedVUs: 10, maxVUs: 40 },
     // 3 writes per iteration, spread over a 60 s run like a real player → ~3 rps, ~65 concurrent runs.
     runs: { executor: 'constant-arrival-rate', exec: 'playRun', rate: 1, timeUnit: '1s', duration: DURATION, preAllocatedVUs: 80, maxVUs: 150 },
-    // 2 requests per iteration: purchase (200 or 409 insufficient_funds) and a wallet read → ~10 rps.
-    purchases: { executor: 'constant-arrival-rate', exec: 'purchase', rate: 5, timeUnit: '1s', duration: DURATION, preAllocatedVUs: 20, maxVUs: 60 },
+    // 2 requests per iteration: purchase (200 or 409 insufficient_funds) and a wallet read → ~8 rps.
+    purchases: { executor: 'constant-arrival-rate', exec: 'purchase', rate: 4, timeUnit: '1s', duration: DURATION, preAllocatedVUs: 20, maxVUs: 60 },
+    // Two players, two full-length runs (2 × 58.5 s): 12 requests in ~2 minutes per iteration. One iteration every
+    // 4 s → ~3 rps, ~30 iterations open at the same time. gracefulStop lets the last iterations finish their runs.
+    challenges: {
+      executor: 'constant-arrival-rate', exec: 'challengeAcceptance', rate: 1, timeUnit: '4s', duration: DURATION,
+      preAllocatedVUs: 40, maxVUs: 80, gracefulStop: '150s',
+    },
   },
   thresholds: {
     // Spec §13 beta SLO: standard reads p95 < 300 ms. Writes get a wider budget until a baseline exists.
@@ -134,6 +140,64 @@ export function playRun(data) {
 
   const submitted = write('POST', `/api/v1/games/sessions/${sessionId}/submit`, { rulesetId, events, clientReportedScore: 0 }, 'submit', { 'Idempotency-Key': crypto.randomUUID() });
   check(submitted, { 'submit verified': (r) => r.status === 200 && r.json('status') === 'verified' });
+}
+
+// A reward-eligible run (spec v1.4 §7): verified, at least minShotsForRewards shots, and submitted at least
+// minRunMsForRewards after the start. With challengeId, it is the recipient run of an accepted challenge.
+function fullLengthRun(config, challengeId, prefix) {
+  const created = write('POST', '/api/v1/games/street-hoops/sessions', challengeId ? { challengeId } : {}, `${prefix}CreateSession`);
+  if (!check(created, { [`${prefix} session 201`]: (r) => r.status === 201 })) {
+    return null;
+  }
+  const sessionId = created.json('sessionId');
+  const rulesetId = created.json('rulesetId');
+  const started = write('POST', `/api/v1/games/sessions/${sessionId}/start`, null, `${prefix}StartSession`);
+  if (!check(started, { [`${prefix} start 200`]: (r) => r.status === 200 })) {
+    return null;
+  }
+
+  // Shots until 1.5 s before minRunMsForRewards; the submit leaves 0.5 s after it.
+  const events = [];
+  for (let t = randomIntBetween(300, 1500); t < config.minRunMsForRewards - 1500 && events.length < config.maxEvents; t += randomIntBetween(config.minGapMs, 2 * config.minGapMs)) {
+    events.push({ tMs: t, aimX: randomIntBetween(config.xMin, config.xMax), power: randomIntBetween(config.pMin, config.pMax) });
+  }
+  sleep(config.minRunMsForRewards / 1000 + 0.5);
+
+  const submitted = write('POST', `/api/v1/games/sessions/${sessionId}/submit`, { rulesetId, events, clientReportedScore: 0 }, `${prefix}Submit`, { 'Idempotency-Key': crypto.randomUUID() });
+  return check(submitted, { [`${prefix} submit verified`]: (r) => r.status === 200 && r.json('status') === 'verified' }) ? sessionId : null;
+}
+
+// Spec §13 "challenge acceptance", J2: a creator plays a full-length run and creates a challenge; a second player
+// opens the invite, accepts it and plays the recipient run; the challenge is then completed.
+export function challengeAcceptance(data) {
+  guest = null;
+  if (!createGuest()) {
+    return;
+  }
+  const creatorSessionId = fullLengthRun(data.config, null, 'creator');
+  if (creatorSessionId === null) {
+    return;
+  }
+  const created = write('POST', '/api/v1/challenges', { creatorSessionId }, 'createChallenge', { 'Idempotency-Key': crypto.randomUUID() });
+  if (!check(created, { 'challenge 201': (r) => r.status === 201 })) {
+    return;
+  }
+  const challengeId = created.json('challengeId');
+  const token = /\/challenge\/([A-Za-z0-9_-]+)$/.exec(created.json('shareUrl'))[1];
+
+  guest = null;
+  if (!createGuest()) {
+    return;
+  }
+  check(read(`/api/v1/invites/${token}`, 'invitePreview'), { 'invite 200': (r) => r.status === 200 });
+  const accepted = write('POST', `/api/v1/invites/${token}/accept`, null, 'acceptInvite', { 'Idempotency-Key': crypto.randomUUID() });
+  if (!check(accepted, { 'accept 200': (r) => r.status === 200 && r.json('status') === 'accepted' })) {
+    return;
+  }
+  if (fullLengthRun(data.config, challengeId, 'recipient') === null) {
+    return;
+  }
+  check(read(`/api/v1/challenges/${challengeId}`, 'challenge'), { 'challenge completed': (r) => r.status === 200 && r.json('status') === 'completed' });
 }
 
 export function purchase(data) {
