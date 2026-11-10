@@ -237,9 +237,16 @@ jobs:
           # No inline script: the CSP (script-src 'self') would block it.
           if grep -q '<script>' index.html; then echo "index.html has an inline script" >&2; exit 1; fi
 
+          # Avatar art: immutable, content-addressed, glTF binary media type.
+          glb=$(python3 -c 'import json; print(json.load(open("assets/manifests/avatar-3d.v1.json"))["base"]["assetUrl"])')
+          curl -fsS -D art.txt -o /dev/null "$web$glb"
+          grep -qi '^content-type: model/gltf-binary' art.txt
+          grep -qi '^cache-control: public, max-age=31536000, immutable' art.txt
+
           status() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
           test "$(status "$web/chunk-MISSING1.js")" = 404
           test "$(status "$web/missing.png")" = 404
+          test "$(status "$web/assets/3d/items/missing.000000000000.glb")" = 404
           test "$(status "$web/runtime-config.json")" = 404
           test "$(status "$web/health")" = 404
           test "$(status "$web/health/ready")" = 404
