@@ -190,24 +190,24 @@ be built again from git.
 
 For "Restore production after data loss":
 
-- Step 1, stop writes: `fly scale count 0 -a vybe-api`. The web app stays up; `/api` answers 502.
-  Write down `fly scale show -a vybe-api` first, to scale back to the same count.
+- Step 1, stop writes: `fly scale count 0 -a vybe-prod-api`. The web app stays up; `/api` answers 502.
+  Write down `fly scale show -a vybe-prod-api` first, to scale back to the same count.
 - Step 2: on Supabase, use "Restore to a new project" (Database → Backups) if the plan offers it. An
   in-place restore overwrites the damaged database: only with the approval of the incident lead.
 - Steps 3–6 (grants, `migrate`, `replay-deletions`): run them from a trusted machine with the image of the
-  current release (`fly releases -a vybe-api --image`), as in the drill, but with the production bucket
+  current release (`fly releases -a vybe-prod-api --image`), as in the drill, but with the production bucket
   settings. Do not use `fly machine run` here: it starts the machine with the old connection strings of
   the app. Give each secret through the environment, never as an argument or a file in `/tmp`:
   ```bash
   read -rs ConnectionStrings__Migrations && export ConnectionStrings__Migrations   # paste, then Enter
-  docker run --rm -e ConnectionStrings__Migrations registry.fly.io/vybe-api@sha256:<digest> migrate
+  docker run --rm -e ConnectionStrings__Migrations registry.fly.io/vybe-prod-api@sha256:<digest> migrate
   ```
   Use the same form for `replay-deletions` (`ConnectionStrings__Vybe` and the `Storage__Exports__*`
   settings). Close the shell afterwards.
-- Step 7: put the new API connection string in with `fly secrets import --stage -a vybe-api` (see the
+- Step 7: put the new API connection string in with `fly secrets import --stage -a vybe-prod-api` (see the
   deploy runbook, one-time setup step 8), and the new owner string in the GitHub environment secret
-  `VYBE_MIGRATIONS_CONNECTION_STRING` (step 10; it is never a Fly secret). Then `fly secrets deploy -a vybe-api` and
-  `fly scale count <count> -a vybe-api --region <region>`. Check `fly checks list -a vybe-api`.
+  `VYBE_MIGRATIONS_CONNECTION_STRING` (step 10; it is never a Fly secret). Then `fly secrets deploy -a vybe-prod-api` and
+  `fly scale count <count> -a vybe-prod-api --region <region>`. Check `fly checks list -a vybe-prod-api`.
 - A new Supabase project has a new project ref: also change `Auth__Supabase__*`, `Storage__Exports__*`,
-  and the web settings `VYBE_SUPABASE_URL` and `VYBE_SUPABASE_ANON_KEY` (`fly secrets set -a vybe-web`).
+  and the web settings `VYBE_SUPABASE_URL` and `VYBE_SUPABASE_ANON_KEY` (`fly secrets set -a vybe-prod-web`).
   Players must sign in again.

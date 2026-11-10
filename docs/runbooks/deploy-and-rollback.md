@@ -140,13 +140,13 @@ Rules for every step with a secret:
 
 | Part | Where | File |
 |---|---|---|
-| Web app and `/api` proxy (Caddy, non-root) | Fly app `vybe-web`, public, TLS at the Fly edge | [`infra/web/`](../../infra/web/), [`infra/fly/web.fly.toml`](../../infra/fly/web.fly.toml) |
-| API (one image: API, `release`, `seed`, `migrate`, `replay-deletions`) | Fly app `vybe-api`, **no public IP**, private network only | [`services/api/Dockerfile`](../../services/api/Dockerfile), [`infra/fly/api.fly.toml`](../../infra/fly/api.fly.toml) |
+| Web app and `/api` proxy (Caddy, non-root) | Fly app `vybe-prod-web`, public, TLS at the Fly edge | [`infra/web/`](../../infra/web/), [`infra/fly/web.fly.toml`](../../infra/fly/web.fly.toml) |
+| API (one image: API, `release`, `seed`, `migrate`, `replay-deletions`) | Fly app `vybe-prod-api`, **no public IP**, private network only | [`services/api/Dockerfile`](../../services/api/Dockerfile), [`infra/fly/api.fly.toml`](../../infra/fly/api.fly.toml) |
 | Release step (`release` = migrate, then seed, owner role) | The GitHub Actions runner, before `fly deploy` | [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml) |
 | PostgreSQL and Auth | Supabase Pro, same region | — |
 | Export bucket (J4 exports, deletion log) | Supabase Storage, S3 protocol | — |
 
-Request path: browser → Fly edge (TLS, sets `Fly-Client-IP`) → `vybe-web` (Caddy) → `vybe-api.internal:8080`
+Request path: browser → Fly edge (TLS, sets `Fly-Client-IP`) → `vybe-web` (Caddy) → `vybe-prod-api.internal:8080`
 over the private network (6PN). Caddy sends the client address as the only `X-Forwarded-For` value. The API
 reads it only from the organization's private prefix (`ReverseProxy__KnownNetworks__0` in `api.fly.toml`).
 
@@ -203,14 +203,14 @@ Do these steps in this order. Keep each value in the password manager of the tea
    (`exports/` only; `deletion-log/` 90 days or more).
 7. **Fly apps.** On a trusted machine with `flyctl` (`fly auth login`):
    ```bash
-   fly apps create vybe-api --org <vybe org>
-   fly apps create vybe-web --org <vybe org>
+   fly apps create vybe-prod-api --org vybe-prod
+   fly apps create vybe-prod-web --org vybe-prod
    ```
    If a name is taken, use another name and change `app` (and `VYBE_API_HOST` in `web.fly.toml`) in a PR.
 8. **API secrets.** Run the command, paste the `NAME=VALUE` lines from the password manager, then press
    Ctrl-D. The values go through stdin only. `--stage` keeps them for the first deploy.
    ```bash
-   fly secrets import --stage -a vybe-api
+   fly secrets import --stage -a vybe-prod-api
    ```
    | Name | Value |
    |---|---|
@@ -225,11 +225,11 @@ Do these steps in this order. Keep each value in the password manager of the tea
    | `Sentry__Dsn`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS` | optional |
 
    Do **not** set `ConnectionStrings__Migrations` on Fly (step 10). Check the names with
-   `fly secrets list -a vybe-api` (names and digests only, never values). The settings table above describes
+   `fly secrets list -a vybe-prod-api` (names and digests only, never values). The settings table above describes
    every setting. `api.fly.toml` sets `ASPNETCORE_ENVIRONMENT`, `ReverseProxy__KnownNetworks__0` and the
    Kestrel limit. The workflow sets `Sentry__Release`.
 9. **Web settings** (public values, but per environment, so not in the repository). Same way:
-   `fly secrets import --stage -a vybe-web` with `VYBE_SUPABASE_URL=https://<ref>.supabase.co` and
+   `fly secrets import --stage -a vybe-prod-web` with `VYBE_SUPABASE_URL=https://<ref>.supabase.co` and
    `VYBE_SUPABASE_ANON_KEY=<publishable key>`. The container writes `/runtime-config.json` from them and adds
    the origin to `connect-src`. A wrong format stops the container with a message. Without both, sign-in
    is off (guest-only).
@@ -239,8 +239,8 @@ Do these steps in this order. Keep each value in the password manager of the tea
     - Variable `VYBE_PUBLIC_ORIGIN` = `https://<web origin>`.
     - Secrets (environment only, not repository secrets). The pipes keep the values off the screen:
       ```bash
-      fly tokens create deploy -a vybe-api -x 8760h | gh secret set FLY_API_TOKEN_API --env production -R seerj30/vybe
-      fly tokens create deploy -a vybe-web -x 8760h | gh secret set FLY_API_TOKEN_WEB --env production -R seerj30/vybe
+      fly tokens create deploy -a vybe-prod-api -x 8760h | gh secret set FLY_API_TOKEN_API --env production -R seerj30/vybe
+      fly tokens create deploy -a vybe-prod-web -x 8760h | gh secret set FLY_API_TOKEN_WEB --env production -R seerj30/vybe
       gh secret set VYBE_MIGRATIONS_CONNECTION_STRING --env production -R seerj30/vybe   # paste the owner string (step 5)
       ```
     - Write the token expiry date in the record of [secret-rotation.md](secret-rotation.md).
@@ -267,21 +267,21 @@ Do these steps in this order. Keep each value in the password manager of the tea
       rollback);
    4. deploys the API with `--no-public-ips`. The new machine gets traffic only after `GET /health/ready`
       passes (bluegreen);
-   5. fails if the API app has a public IP or if `https://vybe-api.fly.dev` answers;
+   5. fails if the API app has a public IP or if `https://vybe-prod-api.fly.dev` answers;
    6. deploys the web app, then does the smoke test.
 4. Domain and certificates:
    ```bash
-   fly ips allocate-v4 --shared -a vybe-web    # if the first deploy did not allocate IPs
-   fly ips allocate-v6 -a vybe-web
-   fly certs add <web domain> -a vybe-web
-   fly certs setup <web domain> -a vybe-web    # the DNS records to make
-   fly certs check <web domain> -a vybe-web    # repeat until the certificate is issued
+   fly ips allocate-v4 --shared -a vybe-prod-web    # if the first deploy did not allocate IPs
+   fly ips allocate-v6 -a vybe-prod-web
+   fly certs add <web domain> -a vybe-prod-web
+   fly certs setup <web domain> -a vybe-prod-web    # the DNS records to make
+   fly certs check <web domain> -a vybe-prod-web    # repeat until the certificate is issued
    ```
    Then set `Challenges__ShareBaseUrl` (API secret), the Supabase Site URL and Redirect URL, and
    `VYBE_PUBLIC_ORIGIN` to this origin. `Security__HstsIncludeSubDomains` is `true` by default: set it to
    `false` (API secret) and change the `Strict-Transport-Security` line in `infra/web/Caddyfile` if another
    subdomain is not on https.
-5. **Narrow the proxy network (required).** `fly ips private -a vybe-web` shows the private addresses of
+5. **Narrow the proxy network (required).** `fly ips private -a vybe-prod-web` shows the private addresses of
    the web machines (`fdaa:x:y:…`). The first three groups are the organization prefix. Open a PR that sets
    `ReverseProxy__KnownNetworks__0` in `api.fly.toml` to `fdaa:x:y::/48`. Until then, every deploy without
    `first_deploy` fails (`check-config.py --require-region` refuses a prefix shorter than /48). Deploy the
@@ -295,10 +295,10 @@ Do these steps in this order. Keep each value in the password manager of the tea
 | `replay-deletions` (after a restore) | It uses the API role and the bucket, which are Fly secrets, so a temporary machine of the API app can run it (below). |
 
 ```bash
-fly releases -a vybe-api --image          # the image digest of the current release
-fly machine run registry.fly.io/vybe-api@sha256:<digest> replay-deletions -a vybe-api --region <region> \
+fly releases -a vybe-prod-api --image          # the image digest of the current release
+fly machine run registry.fly.io/vybe-prod-api@sha256:<digest> replay-deletions -a vybe-prod-api --region <region> \
   --rm --restart no --vm-size shared-cpu-1x
-fly logs -a vybe-api                      # "Deletion replay: …" and the exit; non-zero = failed
+fly logs -a vybe-prod-api                      # "Deletion replay: …" and the exit; non-zero = failed
 ```
 
 The temporary machine runs the same image with the same secrets as the API, in the same dedicated
@@ -310,7 +310,7 @@ The workflow checks `/` (CSP with `frame-ancestors 'none'`, HSTS), `/api/v1/cata
 `/health/ready` is not public and that the API has no public address. After each production deploy, also do
 these checks by hand:
 
-1. `fly status -a vybe-api` and `fly checks list -a vybe-api`: every machine is started, both checks pass.
+1. `fly status -a vybe-prod-api` and `fly checks list -a vybe-prod-api`: every machine is started, both checks pass.
 2. Open the web origin in a private browser window. The landing page shows with its styles. The browser
    console shows no CSP error.
 3. Guest with the age gate: "Start as guest", give the birth month and year of an adult. The avatar page
@@ -331,14 +331,14 @@ rollback does **not** run the release step: the seed of an older image can fail 
 release published ("ruleset … changed after activation"), and its migrate has nothing to do.
 
 1. Find the digests of the last good release: the summary of its Deploy run, or
-   `fly releases -a vybe-api --image` and `fly releases -a vybe-web --image`.
+   `fly releases -a vybe-prod-api --image` and `fly releases -a vybe-prod-web --image`.
 2. Deploy → Run workflow on `master`, mode `rollback`, with `api_image` and `web_image` =
    `registry.fly.io/<app>@sha256:<digest>`. The run deploys these images without a build and without the
    release step, with the same checks as a deploy.
 3. Without GitHub (an outage of GitHub Actions): a person with Fly access runs the same deploy:
    ```bash
-   fly deploy -c infra/fly/api.fly.toml -a vybe-api --image registry.fly.io/vybe-api@sha256:<digest> --no-public-ips --ha=false
-   fly deploy -c infra/fly/web.fly.toml -a vybe-web --image registry.fly.io/vybe-web@sha256:<digest> --ha=false
+   fly deploy -c infra/fly/api.fly.toml -a vybe-prod-api --image registry.fly.io/vybe-prod-api@sha256:<digest> --no-public-ips --ha=false
+   fly deploy -c infra/fly/web.fly.toml -a vybe-prod-web --image registry.fly.io/vybe-web@sha256:<digest> --ha=false
    ```
    Use the `fly.toml` files of the good commit if they changed (`git show <sha>:infra/fly/api.fly.toml`).
 4. Roll forward instead (fix and deploy a new release) when:
@@ -359,15 +359,15 @@ expected.
 Decision 7 asks for a second API machine before the social beta (availability target 99.5 %):
 
 ```bash
-fly scale count 2 -a vybe-api --region <region>
-fly scale count 2 -a vybe-web --region <region>
+fly scale count 2 -a vybe-prod-api --region <region>
+fly scale count 2 -a vybe-prod-web --region <region>
 ```
 
 - The background workers are safe on many machines (`SKIP LOCKED`, compare-and-swap writes).
-- Caddy reads the AAAA records of `vybe-api.internal` every 5 s and spreads requests; a stopped machine is
+- Caddy reads the AAAA records of `vybe-prod-api.internal` every 5 s and spreads requests; a stopped machine is
   skipped for 30 s and a failed connect tries another machine.
 - Check that 2 × `Maximum Pool Size` stays below the pooler client limit.
-- Bigger machines: `fly scale vm shared-cpu-4x -a vybe-api` or `fly scale memory 2048 -a vybe-api`,
+- Bigger machines: `fly scale vm shared-cpu-4x -a vybe-prod-api` or `fly scale memory 2048 -a vybe-prod-api`,
   then change `[[vm]]` in `api.fly.toml` in a PR, so the next deploy keeps the size.
 - Run the load test against the beta environment again after a change ([load-test.md](load-test.md)).
 
