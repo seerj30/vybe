@@ -1,0 +1,238 @@
+# Deploy to the Oracle Cloud Always Free VM (ADR 0009, docs/runbooks/oracle-vm.md).
+# Runs only by hand (Actions > Deploy (Oracle VM) > Run workflow) or on a pushed v* tag; never on pull requests. The
+# commit must be on master and have a green CI run. The "production-oracle" environment has required reviewers, so
+# every run waits for an approval. Modes:
+#   deploy        build both images (linux/arm64, native runner) -> push to GHCR -> release step on this runner
+#                 (migrate, then seed, owner role) -> VM: vybe-deploy pulls the digests, compose up --wait -> smoke test
+#   release-only  build and push both images and run the release step; nothing changes on the VM (the first-deploy dry
+#                 run; one-off seed or migrate)
+#   rollback      no build, no release step. Empty image inputs: the VM's previous release. Else the given digests.
+name: Deploy (Oracle VM)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: deploy, release-only (images and migrate/seed only) or rollback (no build, no release step)
+        type: choice
+        options: [deploy, release-only, rollback]
+        default: deploy
+      api_image:
+        description: "rollback to given images (else empty): ghcr.io/seerj30/vybe-api@sha256:<digest>"
+        type: string
+        default: ""
+      web_image:
+        description: "rollback to given images (else empty): ghcr.io/seerj30/vybe-web@sha256:<digest>"
+        type: string
+        default: ""
+      release_sha:
+        description: "rollback to given images (else empty): the git SHA of those images (from the run summary)"
+        type: string
+        default: ""
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  actions: read   # the CI check of the commit
+  packages: write # push the images to GHCR
+
+# One deploy at a time; a second run waits and never cancels a deploy in progress.
+concurrency:
+  group: deploy-production-oracle
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Oracle VM production (${{ inputs.mode || 'deploy' }})
+    # Native arm64 (free for public repositories): the VM is Ampere A1 (linux/arm64), so no QEMU.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    environment:
+      name: production-oracle
+      url: ${{ vars.VYBE_PUBLIC_ORIGIN }}
+    env:
+      MODE: ${{ inputs.mode || 'deploy' }}
+      API_REPO: ghcr.io/seerj30/vybe-api
+      WEB_REPO: ghcr.io/seerj30/vybe-web
+      ORIGIN: ${{ vars.VYBE_PUBLIC_ORIGIN }}
+    steps:
+      - name: Only master or a v* tag
+        if: github.ref != 'refs/heads/master' && !startsWith(github.ref, 'refs/tags/v')
+        run: |
+          echo "Deploy only master or a v* tag (got ${GITHUB_REF})." >&2
+          exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the ancestry check below needs origin/master
+
+      # A v* tag can point at any commit: deploy only reviewed commits (on master) that passed CI (as deploy.yml).
+      - name: The commit is on master and CI passed on it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/master; then
+            echo "Commit $GITHUB_SHA is not on master." >&2
+            exit 1
+          fi
+          green=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" \
+            --status success --json databaseId --jq length)
+          if [ "$green" -lt 1 ]; then
+            echo "No successful CI run for $GITHUB_SHA." >&2
+            exit 1
+          fi
+
+      - name: Rollback inputs
+        if: env.MODE == 'rollback'
+        env:
+          API_INPUT: ${{ inputs.api_image }}
+          WEB_INPUT: ${{ inputs.web_image }}
+          SHA_INPUT: ${{ inputs.release_sha }}
+        run: |
+          if [ -z "$API_INPUT$WEB_INPUT$SHA_INPUT" ]; then
+            echo "ROLLBACK=previous" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          # Whole-string matches ([[ =~ ]]), so a second line cannot reach GITHUB_ENV.
+          digest='@sha256:[0-9a-f]{64}$'
+          [[ "$API_INPUT" =~ ^ghcr\.io/seerj30/vybe-api${digest} ]] || { echo "api_image must be ${API_REPO}@sha256:<digest>" >&2; exit 1; }
+          [[ "$WEB_INPUT" =~ ^ghcr\.io/seerj30/vybe-web${digest} ]] || { echo "web_image must be ${WEB_REPO}@sha256:<digest>" >&2; exit 1; }
+          [[ "$SHA_INPUT" =~ ^[0-9a-f]{40}$ ]] || { echo "release_sha must be a full git SHA" >&2; exit 1; }
+          { echo "ROLLBACK=images"; echo "API_IMAGE=$API_INPUT"; echo "WEB_IMAGE=$WEB_INPUT"; echo "RELEASE_SHA=$SHA_INPUT"; } >> "$GITHUB_ENV"
+
+      # The deploy key can run only vybe-deploy on the VM (forced command). The host key is pinned: no
+      # StrictHostKeyChecking=no, no ssh-keyscan here.
+      - name: SSH to the VM (pinned host key)
+        if: env.MODE != 'release-only'
+        env:
+          SSH_KEY: ${{ secrets.VYBE_VM_SSH_KEY }}
+          VM_HOST: ${{ vars.VYBE_VM_HOST }}
+          HOST_KEY: ${{ vars.VYBE_VM_HOST_KEY }}
+        run: |
+          [[ "$VM_HOST" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || { echo "Set the variable VYBE_VM_HOST (the VM's public IPv4)." >&2; exit 1; }
+          [[ "$HOST_KEY" =~ ^${VM_HOST//./\\.}\ ssh-ed25519\ [A-Za-z0-9+/=]+$ ]] \
+            || { echo "VYBE_VM_HOST_KEY must be '<VYBE_VM_HOST> ssh-ed25519 <key>' (printed by bootstrap.sh)." >&2; exit 1; }
+          [ -n "$SSH_KEY" ] || { echo "The environment secret VYBE_VM_SSH_KEY is not set." >&2; exit 1; }
+          [[ "$ORIGIN" =~ ^https://[a-z0-9.-]+$ ]] || { echo "Set the variable VYBE_PUBLIC_ORIGIN (https://<host>)." >&2; exit 1; }
+          dir="$RUNNER_TEMP/ssh"
+          install -d -m 700 "$dir"
+          (umask 077 && printf '%s\n' "$SSH_KEY" > "$dir/id" && printf '%s\n' "$HOST_KEY" > "$dir/known_hosts")
+          cat > "$dir/config" <<EOF
+          Host vybe
+            HostName $VM_HOST
+            User vybe-deploy
+            IdentityFile $dir/id
+            IdentitiesOnly yes
+            UserKnownHostsFile $dir/known_hosts
+            StrictHostKeyChecking yes
+            BatchMode yes
+            ConnectTimeout 20
+            ServerAliveInterval 15
+            LogLevel ERROR
+          EOF
+          echo "SSH_CONFIG=$dir/config" >> "$GITHUB_ENV"
+
+      # The VM's compose.yml, Caddyfile and vybe-deploy are installed by the owner (bootstrap.sh); the deploy key cannot
+      # change them. Deploy only when they are the files of this commit, and when the host name matches the origin.
+      - name: The VM has the server files of this commit
+        if: env.MODE != 'release-only'
+        run: |
+          status=$(ssh -F "$SSH_CONFIG" vybe status)
+          echo "$status"
+          drift=0
+          for pair in compose.yml:compose.yml Caddyfile:Caddyfile vybe-deploy:deploy.sh; do
+            expected="sha256 ${pair%%:*} $(sha256sum "infra/oracle/${pair#*:}" | cut -d' ' -f1)"
+            grep -qxF "$expected" <<< "$status" || { echo "The VM's ${pair%%:*} differs from this commit." >&2; drift=1; }
+          done
+          if [ "$drift" = 1 ]; then
+            echo "Install the server files of this commit first: bootstrap.sh --files-only (runbook oracle-vm.md)." >&2
+            exit 1
+          fi
+          grep -qxF "host ${ORIGIN#https://}" <<< "$status" \
+            || { echo "VYBE_PUBLIC_HOST in /etc/vybe/web.env is not the host of VYBE_PUBLIC_ORIGIN." >&2; exit 1; }
+
+      - name: Build the images (linux/arm64)
+        if: env.MODE != 'rollback'
+        run: |
+          label="org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}"
+          docker build --label "$label" -f services/api/Dockerfile -t vybe-api:release .
+          docker build --label "$label" -f infra/web/Dockerfile -t vybe-web:release .
+
+      # The owner credential stays in the GitHub environment and on this runner. It never reaches the VM
+      # (ADR 0006 #2, ADR 0009). "-e NAME" without a value: the value is not in the process arguments.
+      - name: Release step (migrate, then seed)
+        if: env.MODE != 'rollback'
+        env:
+          ConnectionStrings__Migrations: ${{ secrets.VYBE_MIGRATIONS_CONNECTION_STRING }}
+        run: |
+          if [ -z "$ConnectionStrings__Migrations" ]; then
+            echo "The environment secret VYBE_MIGRATIONS_CONNECTION_STRING is not set." >&2
+            exit 1
+          fi
+          docker run --rm --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true \
+            -e ConnectionStrings__Migrations vybe-api:release release
+
+      # Deploys use the digest from the push (immutable); the run summary records it for a rollback.
+      - name: Push the images to GHCR
+        if: env.MODE != 'rollback'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          push() {
+            docker tag "$1" "$2:$GITHUB_SHA"
+            digest=$(docker push "$2:$GITHUB_SHA" | sed -n 's/.*digest: \(sha256:[0-9a-f]\{64\}\).*/\1/p' | tail -n 1)
+            test -n "$digest"
+            echo "$3=$2@$digest" >> "$GITHUB_ENV"
+          }
+          push vybe-api:release "$API_REPO" API_IMAGE
+          push vybe-web:release "$WEB_REPO" WEB_IMAGE
+          echo "RELEASE_SHA=$GITHUB_SHA" >> "$GITHUB_ENV"
+          docker logout ghcr.io
+
+      - name: Deploy on the VM
+        if: env.MODE == 'deploy' || (env.MODE == 'rollback' && env.ROLLBACK == 'images')
+        run: ssh -F "$SSH_CONFIG" vybe deploy "$RELEASE_SHA" "$API_IMAGE" "$WEB_IMAGE"
+
+      - name: Roll back to the VM's previous release
+        if: env.MODE == 'rollback' && env.ROLLBACK == 'previous'
+        run: ssh -F "$SSH_CONFIG" vybe rollback
+
+      # Through Caddy, from outside. The first deploy waits for the certificate (Let's Encrypt, up to 2 minutes).
+      - name: Smoke test through the public origin
+        if: env.MODE != 'release-only'
+        run: |
+          curl -fsS --retry 12 --retry-delay 10 --retry-all-errors -D headers.txt -o /dev/null "$ORIGIN/"
+          grep -qi "^content-security-policy:.*frame-ancestors 'none'" headers.txt
+          grep -qi '^strict-transport-security: max-age=' headers.txt
+          grep -qi '^referrer-policy: no-referrer' headers.txt
+          curl -fsS -o /dev/null "$ORIGIN/api/v1/catalog/items"
+          status() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+          test "$(status "$ORIGIN/health/ready")" = 404
+          test "$(status "http://${ORIGIN#https://}/")" = 308
+
+      - name: Record the images
+        if: always() && env.MODE != 'release-only'
+        run: |
+          {
+            echo "### Oracle VM ${MODE} (${RELEASE_SHA:-previous release})"
+            echo "- API image: \`${API_IMAGE:-previous release on the VM}\`"
+            echo "- Web image: \`${WEB_IMAGE:-previous release on the VM}\`"
+            echo "- Git SHA: \`${RELEASE_SHA:-n/a}\`"
+            echo "Rollback to this release: run Deploy (Oracle VM) with mode rollback, these two images and this SHA."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Record the images (release-only)
+        if: always() && env.MODE == 'release-only'
+        run: |
+          {
+            echo "### Release step of ${GITHUB_SHA} (nothing changed on the VM)"
+            echo "- API image: \`${API_IMAGE:-not pushed}\`"
+            echo "- Web image: \`${WEB_IMAGE:-not pushed}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove the SSH key from the runner
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/ssh"
