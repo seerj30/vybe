@@ -224,9 +224,14 @@ When a PR changes `infra/oracle/compose.yml`, `Caddyfile`, `deploy.sh` or `monit
 install them (by design). After the merge, install them, then deploy:
 
 ```bash
-scp -o IdentitiesOnly=yes -i ~/.ssh/vybe-admin -r infra/oracle ubuntu@<ip>:vybe-oracle     # from the merged master
-ssh -o IdentitiesOnly=yes -i ~/.ssh/vybe-admin ubuntu@<ip> sudo bash vybe-oracle/bootstrap.sh --files-only
+# From the merged master. One SSH connection (ufw limits new SSH connections). It replaces ~/vybe-oracle:
+# "scp -r" into an existing folder makes a nested vybe-oracle/oracle copy and installs the old files.
+COPYFILE_DISABLE=1 tar -C infra -cf - oracle | ssh -o IdentitiesOnly=yes -i ~/.ssh/vybe-admin ubuntu@<ip> \
+  'set -e; rm -rf vybe-oracle.new; mkdir vybe-oracle.new; tar -C vybe-oracle.new --strip-components=1 -xf -;
+   rm -rf vybe-oracle; mv vybe-oracle.new vybe-oracle; sudo bash vybe-oracle/bootstrap.sh --files-only'
 ```
+
+The script prints the SHA-256 of each installed file. Compare them with `shasum -a 256 infra/oracle/Caddyfile infra/oracle/compose.yml`.
 
 The workflow refuses to deploy while the files differ ("The VM's compose.yml differs from this commit").
 
