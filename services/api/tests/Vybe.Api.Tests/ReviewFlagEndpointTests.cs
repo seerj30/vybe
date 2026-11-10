@@ -88,6 +88,37 @@ public sealed class ReviewFlagEndpointTests(ApiFactory api)
     }
 
     [Fact]
+    public async Task FlaggedRuns_EqualVerificationTimes_AreEachListedOnce_InIdOrder()
+    {
+        // Two players submit at the same (fake) time, so both runs have the same verified_at: the cursor must use the id.
+        var first = await Player.CreateGuestAsync(api);
+        var second = await Player.CreateGuestAsync(api);
+        var a = await first.StartRunAsync();
+        var b = await second.StartRunAsync();
+        api.Clock.Advance(TimeSpan.FromMilliseconds(a.Config.DurationMs + 100));
+        foreach (var (player, run) in new[] { (first, a), (second, b) })
+        {
+            var body = await Contract.AssertAsync(
+                await player.SubmitAsync(run.SessionId, run.RulesetId, Player.PerfectEvents(run.Config, run.Seed, 40)), HttpStatusCode.OK, "SubmitResult");
+            Assert.Equal("verified", body.GetProperty("status").GetString());
+        }
+
+        await using (var db = api.CreateDbContext())
+        {
+            var times = await db.GameSessions.Where(s => s.Id == a.SessionId || s.Id == b.SessionId).Select(s => s.VerifiedAt).Distinct().ToListAsync();
+            Assert.Single(times);
+        }
+
+        using var moderator = Admin("moderator");
+        var ids = (await ListAllAsync(moderator, "?limit=1")).Select(r => r.GetProperty("sessionId").GetGuid()).ToList();
+        Assert.Single(ids, id => id == a.SessionId);
+        Assert.Single(ids, id => id == b.SessionId);
+        // PostgreSQL orders uuid values byte by byte, which is the order of the canonical text form (not Guid.CompareTo).
+        var expected = new[] { a.SessionId, b.SessionId }.OrderByDescending(id => id.ToString("D"), StringComparer.Ordinal).ToList();
+        Assert.Equal(expected, ids.Where(id => id == a.SessionId || id == b.SessionId).ToList());
+    }
+
+    [Fact]
     public async Task FlaggedRuns_LeaveOutDeletingAndDeletedPlayers()
     {
         var deleted = await Player.CreateGuestAsync(api);

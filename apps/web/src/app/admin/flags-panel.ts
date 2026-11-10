@@ -73,7 +73,9 @@ export const FLAG_LABELS: Record<ReviewFlag, string> = {
       </table>
     }
     @if (cursor()) {
-      <button type="button" class="button secondary" (click)="load(cursor())">Show older runs</button>
+      <button type="button" class="button secondary" [disabled]="loading()" (click)="load(cursor())">
+        {{ loading() ? "Loading…" : "Show older runs" }}
+      </button>
     }
   `,
   styles: [
@@ -96,7 +98,11 @@ export class AdminFlags {
   protected readonly cursor = signal<string | null>(null);
   protected readonly loaded = signal(false);
   protected readonly error = signal<string | null>(null);
+  /** True while a page request is open: "Show older runs" sends at most one request at a time. */
+  protected readonly loading = signal(false);
   private flag: ReviewFlag | undefined;
+  /** Changes with each filter; an answer for an older filter is dropped. */
+  private generation = 0;
 
   constructor() {
     void this.load(null);
@@ -104,6 +110,7 @@ export class AdminFlags {
 
   protected filter(value: string): void {
     this.flag = value === "" ? undefined : (value as ReviewFlag);
+    this.generation++;
     this.runs.set([]);
     this.cursor.set(null);
     this.loaded.set(false);
@@ -111,16 +118,20 @@ export class AdminFlags {
   }
 
   protected async load(cursor: string | null): Promise<void> {
+    if (cursor !== null && this.loading()) return; // a second click while the older page loads
     this.error.set(null);
-    const flag = this.flag;
+    this.loading.set(true);
+    const generation = this.generation;
     try {
-      const page = await this.api.list(flag, cursor ?? undefined);
-      if (flag !== this.flag) return; // the filter changed meanwhile
+      const page = await this.api.list(this.flag, cursor ?? undefined);
+      if (generation !== this.generation) return; // the filter changed meanwhile
       this.runs.update((runs) => [...runs, ...page.items]);
       this.cursor.set(page.nextCursor);
       this.loaded.set(true);
     } catch (error: unknown) {
-      this.error.set(errorMessage(error));
+      if (generation === this.generation) this.error.set(errorMessage(error));
+    } finally {
+      if (generation === this.generation) this.loading.set(false);
     }
   }
 }

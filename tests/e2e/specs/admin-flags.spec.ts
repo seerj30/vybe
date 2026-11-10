@@ -52,3 +52,26 @@ test("moderator: sees flagged runs with player, flags, score and run time; the f
   await expect(row).toBeVisible();
   await context.close();
 });
+
+test("moderator: a double click on \"Show older runs\" loads the next page once", async ({ page, browser }) => {
+  const context = await browser.newContext({ baseURL: test.info().project.use.baseURL });
+  const guest = await json<{ playerId: string; handle: string }>(await guestPost(context.request, "/guests", ADULT_GUEST));
+  for (let i = 0; i < 21; i++) await flaggedRun(context.request); // one more than a page (20)
+
+  // The next page answers slowly, so the second click of the double click comes while it loads.
+  const olderPages: string[] = [];
+  await page.route("**/api/v1/admin/flagged-runs?*cursor=*", async (route) => {
+    olderPages.push(route.request().url());
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await route.continue();
+  });
+  await signInOnAdmin(page, await createUser({ role: "moderator" }));
+  const rows = page.getByRole("row", { name: `Flagged run of ${guest.handle}` });
+  await expect(rows.first()).toBeVisible();
+
+  await page.getByRole("button", { name: "Show older runs" }).dblclick();
+  await expect(page.getByRole("button", { name: "Loading…" })).toBeDisabled();
+  await expect(rows).toHaveCount(21);
+  expect(olderPages).toHaveLength(1);
+  await context.close();
+});
