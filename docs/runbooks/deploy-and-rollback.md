@@ -357,7 +357,13 @@ the image of b1487eb (before stream I) then started without a release step, `/he
 `GET /api/v1/catalog/items` 200 and `POST /api/v1/guests` 201. The `seed` of that older image failed, as
 expected.
 
-### Scaling before the social beta
+### Scaling before the social beta (Fly.io only, for a later paid move)
+
+**Fly.io only.** Decision 7 changed on 2026-11-10: the beta runs on one Oracle Cloud Always Free VM (stream M,
+#43), not on Fly.io. On that VM, a second API container does not add availability: both containers share one
+host, so a host failure stops both. Use this procedure only after a later move to Fly.io (or another host with
+two or more machines). The worker table below stays valid on every host: it also covers a rolling restart, when
+an old and a new API process run at the same time.
 
 Spec §16 and decision 7 ask for a second API machine before the social beta (availability target 99.5 %).
 `infra/fly/api.fly.toml` does not set the machine count: Fly.io keeps the count of the app, and the deploy
@@ -390,7 +396,8 @@ test. Two people: one runs the commands, the second watches `fly logs`.
    ([load-test.md](load-test.md)) and record the result.
 9. **Back to one machine** (for example to save cost after the beta): `fly scale count 1 -a vybe-prod-api`. Fly stops
    one machine with `SIGTERM`; running requests complete (`kill_timeout`), and a worker pass that stops rolls back
-   its transaction, so the other machine runs it again.
+   its transaction, so the other machine runs it again. Exception: a Supabase Auth user deletion that the stopped
+   machine claimed waits up to 5 minutes (the claim lease), then the other machine takes it.
 
 Background workers with two or more machines:
 
@@ -400,10 +407,10 @@ Background workers with two or more machines:
 | Sweeper (sessions, challenges, elapsed suspensions) | Each batch claims rows with `SKIP LOCKED` and the update checks the status again (compare-and-swap). | `MultiInstanceWorkerTests.Sweeper_TwoInstances_ExpireEverySessionOnce`, `SweeperTests.LateSubmit_RacingTheSweeper_GivesOneExpiredState` |
 | Privacy: exports and J4 anonymization | Each request is claimed with `FOR UPDATE SKIP LOCKED` and finished in one transaction; lock order player, then export. | `MultiInstanceWorkerTests.Privacy_TwoInstances_AnonymizeEveryPlayerOnce_AndDeleteEveryAuthUserOnce`, `PrivacyTests.ExportAndDeletionOfOnePlayer_InParallelWorkers_FinishWithoutAFile` |
 | Privacy: Supabase Auth user deletion | A claim moves `next_attempt_at` forward by a 5-minute lease (`SKIP LOCKED`) and commits before the HTTP call, so another machine does not take the row. A `DELETE` of a deleted user is harmless. | `MultiInstanceWorkerTests.Privacy_TwoInstances_AnonymizeEveryPlayerOnce_AndDeleteEveryAuthUserOnce` |
-| Privacy: export file removal and orphan sweep | The file removal claims the export row with `SKIP LOCKED`. The orphan sweep (once per hour per machine) removes only files of unknown or failed exports without a key; a running export has a `queued` row, so its file stays. | `PrivacyTests` |
+| Privacy: export file removal and orphan sweep | The file removal claims the export row with `SKIP LOCKED`. The orphan sweep (once per hour per machine) removes only files of unknown or failed exports without a key; a running export has a `queued` row, so its file stays. | By design, not tested with two instances (`PrivacyTests` cover one instance) |
 | Guest cleanup | Players claimed with `FOR NO KEY UPDATE SKIP LOCKED`; the update checks kind and status again, so a player gets one deletion request. | `MultiInstanceWorkerTests.GuestCleanup_TwoInstances_QueueOneDeletionPerGuest` |
 | Idempotency cleanup | Rows claimed with `SKIP LOCKED` in batches, then deleted. | `OpsIdempotencyCleanupTests.ConcurrentRuns_DeleteMoreThanOneBatch_EachRowOnce` |
-| Deletion log copy | An entry is keyed by the request id and never changes, so two machines that write the same entry write the same object. A missed entry is written by the next pass. | `MultiInstanceWorkerTests.DeletionLog_TwoInstances_WriteEveryRequest_AndRewritesAreHarmless` |
+| Deletion log copy | An entry is keyed by the request id and never changes, so two machines that write the same entry write the same object. A missed entry is written by the next pass. | By design, not tested with two instances on the bucket (`MultiInstanceWorkerTests.DeletionLog_TwoInstances_WriteEveryRequest_AndRewritesAreHarmless` uses an in-memory log) |
 
 The `replay-deletions` command is not a worker: run it once, on one temporary machine, before the API takes
 traffic. Other process state: the API has no in-memory session, cache or Data Protection key ring. Guest
