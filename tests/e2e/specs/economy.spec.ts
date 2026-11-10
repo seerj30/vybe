@@ -133,6 +133,8 @@ test("E10: item pictures fail to load → placeholders and a notice; the avatar 
   await newPlayer(page);
 
   await openShop(page);
+  // Pictures load lazily: with the full catalog the item can be below the fold (the order is by id).
+  await shopItem(page, "Court Jersey").scrollIntoViewIfNeeded();
   await expect(page.getByRole("img", { name: "Court Jersey (picture not available)" })).toBeVisible();
   await expect(page.getByText("Some item pictures could not load. Placeholders show instead.")).toBeVisible();
 
