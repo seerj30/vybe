@@ -8,6 +8,7 @@
 !packages/game-rules/
 !tests/e2e/package.json
 !assets/manifests/
+!assets/published/
 !infra/web/Caddyfile
 !infra/web/entrypoint.sh
 **/node_modules/

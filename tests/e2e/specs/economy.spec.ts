@@ -129,7 +129,8 @@ test("E09: the purchase request is lost → the retry sends the same Idempotency
 });
 
 test("E10: item pictures fail to load → placeholders and a notice; the avatar and equipment stay", async ({ page }) => {
-  await page.route("**/preview.png", (route) => route.fulfill({ status: 404, body: "" }));
+  // Item pictures: the pipeline thumbnails (/assets/3d/thumbs) and, for unknown skus, the API preview URL.
+  await page.route(/\/assets\/3d\/thumbs\/|\/preview\.png$/, (route) => route.fulfill({ status: 404, body: "" }));
   await newPlayer(page);
 
   await openShop(page);

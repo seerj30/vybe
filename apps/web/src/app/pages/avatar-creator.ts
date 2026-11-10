@@ -4,7 +4,8 @@ import type { Schemas } from "@vybe/contracts";
 import { isApiError } from "../api/api-client";
 import { API } from "../api/api";
 import { errorMessage } from "../api/messages";
-import { AvatarPortrait } from "../avatar/avatar-portrait";
+import { EMPTY_OUTFIT, type Outfit, outfitFromEquipped } from "../avatar/avatar-look";
+import { AvatarViewport } from "../avatar-viewport/avatar-viewport";
 import { type AvatarPresets, DEFAULT_PRESETS, PRESET_GROUPS, type PresetKey, pickPresets, samePresets } from "../avatar/presets";
 
 type Avatar = Schemas["Avatar"];
@@ -16,7 +17,7 @@ type Status = { kind: "loading" } | { kind: "load_failed"; message: string } | {
  */
 @Component({
   selector: "vybe-avatar-creator",
-  imports: [AvatarPortrait, RouterLink],
+  imports: [AvatarViewport, RouterLink],
   template: `
     <section class="page">
       <h1>{{ welcome() ? "Create your avatar" : "Edit your avatar" }}</h1>
@@ -31,8 +32,7 @@ type Status = { kind: "loading" } | { kind: "load_failed"; message: string } | {
         @default {
           <form class="creator" (submit)="$event.preventDefault(); save()">
             <div class="preview card">
-              <vybe-avatar-portrait [presets]="choice()" />
-              <p class="muted small">2D preview. The 3D avatar comes with the art release.</p>
+              <vybe-avatar-viewport [presets]="choice()" [outfit]="outfit()" />
             </div>
             <div class="groups">
               @for (group of groups; track group.key) {
@@ -80,8 +80,7 @@ type Status = { kind: "loading" } | { kind: "load_failed"; message: string } | {
   styles: `
     .creator { display: grid; gap: 16px; }
     .preview { display: flex; flex-direction: column; align-items: center; }
-    .preview vybe-avatar-portrait { width: 180px; }
-    .small { font-size: 13px; text-align: center; margin-bottom: 0; }
+    .preview vybe-avatar-viewport { max-width: 240px; }
     .groups { display: grid; gap: 12px; }
     fieldset { border: 1px solid #2b3350; border-radius: 12px; padding: 8px 12px 12px; margin: 0; }
     legend { font-weight: 700; padding: 0 4px; }
@@ -107,6 +106,8 @@ export class AvatarCreator {
   protected readonly choice = signal<AvatarPresets>(DEFAULT_PRESETS);
   protected readonly saveError = signal<string | null>(null);
   protected readonly saved = signal(false);
+  /** What the avatar wears (read-only here): the preview shows the presets with the current items. */
+  protected readonly outfit = signal<Outfit>(EMPTY_OUTFIT);
 
   protected readonly welcome = computed(() => this.welcomeParam() === "1");
   protected readonly dirty = computed(() => {
@@ -127,8 +128,9 @@ export class AvatarCreator {
   protected async load(): Promise<void> {
     this.status.set({ kind: "loading" });
     try {
-      const avatar = await this.api.getAvatar();
+      const [avatar, inventory] = await Promise.all([this.api.getAvatar(), this.api.getInventory().catch(() => null)]);
       this.server.set(avatar);
+      if (inventory !== null) this.outfit.set(outfitFromEquipped(avatar.equipped, inventory.items));
       this.choice.set(pickPresets(avatar));
       this.saved.set(false);
       this.status.set({ kind: "editing" });
