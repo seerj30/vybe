@@ -808,6 +808,11 @@ namespace Vybe.Data.Migrations
                         .IsDescending(false, true)
                         .HasDatabaseName("ix_game_sessions_player_id_created_at");
 
+                    b.HasIndex("VerifiedAt", "Id")
+                        .IsDescending()
+                        .HasDatabaseName("ix_game_sessions_flagged_verified_at")
+                        .HasFilter("cardinality(review_flags) > 0");
+
                     b.ToTable("game_sessions", "vybe", t =>
                         {
                             t.HasCheckConstraint("ck_game_sessions_non_negative", "COALESCE(score, 0) >= 0 AND COALESCE(event_count, 0) >= 0 AND reward_coins >= 0 AND reward_xp >= 0");

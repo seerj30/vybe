@@ -752,3 +752,11 @@ VALUES ('20261107132714_AccountPolicies', '10.0.13');
 
 COMMIT;
 
+START TRANSACTION;
+CREATE INDEX ix_game_sessions_flagged_verified_at ON vybe.game_sessions (verified_at DESC, id DESC) WHERE cardinality(review_flags) > 0;
+
+INSERT INTO vybe.__ef_migrations_history (migration_id, product_version)
+VALUES ('20261110062812_ReviewFlagsIndex', '10.0.13');
+
+COMMIT;
+
