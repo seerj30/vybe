@@ -10,7 +10,10 @@ import { powerMeter, startButton, test } from "./street-hoops.ts";
  * seed) is hidden. Baselines: tests/e2e/specs/__screenshots__/<project>/. Update: docs/runbooks/visual-baselines.md.
  */
 
-/** Waits for web fonts and images, so a screenshot never catches a half-loaded page. */
+/**
+ * Waits for web fonts and for each started image to load or fail, so a screenshot never catches a half-loaded
+ * page. A lazy image below the fold never starts: the wait for one image ends after 5 s.
+ */
 async function settled(page: Page): Promise<void> {
   await page.waitForLoadState("networkidle");
   await page.evaluate(async () => {
@@ -18,7 +21,14 @@ async function settled(page: Page): Promise<void> {
     await Promise.all(
       Array.from(document.images)
         .filter((image) => !image.complete)
-        .map((image) => new Promise((resolve) => image.addEventListener("load", resolve, { once: true }))),
+        .map(
+          (image) =>
+            new Promise((resolve) => {
+              image.addEventListener("load", resolve, { once: true });
+              image.addEventListener("error", resolve, { once: true });
+              setTimeout(resolve, 5_000);
+            }),
+        ),
     );
   });
 }

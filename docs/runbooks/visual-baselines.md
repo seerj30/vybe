@@ -26,6 +26,8 @@ Chromium protocol (CDP) and runs in Chromium only.
 `e2e-browsers.yml` serves the web app over HTTPS (`E2E_WEB_HTTPS=1`, a self-signed certificate of the Angular
 dev server). WebKit does not keep a `Secure` cookie on `http://localhost` (Chromium and Firefox do), so without
 HTTPS WebKit loses the guest cookie (`__Host-vybe_guest`) after `POST /guests`. Production is always HTTPS.
+Headless Firefox on a Linux runner has no GPU and blocks WebGL, so the Street Hoops court cannot start. The
+Firefox projects set the preference `webgl.force-enabled` (software rendering).
 
 ## Stable screenshots
 

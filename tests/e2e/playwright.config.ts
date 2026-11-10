@@ -29,6 +29,8 @@ const VISUAL_SPEC = /visual\.spec\.ts/;
 // Fixed locale, time zone and motion, so screenshots do not depend on the machine.
 const VISUAL_USE = { locale: "en-US", timezoneId: "UTC", reducedMotion: "reduce", colorScheme: "dark" } as const;
 const MOBILE = { viewport: { width: 375, height: 812 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true };
+// Headless Firefox on a Linux runner (no GPU) blocks WebGL, and the court needs it (Three.js).
+const FIREFOX = { ...devices["Desktop Firefox"], launchOptions: { firefoxUserPrefs: { "webgl.force-enabled": true } } };
 
 const chromiumProjects: Project[] = [
   {
@@ -44,7 +46,7 @@ const chromiumProjects: Project[] = [
 ];
 
 const otherEngineProjects: Project[] = [
-  { name: "desktop-firefox", use: { ...devices["Desktop Firefox"] }, grep: CRITICAL, testIgnore: VISUAL_SPEC },
+  { name: "desktop-firefox", use: FIREFOX, grep: CRITICAL, testIgnore: VISUAL_SPEC },
   { name: "desktop-webkit", use: { ...devices["Desktop Safari"] }, grep: CRITICAL, testIgnore: VISUAL_SPEC },
 ];
 
@@ -53,7 +55,7 @@ const visualProjects: Project[] = [
   { name: "visual-mobile-chromium", use: { browserName: "chromium", ...MOBILE, ...VISUAL_USE }, testMatch: VISUAL_SPEC },
   ...(allBrowsers
     ? [
-        { name: "visual-desktop-firefox", use: { ...devices["Desktop Firefox"], ...VISUAL_USE }, testMatch: VISUAL_SPEC },
+        { name: "visual-desktop-firefox", use: { ...FIREFOX, ...VISUAL_USE }, testMatch: VISUAL_SPEC },
         { name: "visual-desktop-webkit", use: { ...devices["Desktop Safari"], ...VISUAL_USE }, testMatch: VISUAL_SPEC },
         // iPhone-size WebKit; isMobile is not supported in Firefox.
         { name: "visual-mobile-webkit", use: { browserName: "webkit", ...MOBILE, ...VISUAL_USE }, testMatch: VISUAL_SPEC },
