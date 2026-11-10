@@ -96,7 +96,6 @@ jobs:
         run: |
           sudo apt-get install -y --no-install-recommends libgl1-mesa-dri libglx-mesa0 xvfb
           echo "E2E_FIREFOX_HEADED=1" >> "$GITHUB_ENV"
-          echo "XVFB=xvfb-run --auto-servernum --server-args=-screen 0 1920x1080x24" >> "$GITHUB_ENV"
 
       # Project names per engine (playwright.config.ts). BROWSER is a fixed matrix value, never user input.
       - name: Projects
@@ -115,11 +114,21 @@ jobs:
 
       - name: Playwright tests
         if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.update_snapshots) }}
-        run: $XVFB pnpm --filter @vybe/e2e exec playwright test $FUNCTIONAL $VISUAL
+        run: |
+          if [ "${E2E_FIREFOX_HEADED:-}" = "1" ]; then
+            xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" pnpm --filter @vybe/e2e exec playwright test $FUNCTIONAL $VISUAL
+          else
+            pnpm --filter @vybe/e2e exec playwright test $FUNCTIONAL $VISUAL
+          fi
 
       - name: Rewrite the visual baselines
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.update_snapshots }}
-        run: $XVFB pnpm --filter @vybe/e2e exec playwright test $VISUAL --update-snapshots=all
+        run: |
+          if [ "${E2E_FIREFOX_HEADED:-}" = "1" ]; then
+            xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" pnpm --filter @vybe/e2e exec playwright test $VISUAL --update-snapshots=all
+          else
+            pnpm --filter @vybe/e2e exec playwright test $VISUAL --update-snapshots=all
+          fi
 
       # The baselines of this run: new ones (missing before) and rewritten ones. Commit them from this artifact
       # (docs/runbooks/visual-baselines.md).
