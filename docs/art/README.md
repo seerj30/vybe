@@ -52,7 +52,9 @@ The first run builds the image `vybe-art:<hash>` (about 2 GB, 3–5 minutes). A 
 The image is `linux/amd64` on purpose. CI (ubuntu-24.04) and a Mac (Docker Desktop with Rosetta) run the
 same image, so they make the same bytes. CI rebuilds the art and fails when the result differs from the
 committed files. The pipeline is deterministic: coordinates are rounded to 0.01 mm, the renders use one
-thread and a fixed seed, and `publish.py` removes the date from the PNG files.
+thread and a fixed seed, and `publish.py` removes the date from the PNG files. Models and manifests are the
+same bytes on both machines. Thumbnails can differ in a few edge pixels, because Cycles uses other CPU code
+paths under Rosetta; `assets/tools/compare_build.py` accepts at most 2 % changed pixels per thumbnail.
 
 The scripts also run in the Blender 4.5 app: `blender -b --factory-startup -P assets/source/build.py`.
 The Docker image stays the reference for the committed bytes.

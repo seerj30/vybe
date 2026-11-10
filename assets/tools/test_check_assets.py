@@ -8,6 +8,7 @@ import shutil
 import struct
 import sys
 import tempfile
+import zlib
 import unittest
 from typing import Any, Callable, Dict, List
 
@@ -15,6 +16,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import check_assets  # noqa: E402
+import compare_build  # noqa: E402
 import glb  # noqa: E402
 import publish  # noqa: E402
 
@@ -137,6 +139,37 @@ class PublishTests(unittest.TestCase):
         end = chunk(b"IEND", b"")
         stamped = sig + ihdr + chunk(b"tEXt", b"Date\x002026/11/10") + chunk(b"tIME", b"\x00" * 7) + end
         self.assertEqual(publish.strip_png_metadata(stamped), sig + ihdr + end)
+
+
+def encode_png(width: int, height: int, channels: int, pixels: bytes) -> bytes:
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+
+    stride = width * channels
+    raw = b"".join(b"\x00" + pixels[y * stride:(y + 1) * stride] for y in range(height))
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6 if channels == 4 else 2, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
+
+
+class CompareTests(unittest.TestCase):
+    def thumb(self) -> bytes:
+        folder = os.path.join(REPO, "assets", "published", "3d", "thumbs")
+        with open(os.path.join(folder, sorted(os.listdir(folder))[0]), "rb") as f:
+            return f.read()
+
+    def test_decodes_a_pipeline_thumbnail(self) -> None:
+        w, h, c, px = compare_build.decode_png(self.thumb())
+        self.assertEqual((w, h, c, len(px)), (256, 256, 4, 256 * 256 * 4))
+        self.assertEqual(compare_build.changed_share(self.thumb(), encode_png(w, h, c, px)), 0.0)
+
+    def test_accepts_renderer_noise_and_rejects_a_changed_picture(self) -> None:
+        w, h, c, px = compare_build.decode_png(self.thumb())
+        noisy = bytearray(px)
+        for p in range(0, 200 * c, c):  # 200 pixels: 0.3 %
+            noisy[p] = (noisy[p] + 100) % 256
+        self.assertLessEqual(compare_build.changed_share(self.thumb(), encode_png(w, h, c, bytes(noisy))), compare_build.MAX_CHANGED)
+        inverted = bytes(255 - v for v in px)
+        self.assertGreater(compare_build.changed_share(self.thumb(), encode_png(w, h, c, inverted)), compare_build.MAX_CHANGED)
 
 
 if __name__ == "__main__":
