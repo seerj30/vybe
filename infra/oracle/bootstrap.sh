@@ -145,17 +145,23 @@ if [ -z "$(swapon --show --noheadings)" ]; then
   swapon /swapfile
   grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
 fi
-write_if_changed /etc/sysctl.d/60-vybe.conf 0644 <<'EOF' && sysctl -q --system || true
+if write_if_changed /etc/sysctl.d/60-vybe.conf 0644 <<'EOF'
 vm.swappiness = 10
 EOF
+then
+  sysctl -q --system
+fi
 
 say "journald limits"
 install -d -m 0755 /etc/systemd/journald.conf.d
-write_if_changed /etc/systemd/journald.conf.d/60-vybe.conf 0644 <<'EOF' && systemctl restart systemd-journald || true
+if write_if_changed /etc/systemd/journald.conf.d/60-vybe.conf 0644 <<'EOF'
 [Journal]
 SystemMaxUse=500M
 MaxRetentionSec=1month
 EOF
+then
+  systemctl restart systemd-journald
+fi
 
 say "Time sync"
 if systemctl is-active --quiet chrony; then
@@ -163,11 +169,14 @@ if systemctl is-active --quiet chrony; then
 else
   install -d -m 0755 /etc/systemd/timesyncd.conf.d
   # The OCI time server (link-local), then Ubuntu's pool.
-  write_if_changed /etc/systemd/timesyncd.conf.d/60-vybe.conf 0644 <<'EOF' && systemctl restart systemd-timesyncd || true
+  if write_if_changed /etc/systemd/timesyncd.conf.d/60-vybe.conf 0644 <<'EOF'
 [Time]
 NTP=169.254.169.254
 FallbackNTP=ntp.ubuntu.com
 EOF
+  then
+    systemctl restart systemd-timesyncd
+  fi
   timedatectl set-ntp true
 fi
 
@@ -266,7 +275,7 @@ systemctl enable vybe-docker-rules.service
 systemctl restart vybe-docker-rules.service
 
 say "fail2ban (SSH)"
-write_if_changed /etc/fail2ban/jail.d/60-vybe.local 0644 <<'EOF' && systemctl restart fail2ban || true
+if write_if_changed /etc/fail2ban/jail.d/60-vybe.local 0644 <<'EOF'
 [sshd]
 enabled = true
 backend = systemd
@@ -274,6 +283,9 @@ maxretry = 5
 findtime = 10m
 bantime = 1h
 EOF
+then
+  systemctl restart fail2ban
+fi
 systemctl enable --now fail2ban
 
 install_files
