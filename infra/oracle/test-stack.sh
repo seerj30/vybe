@@ -7,6 +7,7 @@
 set -euo pipefail
 
 [ "$#" -eq 2 ] || { echo "usage: test-stack.sh <api image> <web image>" >&2; exit 2; }
+readonly WEB_IMAGE="$2"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly HERE
 readonly PG_IMAGE="postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94"
@@ -28,7 +29,10 @@ cleanup() {
   status=$?
   if [ "$status" -ne 0 ]; then compose ps -a || true; compose logs --tail 60 || true; fi
   compose down --volumes --timeout 5 >/dev/null 2>&1 || true
-  rm -rf "$work"
+  # Caddy (UID 10001) owns what it wrote to the data directory: delete it as that user, in the web image.
+  docker run --rm --user 10001:10001 --entrypoint rm -v "$VYBE_CADDY_DATA:/data" "$WEB_IMAGE" -rf /data/caddy \
+    >/dev/null 2>&1 || true
+  rm -rf "$work" || echo "test-stack: could not delete $work" >&2
   exit "$status"
 }
 trap cleanup EXIT
