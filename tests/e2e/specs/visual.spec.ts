@@ -11,11 +11,12 @@ import { powerMeter, startButton, test } from "./street-hoops.ts";
  */
 
 /**
- * Waits for web fonts and for each started image to load or fail, so a screenshot never catches a half-loaded
- * page. A lazy image below the fold never starts: the wait for one image ends after 5 s.
+ * Waits until the screen is complete: its ready locators (the data it loads) are visible, the web fonts are
+ * loaded, and each started image has loaded or failed. A lazy image below the fold never starts: the wait for one
+ * image ends after 5 s.
  */
-async function settled(page: Page): Promise<void> {
-  await page.waitForLoadState("networkidle");
+async function settled(page: Page, ready: Locator[]): Promise<void> {
+  for (const locator of ready) await expect(locator).toBeVisible();
   await page.evaluate(async () => {
     await document.fonts.ready;
     await Promise.all(
@@ -62,59 +63,62 @@ async function sortCatalog(page: Page): Promise<void> {
   });
 }
 
-async function snap(page: Page, name: string, mask: Locator[] = []): Promise<void> {
-  await settled(page);
+async function snap(page: Page, name: string, ready: Locator[], mask: Locator[] = []): Promise<void> {
+  await settled(page, ready);
   await fixText(page);
   await expect(page).toHaveScreenshot(`${name}.png`, { fullPage: true, mask, maskColor: "#ff00ff" });
 }
 
+/** Item pictures are not served in E2E (dev server), so the shop and the wardrobe always show this notice. */
+const PICTURE_NOTICE = /^Some item pictures could not load/;
+
 test("landing", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("link", { name: "Start as guest" })).toBeVisible();
-  await snap(page, "landing");
+  await snap(page, "landing", [page.getByRole("link", { name: "Start as guest" })]);
 });
 
 test("age gate", async ({ page }) => {
   await page.goto("/play");
-  await expect(page.getByRole("button", { name: "Start as guest" })).toBeVisible();
-  await snap(page, "age-gate");
+  await snap(page, "age-gate", [page.getByRole("button", { name: "Start as guest" }), page.getByLabel("Year")]);
 });
 
 test("hub", async ({ page }) => {
   await newPlayer(page);
-  await expect(page.getByTestId("wallet-balance")).toBeVisible();
-  await snap(page, "hub");
+  await snap(page, "hub", [
+    page.getByTestId("wallet-balance"),
+    page.getByTestId("guest-expiry"),
+    page.getByText("Score 1,500 points in one run"), // the daily quests loaded
+  ]);
 });
 
 test("shop", async ({ page }) => {
   await newPlayer(page);
   await sortCatalog(page);
   await page.goto("/shop");
-  await expect(page.getByRole("heading", { name: "Shop" })).toBeVisible();
-  await expect(page.getByRole("listitem").first()).toBeVisible();
-  await snap(page, "shop");
+  await snap(page, "shop", [page.getByRole("heading", { name: "Swish" }), page.getByText(PICTURE_NOTICE)]);
 });
 
 test("wardrobe", async ({ page }) => {
   await newPlayer(page);
   await page.goto("/wardrobe");
-  await expect(page.getByRole("heading", { name: "Wardrobe" })).toBeVisible();
-  await snap(page, "wardrobe");
+  await snap(page, "wardrobe", [page.getByRole("heading", { name: "Starter Kicks" }), page.getByText(/^No saved outfits/), page.getByText(PICTURE_NOTICE)]);
 });
 
 test("gameplay HUD", async ({ page }) => {
   await newPlayer(page);
   await openOnlineStreetHoops(page);
   await startButton(page).click();
-  await expect(powerMeter(page)).toBeVisible();
   // The court fills the screen under the HUD, so it is hidden (a mask would cover the HUD too).
   await page.addStyleTag({ content: "canvas { visibility: hidden !important; }" });
-  await snap(page, "gameplay-hud", [page.locator(".hud-value")]);
+  await snap(page, "gameplay-hud", [powerMeter(page), page.getByText("Reduce motion")], [page.locator(".hud-value")]);
 });
 
 test("settings", async ({ page }) => {
   await newPlayer(page);
   await page.goto("/settings");
-  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
-  await snap(page, "settings");
+  await snap(page, "settings", [
+    page.getByTestId("account-handle"),
+    page.getByText("You have not blocked anyone."), // the block list loaded
+    page.getByRole("button", { name: "Request my data" }),
+  ]);
 });

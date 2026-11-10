@@ -16,6 +16,11 @@
 | `desktop-firefox`, `desktop-webkit` | Critical journeys E01–E12 (tests whose title starts with the id) | only when the matrix changes | yes | yes | yes |
 | `visual-desktop-firefox`, `visual-desktop-webkit`, `visual-mobile-webkit` | Visual baselines | only when the matrix changes | yes | yes | yes |
 
+The nightly run starts only when the master commit has no successful run yet (a `gate` job checks it). A failed
+run on master (merge or nightly) opens a GitHub issue "E2E browsers (Firefox/WebKit) fail on master", or adds a
+comment to the open one. Runs of different events and commits never cancel each other; only a newer push to
+the same pull request cancels the older run.
+
 Why: a pull request keeps one engine, so its check time stays near the old time (the slow tests are the
 60-second runs, and each engine runs them again). Chromium is the engine of most players. Firefox and WebKit
 find engine problems after a merge and every night, before a release. "When the matrix changes" means a pull
@@ -40,7 +45,10 @@ OpenGL, and the Firefox projects set the preference `webgl.force-enabled`.
 - The shop gets the catalog sorted by name: the API returns it in id order, and each new database has new ids.
 - Masks (magenta in the baseline): the HUD values (clock and score). The game canvas is hidden in the HUD
   screenshot: the basket path depends on a random seed.
-- Tolerance: at most 1 % of the pixels may differ (`maxDiffPixelRatio: 0.01`, color `threshold: 0.2`).
+- Each screen waits for its own ready elements (the data it loads), the web fonts, and each started image.
+- Tolerance: at most 0.2 % of the pixels may differ (`maxDiffPixelRatio: 0.002`, color `threshold: 0.2`).
+  The visual projects have no retries: a screenshot that passes only on a second try is not stable.
+- A pull request that changes the matrix runs each screenshot of Firefox and WebKit 3 times (`--repeat-each=3`).
 - The baselines are Linux screenshots (system fonts differ per OS). So the visual projects run only on Linux,
   or when `E2E_VISUAL=1` is set. On macOS and Windows, the local suite skips them.
 

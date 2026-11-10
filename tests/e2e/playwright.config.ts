@@ -55,7 +55,8 @@ const otherEngineProjects: Project[] = [
   { name: "desktop-webkit", use: { ...devices["Desktop Safari"] }, grep: CRITICAL, testIgnore: VISUAL_SPEC },
 ];
 
-const visualProjects: Project[] = [
+// No retries: a screenshot that passes only on the second try is not stable.
+const visualProjects: Project[] = ([
   { name: "visual-desktop-chromium", use: { ...devices["Desktop Chrome"], ...VISUAL_USE }, testMatch: VISUAL_SPEC },
   { name: "visual-mobile-chromium", use: { browserName: "chromium", ...MOBILE, ...VISUAL_USE }, testMatch: VISUAL_SPEC },
   ...(allBrowsers
@@ -66,7 +67,7 @@ const visualProjects: Project[] = [
         { name: "visual-mobile-webkit", use: { browserName: "webkit", ...MOBILE, ...VISUAL_USE }, testMatch: VISUAL_SPEC },
       ]
     : []),
-];
+] as Project[]).map((project) => ({ ...project, retries: 0 }));
 
 function npgsql(url: string): string {
   const u = new URL(url);
@@ -88,7 +89,7 @@ export default defineConfig({
   snapshotPathTemplate: "{testDir}/__screenshots__/{projectName}/{arg}{ext}",
   expect: {
     // Small tolerances for anti-aliasing; masked dynamic text (visual.spec.ts) keeps the rest fixed.
-    toHaveScreenshot: { maxDiffPixelRatio: 0.01, threshold: 0.2, animations: "disabled", caret: "hide", scale: "css" },
+    toHaveScreenshot: { maxDiffPixelRatio: 0.002, threshold: 0.2, animations: "disabled", caret: "hide", scale: "css" },
   },
   projects: [...chromiumProjects, ...(allBrowsers ? otherEngineProjects : []), ...(visual ? visualProjects : [])],
   webServer: [
