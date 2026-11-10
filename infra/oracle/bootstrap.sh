@@ -172,9 +172,14 @@ EOF
 fi
 
 say "Deploy user $DEPLOY_USER (runs only $ROOT/bin/vybe-deploy)"
+# The home directory and .ssh belong to root, and the shell is /bin/sh (dash reads no rc file for "sh -c"): the user
+# cannot change its own SSH keys or start-up files, even if it could ever write a file.
+readonly DEPLOY_HOME=/var/lib/vybe-deploy
+install -d -o root -g root -m 0755 "$DEPLOY_HOME"
 if ! id "$DEPLOY_USER" >/dev/null 2>&1; then
-  useradd --create-home --shell /bin/bash --comment "VYBE deploy (GitHub Actions)" "$DEPLOY_USER"
+  useradd --home-dir "$DEPLOY_HOME" --no-create-home --shell /bin/sh --comment "VYBE deploy (GitHub Actions)" "$DEPLOY_USER"
 fi
+usermod --home "$DEPLOY_HOME" --shell /bin/sh "$DEPLOY_USER"
 passwd -l "$DEPLOY_USER" >/dev/null
 # Not in the docker group (that is root without a password): vybe-deploy runs as root through this one rule and
 # checks its arguments.
@@ -182,7 +187,7 @@ write_if_changed /etc/sudoers.d/vybe-deploy 0440 <<EOF || true
 $DEPLOY_USER ALL=(root) NOPASSWD: $ROOT/bin/vybe-deploy
 EOF
 visudo -cqf /etc/sudoers.d/vybe-deploy || fail "/etc/sudoers.d/vybe-deploy is not valid"
-home=$(getent passwd "$DEPLOY_USER" | cut -d: -f6)
+home="$DEPLOY_HOME"
 if [ -n "$deploy_key" ]; then
   [ -f "$deploy_key" ] || fail "$deploy_key does not exist"
   [ "$(grep -c . "$deploy_key")" -eq 1 ] || fail "$deploy_key must have exactly one line"
@@ -237,6 +242,28 @@ ufw allow 80/tcp comment http >/dev/null
 ufw allow 443/tcp comment https >/dev/null
 ufw --force enable >/dev/null
 ufw status verbose
+
+say "Containers cannot reach the OCI metadata service (169.254.0.0/16)"
+# A request forgery bug in the API must not read instance metadata. DOCKER-USER is Docker's chain for own rules; this
+# unit adds the rule again after every Docker start. DNS and NTP of the host do not pass this chain.
+write_if_changed /etc/systemd/system/vybe-docker-rules.service 0644 <<'EOF' || true
+[Unit]
+Description=VYBE: containers on the vybe network cannot reach link-local addresses (OCI metadata)
+After=docker.service
+Requires=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'iptables -C DOCKER-USER -s 172.30.80.0/24 -d 169.254.0.0/16 -j DROP 2>/dev/null || iptables -I DOCKER-USER -s 172.30.80.0/24 -d 169.254.0.0/16 -j DROP'
+
+[Install]
+WantedBy=docker.service
+EOF
+systemctl daemon-reload
+systemctl enable vybe-docker-rules.service
+systemctl restart vybe-docker-rules.service
 
 say "fail2ban (SSH)"
 write_if_changed /etc/fail2ban/jail.d/60-vybe.local 0644 <<'EOF' && systemctl restart fail2ban || true

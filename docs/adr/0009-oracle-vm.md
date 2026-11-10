@@ -57,7 +57,9 @@ logs without request paths, deploys of reviewed commits by digest.
    `restrict,command="/opt/vybe/bin/vybe-deploy"`. `vybe-deploy` accepts only `status`, `rollback` and
    `deploy <git sha> <api image> <web image>` with strict patterns (GHCR repositories of this project, digests
    only), then runs itself as root through one sudoers rule. The deploy user is **not** in the `docker` group:
-   that group is root without a password, and compose must run as root anyway to read the mode-600 env files. The
+   that group is root without a password, and compose must run as root anyway to read the mode-600 env files. Its
+   home directory and `.ssh` belong to root and its shell is `/bin/sh`, so it cannot change its keys or start-up
+   files. Compose output goes to the VM's journal, not to the public workflow log. The
    host key is pinned in a GitHub variable (`StrictHostKeyChecking yes`); there is no `ssh-keyscan` in the workflow.
 9. **Server files come from the owner, not from the deploy key.** `compose.yml`, `Caddyfile`, `vybe-deploy` and
    `vybe-monitor` are installed by `bootstrap.sh` (also `--files-only`). The deploy key cannot change them, so a
@@ -74,7 +76,8 @@ logs without request paths, deploys of reviewed commits by digest.
     `9DC8 5822 … CD88`), Docker `local` log driver with rotation, `live-restore`, no userland proxy, daemon-wide
     `no-new-privileges`; SSH: keys only, no root, `AllowUsers` admin and deploy user, no forwarding; ufw (22 limited,
     80, 443) instead of Oracle's iptables-persistent rules; fail2ban for SSH; a 2 GB swap file; journald 500 MB /
-    one month; time sync with the OCI time server. The OCI security list must also open 80 and 443.
+    one month; time sync with the OCI time server; a `DOCKER-USER` rule so that containers cannot reach link-local
+    addresses (the OCI metadata service). The OCI security list must also open 80 and 443.
 12. **Backups on Supabase Free.** `backup.yml` runs `backup.sh` every week on a GitHub runner: `pg_dump` of schema
     `vybe` as the owner role through the session pooler with `sslmode=verify-full` (the Supabase root CA is a file in
     the repository, added by the owner from the dashboard; the fingerprint is in the runbook), the password in a
@@ -100,7 +103,10 @@ logs without request paths, deploys of reviewed commits by digest.
   on IPv6 go through the userland proxy (which is off) and do not work.
 - `SSL Mode=Require` in the API and migration connection strings checks no server certificate. The backup uses
   `verify-full`; the same CA file can be used for `VerifyFull` in the API (follow-up, also in ADR 0008).
-- A backup of Supabase Auth users, and a second copy of the dumps outside Supabase (runbook).
+- A backup of Supabase Auth users, and a second copy of the dumps outside Supabase, where the API's S3 key cannot
+  delete them (Supabase S3 keys are not limited to a prefix; runbook).
+- A CODEOWNERS rule for `infra/oracle/backup-recipients.txt`, `supabase-ca.crt` and the workflows, so a change of
+  the backup key or the deploy path needs the engineering lead's review.
 - Zero-downtime deploys (two API containers behind Caddy) and a staging VM (the free limit has room for one more).
 - A read-only backup role instead of the owner role for `pg_dump`.
 

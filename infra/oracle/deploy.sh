@@ -75,10 +75,13 @@ status() {
   printf 'previous %s %s\n' "$(image_of "$PREVIOUS" VYBE_API_IMAGE)" "$(image_of "$PREVIOUS" VYBE_WEB_IMAGE)"
 }
 
-# start <release file>: pull, then replace the containers; waits for both health checks.
+# start <release file>: pull, then replace the containers; waits for both health checks. Compose output goes to the
+# journal only (journalctl -t vybe-deploy): an env file error could quote a line with a secret, and the caller's
+# output is a public workflow log.
 start() {
-  compose "$1" pull --quiet
-  compose "$1" up -d --remove-orphans --wait --wait-timeout 240
+  echo "vybe-deploy: pulling and starting $(image_of "$1" VYBE_RELEASE)"
+  compose "$1" pull --quiet 2>&1 | logger -t vybe-deploy \
+    && compose "$1" up -d --remove-orphans --wait --wait-timeout 240 2>&1 | logger -t vybe-deploy
 }
 
 deploy_release() {
@@ -92,7 +95,7 @@ deploy_release() {
     echo "vybe-deploy: $(image_of "$CURRENT" VYBE_RELEASE) is running"
     return 0
   fi
-  echo "vybe-deploy: the new release did not become healthy" >&2
+  echo "vybe-deploy: the new release did not start or become healthy (details: journalctl -t vybe-deploy)" >&2
   compose "$next" ps --format 'table {{.Service}}\t{{.Status}}' >&2 || true
   rm -f "$next"
   if [ -f "$CURRENT" ]; then

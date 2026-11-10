@@ -101,8 +101,15 @@ Backup → Run workflow on `master`):
 Limits: the dump has schema `vybe` only. Supabase Auth users (`auth` schema) are not in it. A restore into the
 same project keeps them. A restore into a new project has no Auth users: the incident lead decides how players
 get access to their accounts again (follow-up: a backup of the Auth users). The dumps are in the
-same Supabase project as the database: a lost project loses both. Before the social beta, copy the newest dump
-each month to a second place (for example the owner's encrypted disk, or OCI Object Storage, 20 GB Always Free).
+same Supabase project as the database: a lost project loses both. Supabase S3 keys are not limited to a prefix, so
+the API's S3 key (on the VM) can also read and delete `backups/`: an attacker with control of the API could delete
+the data and the dumps together (the dumps stay encrypted). Before the social beta, copy the newest dump each month
+to a place that the VM cannot reach (for example the owner's encrypted disk, or OCI Object Storage, 20 GB Always
+Free, with a write-only user).
+
+Deleted players: a dump keeps the personal data of players who asked for deletion after the dump, for up to the
+retention (35 days, or longer for the newest 4 dumps when no new dump runs). A restore applies the deletions again
+with `replay-deletions` (below). Say this time window in the privacy notice ([decision 8](../decisions/08-legal-wording.md)).
 
 ### One-time setup
 
@@ -125,7 +132,8 @@ each month to a second place (for example the owner's encrypted disk, or OCI Obj
 3. **S3 key for backups**: Supabase → Storage → S3 connection → New access key, named `vybe-backup` (a key
    separate from the API's key, so each can be revoked alone).
 4. **GitHub environment `backup`** (Settings → Environments): no required reviewers (a schedule cannot wait for
-   an approval); deployment branches: `master` only. Secrets:
+   an approval); deployment branches: `master` only. This branch rule is the only gate for these secrets (a
+   branch could change the workflow file): check it after you create the environment. Secrets:
    ```bash
    gh secret set VYBE_BACKUP_DB_PASSWORD --env backup -R seerj30/vybe              # the vybe_owner password
    gh secret set VYBE_BACKUP_S3_ACCESS_KEY_ID --env backup -R seerj30/vybe         # vybe-backup key id

@@ -117,7 +117,8 @@ Do the steps in this order. Keep each value in the password manager.
    Docker from Docker's repository (key checked by fingerprint), sets Docker log rotation, makes the user
    `vybe-deploy`, sets SSH to keys only (no root login, only `ubuntu` and `vybe-deploy`), replaces Oracle's
    iptables rules with ufw (22, 80, 443), turns on fail2ban, adds a 2 GB swap file, limits journald, sets time
-   sync, installs the server files and the `vybe-monitor` timer. At the end it prints the SSH host key line.
+   sync, blocks container access to the OCI metadata service, installs the server files and the `vybe-monitor`
+   timer. At the end it prints the SSH host key line.
    Copy it, then reboot:
    ```bash
    ssh -i ~/.ssh/vybe-admin ubuntu@<ip> sudo reboot
@@ -137,7 +138,8 @@ Do the steps in this order. Keep each value in the password manager.
 8. **GitHub environment `production-oracle`** (Settings → Environments → New environment):
    - Required reviewers: the engineering lead and the on-call primary; "Prevent self-review" on when two
      people can approve.
-   - Deployment branches and tags: `master` and `v*` only.
+   - Deployment branches and tags: `master` and `v*` only. With `workflow_dispatch`, the workflow file of the
+     chosen branch runs, so this rule (not the check in the workflow) keeps the secrets away from other branches.
    - Variables:
      - `VYBE_PUBLIC_ORIGIN` = `https://<host>`
      - `VYBE_VM_HOST` = the public IPv4
