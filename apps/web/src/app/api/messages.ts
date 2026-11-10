@@ -30,6 +30,8 @@ const MESSAGES: Partial<Record<ErrorCode, string>> = {
   export_in_progress: "Your data export is still being prepared.",
   reauthentication_required: "Sign in again to confirm that it is you.",
   idempotency_key_mismatch: "This request was already used for another action. Start again.",
+  // Account policies (stream J).
+  age_not_eligible: "VYBE is only for adults, so we cannot create a player for you. We did not keep your answer.",
   // Challenges, quests, safety and saved outfits (stream G).
   challenge_unavailable: "This challenge is not available.",
   challenge_expired: "This challenge has expired.",

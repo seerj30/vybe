@@ -3,6 +3,7 @@ import { AccountApi } from "../api/account-api";
 import { isApiError } from "../api/api-client";
 import { API } from "../api/api";
 import { errorMessage } from "../api/messages";
+import { AgeGate } from "../player/age-gate";
 import { type Me, PlayerStore } from "../player/player-store";
 import { AuthSession } from "./auth-session";
 
@@ -36,6 +37,9 @@ export class AccountLink {
   private readonly accounts = inject(AccountApi);
   private readonly auth = inject(AuthSession);
   private readonly player = inject(PlayerStore);
+  private readonly ageGate = inject(AgeGate);
+  /** The guest that `prepareSignUp` created in this tab: linking it makes a new player for the account. */
+  private signUpGuestId: string | null = null;
 
   async resolve(): Promise<LinkOutcome> {
     try {
@@ -50,14 +54,51 @@ export class AccountLink {
     }
   }
 
-  /** Call only after the user confirmed the link of this identity (shown by email). */
+  /**
+   * Before a Supabase sign-up (spec §17 decision 1): a browser without a guest passes the age gate and gets its
+   * guest first, so an under-age answer never creates an Auth user or an email record. `ok: false` with a null
+   * message means the user cancelled the gate.
+   */
+  async prepareSignUp(): Promise<{ ok: true } | { ok: false; message: string | null }> {
+    try {
+      if ((await this.guestPlayer()) !== null) return { ok: true };
+      const birth = await this.ageGate.ask();
+      if (birth === null) return { ok: false, message: null };
+      try {
+        const created = await this.api.createGuest(birth);
+        this.signUpGuestId = created.playerId;
+      } catch (error: unknown) {
+        if (!isApiError(error, "already_authenticated")) throw error;
+      }
+      await this.player.startedGuest().catch(() => null); // the guest exists; a failed refresh is not a failed gate
+      return { ok: true };
+    } catch (error: unknown) {
+      return { ok: false, message: errorMessage(error) };
+    }
+  }
+
+  /**
+   * Call only after the user confirmed the link of this identity (shown by email). Without a guest (a sign-in
+   * of an existing Auth user without a player), the age gate comes first; a cancelled gate goes back to the
+   * confirmation. An under-age answer there also deletes that Auth user (server queue) and signs out here.
+   */
   async link(): Promise<LinkOutcome> {
     try {
       const token = await this.auth.accessToken();
       if (token === null) return { kind: "rejected", message: "Sign in first." };
-      let isNew = false;
-      if ((await this.guestPlayer()) === null) {
-        await this.api.createGuest();
+      const guest = await this.guestPlayer();
+      let isNew = guest !== null && guest.id === this.signUpGuestId;
+      if (guest === null) {
+        const birth = await this.ageGate.ask();
+        if (birth === null) return { kind: "confirm", guest: null };
+        try {
+          await this.api.createGuest(birth, token);
+        } catch (error: unknown) {
+          if (!isApiError(error, "age_not_eligible")) throw error;
+          await this.auth.signOut();
+          await this.player.refresh().catch(() => null);
+          return { kind: "rejected", message: errorMessage(error) };
+        }
         isNew = true;
       }
       await this.accounts.linkAccount(token);

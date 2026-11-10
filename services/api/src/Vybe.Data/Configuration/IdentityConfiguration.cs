@@ -20,6 +20,10 @@ internal sealed class PlayerConfiguration : IEntityTypeConfiguration<Player>
             t.Check("deleted_pseudonym", "(status = 'deleted') = (handle ~ '^d_[a-z0-9]{18}$')");
             t.Check("deleted_at", "(status = 'deleted') = (deleted_at IS NOT NULL)");
             t.Check("auth_subject_by_kind", "status = 'deleted' OR (kind = 'guest') = (auth_subject IS NULL)");
+            t.EnumCheck<Player, ProfileVisibility>("profile_visibility");
+            t.EnumCheck<Player, AgeBand>("age_band");
+            // The gate result is complete or absent (players created before the gate have none).
+            t.Check("age_confirmation", "(age_confirmed_at IS NULL) = (age_policy_version IS NULL) AND (age_confirmed_at IS NULL) = (age_band IS NULL)");
         });
         b.Property(x => x.Kind).HasTextEnum();
         b.Property(x => x.Status).HasTextEnum();
@@ -27,6 +31,9 @@ internal sealed class PlayerConfiguration : IEntityTypeConfiguration<Player>
         // Sentinel -1: EF always sends the CLR value, so a wrong 0 hits the CHECK instead of becoming 1.
         b.Property(x => x.Level).HasDefaultValue(1).HasSentinel(-1);
         b.Property(x => x.XpTotal).HasDefaultValue(0L);
+        b.Property(x => x.ProfileVisibility).HasTextEnum().HasDefaultValueSql("'players'");
+        b.Property(x => x.AgeBand).HasTextEnum();
+        b.Property(x => x.AgePolicyVersion).HasMaxLength(32);
         b.Property(x => x.CreatedAt).DefaultNow();
         b.Property(x => x.UpdatedAt).DefaultNow();
         b.HasIndex(x => x.AuthSubject).IsUnique();
@@ -45,6 +52,19 @@ internal sealed class GuestSessionConfiguration : IEntityTypeConfiguration<Guest
         b.HasIndex(x => x.TokenHash).IsUnique();
         b.HasIndex(x => x.PlayerId);
         b.HasOne<Player>().WithMany().HasForeignKey(x => x.PlayerId);
+    }
+}
+
+internal sealed class AuthUserDeletionConfiguration : IEntityTypeConfiguration<AuthUserDeletion>
+{
+    public void Configure(EntityTypeBuilder<AuthUserDeletion> b)
+    {
+        b.ToTable("auth_user_deletions", t => t.Check("attempts", "attempts >= 0"));
+        b.HasKey(x => x.AuthSubject);
+        b.Property(x => x.Attempts).HasDefaultValue(0);
+        b.Property(x => x.NextAttemptAt).DefaultNow();
+        b.Property(x => x.CreatedAt).DefaultNow();
+        b.HasIndex(x => x.NextAttemptAt);
     }
 }
 

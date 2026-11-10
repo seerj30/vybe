@@ -1,7 +1,7 @@
 import type { Browser } from "@playwright/test";
 import { createUser } from "../fake-auth/users.ts";
 import { guestPost, json, openNav, signInOnAdmin } from "./account-flows.ts";
-import { expect, newPlayer, walletBalance } from "./app.ts";
+import { ADULT_GUEST, expect, newPlayer, walletBalance } from "./app.ts";
 import { playerId } from "./db.ts";
 import { test } from "./street-hoops.ts";
 
@@ -12,7 +12,7 @@ interface Guest {
 
 async function newGuest(browser: Browser): Promise<Guest & { close: () => Promise<void>; report: (target: string, details: string) => Promise<void> }> {
   const context = await browser.newContext({ baseURL: test.info().project.use.baseURL });
-  const guest = await json<Guest>(await guestPost(context.request, "/guests", undefined));
+  const guest = await json<Guest>(await guestPost(context.request, "/guests", ADULT_GUEST));
   return {
     ...guest,
     close: () => context.close(),

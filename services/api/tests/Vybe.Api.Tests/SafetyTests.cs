@@ -11,15 +11,15 @@ namespace Vybe.Api.Tests;
 public sealed class SafetyTests(ApiFactory api)
 {
     [Fact]
-    public async Task Profile_PublicFieldsOnly_CaseInsensitive_SameForEveryCaller()
+    public async Task Profile_PublicFieldsOnly_CaseInsensitive_SameForEverySignedInCaller()
     {
         var player = await Player.CreateGuestAsync(api);
         var other = await Player.CreateGuestAsync(api);
         var handle = await HandleAsync(player);
 
-        var anonymous = await api.CreateBrowser().GetAsync($"/api/v1/profiles/{handle.ToUpperInvariant()}");
-        Assert.Equal("private, no-store", anonymous.Headers.NonValidated["Cache-Control"].ToString());
-        var profile = await Contract.AssertAsync(anonymous, HttpStatusCode.OK, "PublicProfile");
+        var seenByOther = await other.Http.GetAsync($"/api/v1/profiles/{handle.ToUpperInvariant()}");
+        Assert.Equal("private, no-store", seenByOther.Headers.NonValidated["Cache-Control"].ToString());
+        var profile = await Contract.AssertAsync(seenByOther, HttpStatusCode.OK, "PublicProfile");
         Assert.Equal(handle, profile.GetProperty("handle").GetString());
         Assert.Equal(["avatar", "displayName", "handle", "level"], profile.EnumerateObject().Select(p => p.Name).Order());
 

@@ -2,11 +2,37 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 export { expect };
 
-/** Landing → onboarding → new guest; ends on the avatar creator. Each call is a new player. */
+/** An adult date of birth for the age gate (spec §17 decision 1). */
+export const ADULT_BIRTH = { month: "June", year: 1990 };
+
+/** The `createGuest` body of an adult, for API calls in specs. */
+export const ADULT_GUEST = { birthYear: 1990, birthMonth: 6 };
+
+/** Chooses the month and types the year of the age gate inside `scope`. */
+export async function fillAgeGate(scope: Page | Locator, birth: { month: string; year: number } = ADULT_BIRTH): Promise<void> {
+  await scope.getByLabel("Month").selectOption({ label: birth.month });
+  await scope.getByLabel("Year").fill(String(birth.year));
+}
+
+/** Fills the age gate on `/play` and starts the guest. */
+export async function passAgeGate(page: Page, birth = ADULT_BIRTH): Promise<void> {
+  await fillAgeGate(page, birth);
+  await page.getByRole("button", { name: "Start as guest" }).click();
+}
+
+/** Fills the age-gate dialog that opens before an invite, a sign-up or a new-player link creates a guest. */
+export async function passAgeGateDialog(page: Page, birth = ADULT_BIRTH): Promise<void> {
+  const dialog = page.getByRole("dialog", { name: "Before you play" });
+  await fillAgeGate(dialog, birth);
+  await dialog.getByRole("button", { name: "Continue" }).click();
+  await expect(dialog).toHaveCount(0);
+}
+
+/** Landing → onboarding → age gate → new guest; ends on the avatar creator. Each call is a new player. */
 export async function startAsGuest(page: Page): Promise<void> {
   await page.goto("/");
   await page.getByRole("link", { name: "Start as guest" }).click();
-  await page.getByRole("button", { name: "Start as guest" }).click();
+  await passAgeGate(page);
   await expect(page.getByRole("heading", { name: "Create your avatar" })).toBeVisible();
 }
 

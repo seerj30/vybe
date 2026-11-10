@@ -4,17 +4,19 @@ import { API } from "../api/api";
 import { errorMessage } from "../api/messages";
 import { AvatarPortrait } from "../avatar/avatar-portrait";
 import { type AvatarPresets, DEFAULT_PRESETS, pickPresets } from "../avatar/presets";
+import { GuestExpiryNotice } from "../player/guest-expiry";
 import { PlayerStore } from "../player/player-store";
 import { QuestsCard } from "../quests/quests-card";
 
 /** `/hub` (spec §3): avatar, level, wallet, quests and the way to play. A failed avatar or quest load is a partial load. */
 @Component({
   selector: "vybe-hub",
-  imports: [AvatarPortrait, QuestsCard, RouterLink],
+  imports: [AvatarPortrait, GuestExpiryNotice, QuestsCard, RouterLink],
   template: `
     <section class="page">
       <h1>Hub</h1>
       @if (player.me(); as me) {
+        <vybe-guest-expiry class="expiry" [me]="me" />
         <div class="grid">
           <div class="card profile">
             <vybe-avatar-portrait [presets]="presets()" />
@@ -47,6 +49,8 @@ import { QuestsCard } from "../quests/quests-card";
   `,
   styles: `
     .grid { display: grid; gap: 16px; }
+    .expiry { display: block; margin-bottom: 16px; }
+    .expiry:empty { display: none; }
     .profile { display: flex; gap: 16px; align-items: center; }
     .handle { font-size: 20px; font-weight: 700; margin: 0; }
     h2 { margin: 0 0 8px; font-size: 18px; }

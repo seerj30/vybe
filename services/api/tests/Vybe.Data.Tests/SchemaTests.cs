@@ -14,7 +14,7 @@ public sealed class SchemaTests(PostgresFixture db)
         await using var context = db.CreateContext();
 
         Assert.Empty(await context.Database.GetPendingMigrationsAsync());
-        Assert.Equal(2, (await context.Database.GetAppliedMigrationsAsync()).Count());
+        Assert.Equal(3, (await context.Database.GetAppliedMigrationsAsync()).Count());
         Assert.False(context.Database.HasPendingModelChanges(), "the model changed without a migration");
     }
 
@@ -88,6 +88,8 @@ public sealed class SchemaTests(PostgresFixture db)
         Assert.Equal(PlayerKind.Registered, player.Kind);
         Assert.Equal(0, player.XpTotal);
         Assert.Equal(1, player.Level);
+        Assert.Equal(ProfileVisibility.Players, player.ProfileVisibility); // database default
+        Assert.Equal("players", await Sql.ScalarAsync<string>(db.DataSource, "SELECT profile_visibility FROM vybe.players WHERE id = $1", id));
     }
 
     [Theory]
@@ -97,6 +99,14 @@ public sealed class SchemaTests(PostgresFixture db)
         "INSERT INTO vybe.players (id, handle, handle_normalized, kind, status, auth_subject) VALUES (gen_random_uuid(), 'kind_bad', 'kind_bad', 'robot', 'active', 'sub-robot')")]
     [InlineData("ck_players_level",
         "INSERT INTO vybe.players (id, handle, handle_normalized, kind, status, level) VALUES (gen_random_uuid(), 'lvl_bad', 'lvl_bad', 'guest', 'active', 51)")]
+    [InlineData("ck_players_profile_visibility",
+        "INSERT INTO vybe.players (id, handle, handle_normalized, kind, status, profile_visibility) VALUES (gen_random_uuid(), 'vis_bad', 'vis_bad', 'guest', 'active', 'public')")]
+    [InlineData("ck_players_age_confirmation",
+        "INSERT INTO vybe.players (id, handle, handle_normalized, kind, status, age_confirmed_at) VALUES (gen_random_uuid(), 'age_part', 'age_part', 'guest', 'active', now())")]
+    [InlineData("ck_players_age_band",
+        "INSERT INTO vybe.players (id, handle, handle_normalized, kind, status, age_confirmed_at, age_policy_version, age_band) VALUES (gen_random_uuid(), 'age_band', 'age_band', 'guest', 'active', now(), 'v', 'teen')")]
+    [InlineData("ck_auth_user_deletions_attempts",
+        "INSERT INTO vybe.auth_user_deletions (auth_subject, attempts) VALUES ('sub-negative', -1)")]
     [InlineData("ck_catalog_items_compatible_body_presets",
         "INSERT INTO vybe.catalog_items (id, sku, slot, name, price, asset_key, compatible_body_presets, rarity, is_active, catalog_version) VALUES (gen_random_uuid(), 'sku_none', 'top', 'x', 10, 'a', '{}', 'common', true, 1)")]
     [InlineData("ck_catalog_items_min_level",

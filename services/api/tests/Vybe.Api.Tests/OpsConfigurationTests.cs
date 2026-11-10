@@ -13,6 +13,7 @@ public sealed class OpsConfigurationTests
         ["ConnectionStrings:Vybe"] = "Host=db;Database=vybe",
         ["Auth:Supabase:Authority"] = "https://ref.supabase.co/auth/v1",
         ["Auth:Supabase:ApiKey"] = "publishable-key",
+        ["Auth:Supabase:ServiceRoleKey"] = "service-role-key",
         ["Challenges:InviteSecret"] = Convert.ToBase64String(new byte[32]),
         ["Challenges:ShareBaseUrl"] = "https://vybe.example",
         ["Storage:Exports:Bucket"] = "exports",
@@ -36,7 +37,7 @@ public sealed class OpsConfigurationTests
         {
             "ConnectionStrings:Vybe", "Auth:Supabase:Authority", "Auth:Supabase:ApiKey", "Challenges:InviteSecret",
             "Challenges:ShareBaseUrl", "Storage:Exports:Bucket", "Storage:Exports:Region", "Content:Root",
-            "ReverseProxy:KnownNetworks",
+            "ReverseProxy:KnownNetworks", "Auth:Supabase:ServiceRoleKey",
         })
         {
             Assert.Contains(name, problems, StringComparison.Ordinal);
@@ -50,6 +51,7 @@ public sealed class OpsConfigurationTests
     [InlineData("Storage:Exports:ServiceUrl", "ftp://storage.example")]
     [InlineData("Storage:Exports:ServiceUrl", "http://storage.example")]
     [InlineData("Storage:Exports:SecretAccessKey", "")]
+    [InlineData("Auth:Supabase:ServiceRoleKey", "")]
     [InlineData("Auth:Supabase:Authority", "http://ref.supabase.co/auth/v1")]
     [InlineData("Auth:Supabase:MetadataAddress", "http://ref.supabase.co/auth/v1/.well-known/openid-configuration")]
     [InlineData("Auth:Supabase:Issuer", "http://ref.supabase.co/auth/v1")]

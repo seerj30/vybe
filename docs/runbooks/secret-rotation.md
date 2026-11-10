@@ -21,6 +21,7 @@
 | `Sentry__Dsn` | Only when abused | None |
 | OTLP collector credentials (`OTEL_EXPORTER_OTLP_HEADERS`) | 12 months | None |
 | `Auth__Supabase__ApiKey` (publishable key) | Not secret; rotate with Supabase key rotation | None if both keys overlap |
+| `Auth__Supabase__ServiceRoleKey` | 6 months, and at once when exposed | None: Auth user deletions wait in `vybe.auth_user_deletions` and retry |
 | Fly.io deploy tokens (GitHub secrets `FLY_API_TOKEN_API`, `FLY_API_TOKEN_WEB`) | 12 months (token expiry) | None |
 
 ## Database password
@@ -65,8 +66,12 @@ There is no overlap period: the API knows one secret. A rotation invalidates eve
 
 ## Supabase keys
 
-The API uses the publishable (anon) key only, to call `GET {issuer}/user` during account linking. It does
-not use the service role key. When Supabase keys rotate, update `Auth__Supabase__ApiKey`, then restart.
+The API uses the publishable (anon) key to call `GET {issuer}/user` during account linking. It uses the
+service-role (secret) key only for `DELETE {issuer}/admin/users/{id}` after a J4 anonymization (spec §17
+decision 8). When Supabase keys rotate, update `Auth__Supabase__ApiKey` and `Auth__Supabase__ServiceRoleKey`,
+then restart. During the change, failed Auth user deletions stay queued and retry (at most every 6 hours).
+A service-role key gives full access to the Supabase project: treat an exposed key as a SEV-1 incident,
+create a new secret key in Supabase, update the secret store, restart, then revoke the old key.
 The JWT signing keys are read from the issuer metadata; a key rotation in Supabase Auth needs no API change.
 
 ## Rotation record

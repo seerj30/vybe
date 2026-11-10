@@ -24,7 +24,31 @@ public static class GuestTokens
 {
     // __Host- prefix: Secure, Path=/, no Domain, so a sibling subdomain cannot overwrite it.
     public const string CookieName = "__Host-vybe_guest";
-    public static readonly TimeSpan Lifetime = TimeSpan.FromDays(30); // provisional, spec §17 item 2
+
+    /// <summary>Spec §17 decision 2: a guest session ends this long after its last use (renewed at most once per UTC day).</summary>
+    public static readonly TimeSpan IdleLifetime = TimeSpan.FromDays(30);
+
+    /// <summary>Spec §17 decision 2: a guest session never lasts past this time after the guest player was created.</summary>
+    public static readonly TimeSpan MaxLifetime = TimeSpan.FromDays(90);
+
+    /// <summary>The expiry for a session used at <paramref name="now"/>: the idle window, capped by the player's age.</summary>
+    public static DateTime ExpiryAt(DateTime now, DateTime playerCreatedAt)
+    {
+        var idle = now + IdleLifetime;
+        var cap = playerCreatedAt + MaxLifetime;
+        return idle < cap ? idle : cap;
+    }
+
+    /// <summary>
+    /// The renewed expiry, or null when no renewal is due: a session is renewed at most once per UTC day
+    /// (its last renewal is <c>expiresAt - IdleLifetime</c>) and never past the cap.
+    /// </summary>
+    public static DateTime? RenewedExpiry(DateTime expiresAt, DateTime playerCreatedAt, DateTime now)
+    {
+        var lastRenewal = expiresAt - IdleLifetime;
+        var renewed = ExpiryAt(now, playerCreatedAt);
+        return lastRenewal < now.Date && renewed > expiresAt ? renewed : null;
+    }
 
     public static string NewToken() => Base64Url(RandomNumberGenerator.GetBytes(32));
 
@@ -73,23 +97,54 @@ internal sealed class GuestAuthenticationHandler(
         var hash = GuestTokens.Hash(token!);
         var now = clock.UtcNowForDb();
         // A deleting or deleted player's cookie no longer authenticates (spec §2 J4, §6).
-        var playerId = await db.GuestSessions.AsNoTracking()
+        var session = await db.GuestSessions.AsNoTracking()
             .Where(s => s.TokenHash == hash && s.RevokedAt == null && s.ExpiresAt > now)
-            .Join(db.Players, s => s.PlayerId, p => p.Id, (s, p) => new { s.PlayerId, p.Status })
+            .Join(db.Players, s => s.PlayerId, p => p.Id, (s, p) => new { s.Id, s.PlayerId, s.ExpiresAt, p.CreatedAt, p.Status })
             .Where(x => x.Status != PlayerStatus.Deleting && x.Status != PlayerStatus.Deleted)
-            .Select(x => (Guid?)x.PlayerId)
             .SingleOrDefaultAsync(Context.RequestAborted);
 
         // An expired or revoked cookie means "not signed in", so createGuest can still run.
-        if (playerId is null)
+        if (session is null)
         {
             return AuthenticateResult.NoResult();
         }
 
+        if (GuestTokens.RenewedExpiry(session.ExpiresAt, session.CreatedAt, now) is { } renewed)
+        {
+            await RenewAsync(session.Id, session.ExpiresAt, renewed, token!);
+        }
+
         var identity = new ClaimsIdentity(
-            [new Claim(ClaimTypes.NameIdentifier, playerId.Value.ToString()), new Claim(AuthSchemes.AuthKindClaim, AuthSchemes.Guest)],
+            [new Claim(ClaimTypes.NameIdentifier, session.PlayerId.ToString()), new Claim(AuthSchemes.AuthKindClaim, AuthSchemes.Guest)],
             AuthSchemes.Guest);
         return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), AuthSchemes.Guest));
+    }
+
+    /// <summary>
+    /// Sliding expiry (spec §17 decision 2): one compare-and-swap write per session and UTC day. The cookie is
+    /// sent when the response starts, so an error response keeps it, and a response that clears the cookie
+    /// (linking, deletion) wins.
+    /// </summary>
+    private async Task RenewAsync(Guid sessionId, DateTime expiresAt, DateTime renewed, string token)
+    {
+        var updated = await db.GuestSessions
+            .Where(s => s.Id == sessionId && s.ExpiresAt == expiresAt && s.RevokedAt == null)
+            .ExecuteUpdateAsync(u => u.SetProperty(s => s.ExpiresAt, renewed), Context.RequestAborted);
+        if (updated == 0)
+        {
+            return; // a parallel request renewed it and sends the cookie
+        }
+
+        var response = Response;
+        response.OnStarting(() =>
+        {
+            if (!response.Headers.SetCookie.Any(c => c?.StartsWith(GuestTokens.CookieName + "=", StringComparison.Ordinal) == true))
+            {
+                GuestTokens.SetCookie(response, token, renewed);
+            }
+
+            return Task.CompletedTask;
+        });
     }
 }
 

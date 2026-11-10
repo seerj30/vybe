@@ -7,6 +7,12 @@ public enum PlayerKind { Guest, Registered }
 
 public enum PlayerStatus { Active, Suspended, Deleting, Deleted }
 
+/// <summary>Spec §17 decision 6: who can see the profile. Default <c>players</c> (signed-in players).</summary>
+public enum ProfileVisibility { Players, Private }
+
+/// <summary>Spec §17 decision 1: the self-declared age band of the age gate (the birth year is never stored).</summary>
+public enum AgeBand { Adult }
+
 public enum ItemSlot { Hair, Top, Bottom, Shoes, Accessory, Emote }
 
 public enum Rarity { Common, Rare, Epic }

@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, inject, input, output, signal } from "@angular/core";
+import { AccountLink } from "./account-link";
 import { AuthSession } from "./auth-session";
 
 type Mode = "sign-in" | "sign-up";
@@ -51,6 +52,7 @@ type Mode = "sign-in" | "sign-up";
 })
 export class SignInForm {
   private readonly auth = inject(AuthSession);
+  private readonly link = inject(AccountLink);
 
   readonly allowSignUp = input(true);
   readonly signedIn = output();
@@ -81,6 +83,12 @@ export class SignInForm {
         } else {
           this.error.set(result.message);
         }
+        return;
+      }
+      // Age gate before the Auth user exists (spec §17 decision 1): a browser without a guest gets one first.
+      const ready = await this.link.prepareSignUp();
+      if (!ready.ok) {
+        if (ready.message !== null) this.error.set(ready.message);
         return;
       }
       const result = await this.auth.signUp(this.email(), this.password());

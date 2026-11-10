@@ -32,6 +32,7 @@ The image sets `ASPNETCORE_ENVIRONMENT=Production`; set `Staging` on staging.
 | `ConnectionStrings__Migrations` | for `migrate`/`seed` | yes | Owner role. Direct connection or session-mode pooler. Never the transaction pooler. Do not give it to the API process. |
 | `Auth__Supabase__Authority` | yes | no | `https://<ref>.supabase.co/auth/v1` |
 | `Auth__Supabase__ApiKey` | yes | no (publishable key) | Supabase publishable (anon) key. |
+| `Auth__Supabase__ServiceRoleKey` | yes | yes | Supabase service-role (secret) key. The API uses it only for the Auth admin API: J4 deletes the Supabase Auth user (spec §17 decision 8). Give it only to the API process. Never put it in the web app, a log or a ticket. |
 | `Challenges__InviteSecret` | yes | yes | Base64 of at least 32 random bytes: `openssl rand -base64 32`. |
 | `Challenges__ShareBaseUrl` | yes | no | Web origin, absolute `https` URL. |
 | `Storage__Exports__Bucket` | yes | no | Private bucket for J4 data exports. |
@@ -85,13 +86,16 @@ container is reachable only through the proxy (no public port). Prefer the publi
 4. Run the migration step against the target environment:
    `docker run --rm -e ConnectionStrings__Migrations=<secret> <image> migrate`.
    Make sure that the exit code is 0 and the log line is "The database schema is up to date".
+   The first deploy must run the migrations **before the first player exists**: the `AccountPolicies`
+   migration adds the age-gate columns, and players created before it have no gate result (ADR 0007).
 5. Run the seed step: `docker run --rm -e ConnectionStrings__Migrations=<secret> <image> seed`.
    Make sure that the exit code is 0. A changed ruleset with an existing id stops the seed: publish a new
    ruleset version instead.
 6. Deploy the new image (rolling or blue/green). The new instances receive traffic only after
    `/health/ready` returns 200.
 7. Smoke test through the public origin:
-   - `POST /api/v1/guests` with `X-Requested-With: vybe-web` returns 201.
+   - `POST /api/v1/guests` with `X-Requested-With: vybe-web` and the body `{"birthYear":1990,"birthMonth":6}`
+     returns 201.
    - `GET /api/v1/catalog` with the guest cookie returns 200.
    - The response has `Strict-Transport-Security` and `Content-Security-Policy` headers.
 8. Watch the dashboards for 30 minutes: 5xx rate, p95 latency, wallet errors, auth failures (spec §12).
