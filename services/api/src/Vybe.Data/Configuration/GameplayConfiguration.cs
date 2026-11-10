@@ -57,6 +57,9 @@ internal sealed class GameSessionConfiguration : IEntityTypeConfiguration<GameSe
             .HasDatabaseName("ix_game_sessions_created_start_deadline");
         b.HasIndex(x => x.SubmitDeadline).HasFilter("status = 'active'")
             .HasDatabaseName("ix_game_sessions_active_submit_deadline");
+        // Moderator list of flagged runs (GET /admin/flagged-runs), newest first; few rows have a flag.
+        b.HasIndex(x => new { x.VerifiedAt, x.Id }).IsDescending(true, true).HasFilter("cardinality(review_flags) > 0")
+            .HasDatabaseName("ix_game_sessions_flagged_verified_at");
 
         b.HasOne<Player>().WithMany().HasForeignKey(x => x.PlayerId);
         b.HasOne<GameRuleset>().WithMany().HasForeignKey(x => x.RulesetId);

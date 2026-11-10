@@ -1500,6 +1500,43 @@ paths:
         default:
           $ref: "#/components/responses/Problem"
 
+  /admin/flagged-runs:
+    get:
+      tags: [admin]
+      operationId: adminListFlaggedRuns
+      summary: List verified runs with review flags
+      description: |
+        Spec §7 and §17 decision 4: the server writes `review_flags` on a verified run; the flags start no
+        automatic action. Newest first (by verification time). Runs of deleting or deleted players are not
+        listed. A read: it writes no audit log row.
+      security:
+        - bearerAuth: []
+      x-required-role: moderator
+      x-problem-codes:
+        "422": [validation_failed]
+      parameters:
+        - name: flag
+          in: query
+          required: false
+          description: Only runs with this flag.
+          schema:
+            $ref: "#/components/schemas/ReviewFlag"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: One page of flagged runs, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlaggedRunPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        default:
+          $ref: "#/components/responses/Problem"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -3084,5 +3121,55 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AuditLogEntry"
+        nextCursor:
+          $ref: "#/components/schemas/NextCursor"
+    ReviewFlag:
+      type: string
+      description: |
+        Anti-automation signal (spec §17 decision 4): perfect_rate_high = more than 60 % perfect shots in a run
+        of 30 or more shots; gap_variance_low = standard deviation of the shot gaps under 25 ms; aim_variance_low
+        = standard deviation of aim and power both under 10 (20 or more shots); daily_cap_streak = the 20th
+        reward-eligible run of a day after 6 days with 20 or more.
+      enum: [perfect_rate_high, gap_variance_low, aim_variance_low, daily_cap_streak]
+    FlaggedRun:
+      type: object
+      required: [sessionId, player, flags, score, eventCount, startedAt, submittedAt, runMs, rewardCoins, challengeId]
+      properties:
+        sessionId:
+          $ref: "#/components/schemas/Uuid"
+        player:
+          $ref: "#/components/schemas/PlayerRef"
+        flags:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/ReviewFlag"
+        score:
+          type: integer
+          minimum: 0
+        eventCount:
+          type: integer
+          minimum: 0
+        startedAt:
+          $ref: "#/components/schemas/Timestamp"
+        submittedAt:
+          $ref: "#/components/schemas/Timestamp"
+        runMs:
+          type: integer
+          minimum: 0
+          description: submittedAt − startedAt on the server clock.
+        rewardCoins:
+          type: integer
+          minimum: 0
+        challengeId:
+          $ref: "#/components/schemas/NullableUuid"
+    FlaggedRunPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/FlaggedRun"
         nextCursor:
           $ref: "#/components/schemas/NextCursor"
