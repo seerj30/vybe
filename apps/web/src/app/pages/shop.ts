@@ -54,7 +54,7 @@ const PAGE_SIZE = 48;
         <section class="card preview" aria-labelledby="preview-title">
           <vybe-avatar-viewport
             [presets]="avatarPresets()"
-            [outfit]="item.slot === 'emote' ? worn() : tryOn(item)"
+            [outfit]="previewOutfit()"
             [emote]="item.slot === 'emote' ? item.sku : null"
           />
           <div>
@@ -165,6 +165,11 @@ export class Shop {
   protected readonly previewItem = signal<CatalogItem | null>(null);
   protected readonly avatarPresets = signal<AvatarPresets>(DEFAULT_PRESETS);
   protected readonly worn = signal<Outfit>(EMPTY_OUTFIT);
+  /** The worn items with the previewed item on (emotes do not change the outfit). */
+  protected readonly previewOutfit = computed((): Outfit => {
+    const item = this.previewItem();
+    return item === null ? this.worn() : withItem(this.worn(), item.slot, item.sku);
+  });
   private avatarLoad: Promise<void> | null = null;
   private readonly previewTitle = viewChild<ElementRef<HTMLElement>>("previewTitle");
   private readonly injector = inject(Injector);
@@ -186,9 +191,6 @@ export class Shop {
     return itemPicture(item.sku, item.previewUrl);
   }
 
-  protected tryOn(item: CatalogItem): Outfit {
-    return withItem(this.worn(), item.slot, item.sku);
-  }
 
   protected preview(item: CatalogItem): void {
     this.previewItem.set(item);

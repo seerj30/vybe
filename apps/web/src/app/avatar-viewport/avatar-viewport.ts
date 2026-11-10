@@ -21,6 +21,7 @@ import type { AvatarRenderer, RenderStats } from "./avatar-renderer";
 type Mode = "loading" | "3d" | "fallback";
 
 const TURN_STEP = Math.PI / 6;
+let nextId = 0;
 const DRAG_RADIANS_PER_PX = 0.012;
 
 export const WARNINGS = {
@@ -49,7 +50,14 @@ export const WARNINGS = {
     @if (mode() === "fallback") {
       <vybe-avatar-portrait class="portrait" [presets]="presets()" />
     }
-    <div class="stage" role="img" [attr.aria-label]="label()" [hidden]="mode() === 'fallback'" [attr.aria-busy]="mode() === 'loading'">
+    <div
+      class="stage"
+      role="img"
+      [attr.aria-label]="label()"
+      [attr.aria-describedby]="wearing() ? descriptionId : null"
+      [hidden]="mode() === 'fallback'"
+      [attr.aria-busy]="mode() === 'loading'"
+    >
       @for (key of [canvasKey()]; track key) {
         <canvas
           #canvas
@@ -64,6 +72,7 @@ export const WARNINGS = {
         <span class="loading" aria-hidden="true"></span>
       }
     </div>
+    <p class="visually-hidden" [id]="descriptionId">{{ wearing() }}</p>
     @if (mode() === "3d") {
       <div class="controls">
         <button type="button" class="turn" (click)="turn(-1)" aria-label="Turn the avatar left">⟲</button>
@@ -132,10 +141,13 @@ export class AvatarViewport {
     if (this.failed().size > 0) return WARNINGS.items;
     return this.look().skipped.length > 0 ? WARNINGS.fit : null;
   });
-  protected readonly label = computed(() => {
+  /** The same name as the 2D portrait; the worn items are the description. */
+  protected readonly label = computed(() => `Avatar: ${describeAvatar(this.presets())}`);
+  protected readonly wearing = computed(() => {
     const names = this.look().parts.map((p) => itemAsset(p.sku)?.name ?? p.sku);
-    return `Avatar: ${describeAvatar(this.presets())}${names.length > 0 ? `, wearing ${names.join(", ")}` : ""}`;
+    return names.length > 0 ? `Wearing ${names.join(", ")}.` : "";
   });
+  protected readonly descriptionId = `avatar-wearing-${nextId++}`;
 
   constructor() {
     afterNextRender(() => void this.mount());

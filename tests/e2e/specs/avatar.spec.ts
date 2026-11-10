@@ -36,7 +36,9 @@ test("the hub and the avatar creator show the 3D avatar in its starter items", a
   await newPlayer(page);
   await expect3d(page);
   await expect(viewport(page)).toHaveAttribute("data-items", "top_starter_tee bottom_starter_shorts shoes_starter_kicks");
-  await expect(page.getByRole("img", { name: /^Avatar: Body A, .*, wearing Starter Tee, Starter Shorts, Starter Kicks$/ })).toBeVisible();
+  const avatar = page.getByRole("img", { name: /^Avatar: Body A, / });
+  await expect(avatar).toBeVisible();
+  await expect(avatar).toHaveAccessibleDescription("Wearing Starter Tee, Starter Shorts, Starter Kicks.");
 
   await page.getByRole("link", { name: "Edit avatar" }).click();
   await expect3d(page);
