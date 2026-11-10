@@ -1,0 +1,223 @@
+name: E2E browsers
+
+# Spec §14 browser matrix. Pull requests run only Chromium (ci.yml: functional + visual), which keeps the PR
+# check near its old time. Firefox and WebKit run here: the critical journeys (E01–E12) and the visual
+# baselines of each engine. They run after each merge to master, every night, on demand, and on pull requests
+# that change the matrix itself (config, visual spec, baselines, this file).
+on:
+  push:
+    branches: [master]
+  schedule:
+    - cron: "17 2 * * *"
+  pull_request:
+    paths:
+      - tests/e2e/playwright.config.ts
+      - tests/e2e/specs/visual.spec.ts
+      - tests/e2e/specs/__screenshots__/**
+      - .github/workflows/e2e-browsers.yml
+  workflow_dispatch:
+    inputs:
+      update_snapshots:
+        description: "Write new visual baselines (all engines) and upload them as an artifact; tests do not fail on differences"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# One group per event and commit: a merge never cancels the nightly run or another merge. Only a newer push to
+# the same pull request cancels the older run.
+concurrency:
+  group: e2e-browsers-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # The nightly run is skipped when the master commit already has a successful run (after its merge, or last night).
+  gate:
+    name: New commit?
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          run=true
+          if [ "$EVENT" = "schedule" ]; then
+            done=$(gh run list --repo "$REPO" --workflow e2e-browsers.yml --branch master --status success \
+              --limit 50 --json headSha --jq "[.[] | select(.headSha == \"$SHA\")] | length")
+            if [ "$done" != "0" ]; then
+              run=false
+              echo "::notice::master $SHA already passed the browser matrix; the nightly run is skipped."
+            fi
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+  e2e:
+    needs: gate
+    if: ${{ needs.gate.outputs.run == 'true' }}
+    # Normal runs: Firefox and WebKit (Chromium runs in ci.yml on every PR and master push).
+    # With update_snapshots, the job rewrites the baselines of all three engines instead.
+    name: Browser tests (${{ matrix.browser }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.update_snapshots) && '["firefox","webkit","chromium"]' || '["firefox","webkit"]') }}
+    env:
+      E2E_BROWSERS: all
+      # HTTPS dev server: WebKit stores the Secure guest cookie only on HTTPS, also on localhost.
+      E2E_WEB_HTTPS: "1"
+      E2E_DATABASE_URL: postgres://vybe:vybe@localhost:55432/vybe
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_USER: vybe
+          POSTGRES_PASSWORD: vybe
+          POSTGRES_DB: vybe
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U vybe -d vybe"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0 (version from packageManager)
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Create the database schema
+        run: psql "$E2E_DATABASE_URL" -q -v ON_ERROR_STOP=1 -f services/api/db/schema.sql
+
+      - name: Build the API
+        run: dotnet build services/api/src/Vybe.Api
+
+      - name: Install ${{ matrix.browser }}
+        run: pnpm --filter @vybe/e2e exec playwright install --with-deps ${{ matrix.browser }}
+
+      # Headless Firefox needs a system OpenGL driver for WebGL (the court); Mesa llvmpipe renders in software.
+      # Chromium and WebKit bring their own software renderer.
+      - name: Install Mesa (software OpenGL) and Xvfb
+        if: ${{ matrix.browser == 'firefox' }}
+        run: |
+          sudo apt-get install -y --no-install-recommends libgl1-mesa-dri libglx-mesa0 xvfb
+          echo "E2E_FIREFOX_HEADED=1" >> "$GITHUB_ENV"
+
+      # Project names per engine (playwright.config.ts). BROWSER is a fixed matrix value, never user input.
+      - name: Projects
+        env:
+          BROWSER: ${{ matrix.browser }}
+        run: |
+          case "$BROWSER" in
+            firefox) echo "FUNCTIONAL=--project=desktop-firefox" >> "$GITHUB_ENV"
+                     echo "VISUAL=--project=visual-desktop-firefox" >> "$GITHUB_ENV" ;;
+            webkit)  echo "FUNCTIONAL=--project=desktop-webkit" >> "$GITHUB_ENV"
+                     echo "VISUAL=--project=visual-desktop-webkit --project=visual-mobile-webkit" >> "$GITHUB_ENV" ;;
+            chromium) echo "FUNCTIONAL=" >> "$GITHUB_ENV"
+                      echo "VISUAL=--project=visual-desktop-chromium --project=visual-mobile-chromium" >> "$GITHUB_ENV" ;;
+            *) echo "unknown browser $BROWSER"; exit 1 ;;
+          esac
+
+      # A pull request that changes the matrix runs each screenshot 3 times: proof that the baselines are stable.
+      - name: Playwright tests
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.update_snapshots) }}
+        env:
+          REPEAT: ${{ github.event_name == 'pull_request' && '3' || '1' }}
+        run: |
+          # Firefox runs headed in Xvfb (see "Install Mesa"); the other engines run headless.
+          browser() {
+            if [ "${E2E_FIREFOX_HEADED:-}" = "1" ]; then
+              xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" "$@"
+            else
+              "$@"
+            fi
+          }
+          status=0
+          if [ -n "$FUNCTIONAL" ]; then
+            browser pnpm --filter @vybe/e2e exec playwright test $FUNCTIONAL || status=1
+          fi
+          browser pnpm --filter @vybe/e2e exec playwright test $VISUAL --repeat-each="$REPEAT" || status=1
+          exit $status
+
+      - name: Rewrite the visual baselines
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.update_snapshots }}
+        run: |
+          if [ "${E2E_FIREFOX_HEADED:-}" = "1" ]; then
+            xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" pnpm --filter @vybe/e2e exec playwright test $VISUAL --update-snapshots=all
+          else
+            pnpm --filter @vybe/e2e exec playwright test $VISUAL --update-snapshots=all
+          fi
+
+      # The baselines of this run: new ones (missing before) and rewritten ones. Commit them from this artifact
+      # (docs/runbooks/visual-baselines.md).
+      - name: Upload baselines
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: visual-baselines-${{ matrix.browser }}
+          path: tests/e2e/specs/__screenshots__/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload report
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-report-${{ matrix.browser }}
+          path: |
+            tests/e2e/playwright-report/
+            tests/e2e/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # A failure on master (merge or nightly) opens an issue, or comments on the open one, so nobody has to watch runs.
+  alert:
+    name: Alert on failure
+    needs: e2e
+    if: ${{ failure() && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHA: ${{ github.sha }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          title="E2E browsers (Firefox/WebKit) fail on master"
+          body="The browser matrix failed on $SHA ($EVENT): $URL. Runbook: docs/runbooks/visual-baselines.md."
+          number=$(gh issue list --repo "$REPO" --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --repo "$REPO" --body "$body"
+          else
+            gh issue create --repo "$REPO" --title "$title" --body "$body"
+          fi
