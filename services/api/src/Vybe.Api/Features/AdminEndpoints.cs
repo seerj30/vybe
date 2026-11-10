@@ -314,10 +314,10 @@ public static class AdminEndpoints
         return document.RootElement.Clone();
     }
 
-    private static string TimeCursor(DateTime createdAt, Guid id) =>
+    internal static string TimeCursor(DateTime createdAt, Guid id) =>
         Cursor.Encode($"{createdAt.Ticks.ToString(CultureInfo.InvariantCulture)}|{id}");
 
-    private static (DateTime CreatedAt, Guid Id) ParseTimeCursor(string decoded)
+    internal static (DateTime CreatedAt, Guid Id) ParseTimeCursor(string decoded)
     {
         var parts = decoded.Split('|');
         return parts.Length == 2 && long.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var ticks)
