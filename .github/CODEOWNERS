@@ -1,0 +1,10 @@
+# Changes to the deployment path, the server configuration, the workflows and the backup keys need the owner's review.
+# Effective when the master branch rule "Require review from Code Owners" is on.
+/infra/oracle/                      @seerj30
+/infra/web/                         @seerj30
+/infra/fly/                         @seerj30
+/infra/db/                          @seerj30
+/.github/workflows/                 @seerj30
+/.github/CODEOWNERS                 @seerj30
+/infra/oracle/backup-recipients.txt @seerj30
+/infra/oracle/supabase-ca.crt       @seerj30

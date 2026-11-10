@@ -1,0 +1,5 @@
+# age public keys that can decrypt the weekly database dumps (infra/oracle/backup.sh, docs/runbooks/backup-restore.md).
+# Public keys only. The private key stays with the product owner (password manager and an offline copy), never here.
+# Create it on the owner's Mac:  age-keygen -o vybe-backup.key   (prints "Public key: age1...")
+# Then put the age1... line below in a PR. One key per line; add the on-call backup person's key the same way.
+# The backup workflow fails until this file has at least one key.
