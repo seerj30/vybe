@@ -320,8 +320,8 @@ these checks by hand:
 5. Sign-in: create an account with a test email, confirm it, link the guest ("Link this account"). The
    player id stays the same in `/settings`. Delete the test account afterwards in `/settings`.
 6. Client address: send 11 guest creations (step 3) within one minute from one machine, each with another
-   forged `Fly-Client-IP` header. The 11th answer must be 429: the Fly edge replaces the header. If all are
-   201, stop and treat it as a SEV-2 (the guest rate limit does not work). The test guests expire like
+   forged `Fly-Client-IP` header (with two API machines: 21, see "Scaling before the social beta"). At least
+   one answer must be 429: the Fly edge replaces the header. If all are 201, stop and treat it as a SEV-2 (the guest rate limit does not work). The test guests expire like
    other unused guests.
 
 ### Rollback on Fly.io
@@ -356,20 +356,59 @@ expected.
 
 ### Scaling before the social beta
 
-Decision 7 asks for a second API machine before the social beta (availability target 99.5 %):
+Spec §16 and decision 7 ask for a second API machine before the social beta (availability target 99.5 %).
+`infra/fly/api.fly.toml` does not set the machine count: Fly.io keeps the count of the app, and the deploy
+workflow (`--ha=false`) and a rollback keep it too. `min_machines_running` only stops the auto-stop of
+machines, which is off. Do this procedure once, before the social beta, after a deploy that passed the smoke
+test. Two people: one runs the commands, the second watches `fly logs`.
 
-```bash
-fly scale count 2 -a vybe-api --region <region>
-fly scale count 2 -a vybe-web --region <region>
-```
+1. **Pool.** The pooler client limit of the Supabase compute size must be more than
+   2 × `Maximum Pool Size` (2 × 20 = 40) plus the owner connections of the release step. If it is not, make
+   the compute size bigger first, or set `Maximum Pool Size=15` in `ConnectionStrings__Vybe`.
+2. **Rate limits.** The rate limits are in the memory of each machine, and Caddy sends each request to a
+   random machine. With two machines a client can get up to two times each limit (guest creation, account
+   linking, writes and reads per player). This is accepted for the closed beta. To keep the old totals, set
+   the `RateLimits__*` secrets to half of their defaults before you scale.
+3. **Scale.**
+   ```bash
+   fly scale count 2 -a vybe-api --region <region>
+   fly scale count 2 -a vybe-web --region <region>
+   ```
+4. **Check the machines.** `fly machines list -a vybe-api` shows two machines in `<region>`, both `started`.
+   `fly checks list -a vybe-api` shows that both pass the `/health/ready` service check and the `live` check.
+5. **Check the traffic.** Do smoke-test steps 2–4. In `fly logs -a vybe-api`, request lines come from both
+   machine ids. Caddy reads the AAAA records of `vybe-api.internal` every 5 s, so wait 10 s after step 4.
+6. **Check the workers.** Each machine runs all background workers. They are safe on many machines (table
+   below). In `fly logs -a vybe-api`, no worker logs `failed` in the 10 minutes after the scale.
+7. **Smoke-test step 6 changes.** With two machines, send `10 × 2 + 1` = 21 guest creations (each with a
+   forged `Fly-Client-IP`). One machine gets at least 11 of them, so at least one answer must be 429. If step 2
+   halved the limit, 11 are enough.
+8. **Load test.** Repeat the load test against an isolated beta-like environment with two machines
+   ([load-test.md](load-test.md)) and record the result.
+9. **Back to one machine** (for example to save cost after the beta): `fly scale count 1 -a vybe-api`. Fly stops
+   one machine with `SIGTERM`; running requests complete (`kill_timeout`), and a worker pass that stops rolls back
+   its transaction, so the other machine runs it again.
 
-- The background workers are safe on many machines (`SKIP LOCKED`, compare-and-swap writes).
-- Caddy reads the AAAA records of `vybe-api.internal` every 5 s and spreads requests; a stopped machine is
-  skipped for 30 s and a failed connect tries another machine.
-- Check that 2 × `Maximum Pool Size` stays below the pooler client limit.
-- Bigger machines: `fly scale vm shared-cpu-4x -a vybe-api` or `fly scale memory 2048 -a vybe-api`,
-  then change `[[vm]]` in `api.fly.toml` in a PR, so the next deploy keeps the size.
-- Run the load test against the beta environment again after a change ([load-test.md](load-test.md)).
+Background workers with two or more machines:
+
+| Worker | Why it is safe on many machines | Test |
+|---|---|---|
+| Outbox (`challenge-resolved` bonus) | One job per transaction, claimed with `FOR UPDATE SKIP LOCKED`; the job and its status change commit together. The ledger key `challenge:{id}` is unique, so even a repeated job never pays twice. | `MultiInstanceWorkerTests.Outbox_TwoInstances_RunEveryJobOnce_AndPayEveryBonusOnce`, `ChallengeTests.OutboxRetries_NeverPayTwice_AndRespectTheDailyCap` |
+| Sweeper (sessions, challenges, elapsed suspensions) | Each batch claims rows with `SKIP LOCKED` and the update checks the status again (compare-and-swap). | `MultiInstanceWorkerTests.Sweeper_TwoInstances_ExpireEverySessionOnce`, `SweeperTests.LateSubmit_RacingTheSweeper_GivesOneExpiredState` |
+| Privacy: exports and J4 anonymization | Each request is claimed with `FOR UPDATE SKIP LOCKED` and finished in one transaction; lock order player, then export. | `MultiInstanceWorkerTests.Privacy_TwoInstances_AnonymizeEveryPlayerOnce_AndDeleteEveryAuthUserOnce`, `PrivacyTests.ExportAndDeletionOfOnePlayer_InParallelWorkers_FinishWithoutAFile` |
+| Privacy: Supabase Auth user deletion | A claim moves `next_attempt_at` forward by a 5-minute lease (`SKIP LOCKED`) and commits before the HTTP call, so another machine does not take the row. A `DELETE` of a deleted user is harmless. | `MultiInstanceWorkerTests.Privacy_TwoInstances_AnonymizeEveryPlayerOnce_AndDeleteEveryAuthUserOnce` |
+| Privacy: export file removal and orphan sweep | The file removal claims the export row with `SKIP LOCKED`. The orphan sweep (once per hour per machine) removes only files of unknown or failed exports without a key; a running export has a `queued` row, so its file stays. | `PrivacyTests` |
+| Guest cleanup | Players claimed with `FOR NO KEY UPDATE SKIP LOCKED`; the update checks kind and status again, so a player gets one deletion request. | `MultiInstanceWorkerTests.GuestCleanup_TwoInstances_QueueOneDeletionPerGuest` |
+| Idempotency cleanup | Rows claimed with `SKIP LOCKED` in batches, then deleted. | `OpsIdempotencyCleanupTests.ConcurrentRuns_DeleteMoreThanOneBatch_EachRowOnce` |
+| Deletion log copy | An entry is keyed by the request id and never changes, so two machines that write the same entry write the same object. A missed entry is written by the next pass. | `MultiInstanceWorkerTests.DeletionLog_TwoInstances_WriteEveryRequest_AndRewritesAreHarmless` |
+
+The `replay-deletions` command is not a worker: run it once, on one temporary machine, before the API takes
+traffic. Other process state: the API has no in-memory session, cache or Data Protection key ring. Guest
+cookies and invite tokens are checked against the database and the shared `Challenges__InviteSecret`, so any
+machine can answer any request. Only the rate limits are per machine (step 2).
+
+Bigger machines: `fly scale vm shared-cpu-4x -a vybe-api` or `fly scale memory 2048 -a vybe-api`, then change
+`[[vm]]` in `api.fly.toml` in a PR, so the next deploy keeps the size. Run the load test again after a change.
 
 ### Cost estimate (USD per month, estimates of 2026-11-07)
 
