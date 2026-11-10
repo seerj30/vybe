@@ -194,7 +194,9 @@ async function route(request: IncomingMessage, url: URL): Promise<Answer> {
 
   if (method === "GET" && path === "/runtime-config.json") {
     // The VYBE web app's runtime config (apps/web/src/app/auth/runtime-config.ts); the dev proxy serves it.
-    return [200, { supabaseUrl: AUTH_URL, supabaseAnonKey: AUTH_ANON_KEY }];
+    // Over HTTPS (E2E_WEB_HTTPS=1), the page reaches Auth through the dev proxy on its own origin: WebKit blocks
+    // calls from an https page to http://localhost (mixed content).
+    return [200, { supabaseUrl: WEB_ORIGIN.startsWith("https:") ? WEB_ORIGIN : AUTH_URL, supabaseAnonKey: AUTH_ANON_KEY }];
   }
   if (method === "GET" && path === "/auth/v1/.well-known/openid-configuration") {
     return [200, { issuer: AUTH_ISSUER, jwks_uri: `${AUTH_ISSUER}/.well-known/jwks.json`, id_token_signing_alg_values_supported: ["ES256"] }];

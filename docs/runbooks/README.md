@@ -12,3 +12,4 @@ The runbooks are provider-neutral; the Fly.io steps are in their own sections.
 | [incident-response.md](incident-response.md) | An alert fires or players report a problem. |
 | [secret-rotation.md](secret-rotation.md) | A secret is due or exposed. |
 | [load-test.md](load-test.md) | You measure capacity before a beta gate (k6 script in `infra/load/`). |
+| [visual-baselines.md](visual-baselines.md) | You change the UI and the visual check fails, or you want to know which browsers run where. |

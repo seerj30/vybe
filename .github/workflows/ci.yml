@@ -103,6 +103,8 @@ jobs:
       - name: Install Chromium
         run: pnpm --filter @vybe/e2e exec playwright install --with-deps --only-shell chromium
 
+      # Chromium only on PRs: functional specs and the visual baselines (Linux). Firefox and WebKit run in
+      # e2e-browsers.yml (master, nightly, manual), so the PR check keeps its time.
       - name: Playwright tests
         run: pnpm --filter @vybe/e2e test:e2e
 
@@ -114,6 +116,7 @@ jobs:
           path: |
             tests/e2e/playwright-report/
             tests/e2e/test-results/
+            tests/e2e/specs/__screenshots__/
           if-no-files-found: ignore
           retention-days: 14
 

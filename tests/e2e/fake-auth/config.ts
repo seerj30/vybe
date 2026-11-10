@@ -7,8 +7,8 @@ export const AUTH_ISSUER = `${AUTH_URL}/auth/v1`;
 export const AUTH_ANON_KEY = "vybe-e2e-anon-key";
 /** Test-only service-role key: only the API sends it, to delete Auth users (J4, spec §17 decision 8). */
 export const AUTH_SERVICE_ROLE_KEY = "vybe-e2e-service-role-key";
-/** The web app origin, the only origin that may call Auth from a page (CORS). */
-export const WEB_ORIGIN = `http://localhost:${process.env["E2E_WEB_PORT"] ?? 4321}`;
+/** The web app origin, the only origin that may call Auth from a page (CORS). HTTPS with E2E_WEB_HTTPS=1. */
+export const WEB_ORIGIN = `${process.env["E2E_WEB_HTTPS"] === "1" ? "https" : "http"}://localhost:${process.env["E2E_WEB_PORT"] ?? 4321}`;
 
 /**
  * Value of the `X-Test-Secret` header that the `/__test` endpoints require. There is no default:

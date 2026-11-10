@@ -11,4 +11,8 @@ export default {
     secure: false,
   },
   ...(authPort === undefined ? {} : { "/runtime-config.json": { target: `http://localhost:${authPort}`, secure: false, changeOrigin: true } }),
+  // E2E over HTTPS (E2E_WEB_HTTPS=1): the fake Auth is reached on the app origin, so WebKit sees no mixed content.
+  ...(authPort === undefined || process.env["E2E_WEB_HTTPS"] !== "1"
+    ? {}
+    : { "/auth/v1": { target: `http://localhost:${authPort}`, secure: false, changeOrigin: true } }),
 };
