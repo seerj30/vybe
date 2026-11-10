@@ -2,17 +2,17 @@
 # Runbook: docs/runbooks/deploy-and-rollback.md, section "Fly.io".
 #
 # Before the first deploy, people set two values (in a PR):
-#   app            the API app name, if "vybe-api" is taken (then also VYBE_API_HOST in infra/fly/web.fly.toml)
-#   primary_region the Fly region of the Supabase project, the same in both fly.toml files. Not decided here.
-#                  If most players are in the EU, the recommendation is "fra" (Frankfurt) with Supabase
-#                  "eu-central-1". The deploy workflow stops while the value is REGION-NOT-SET.
+#   app            the API app name ("vybe-api" was taken on Fly.io; app names are global). Change it together
+#                  with VYBE_API_HOST in infra/fly/web.fly.toml
+#   primary_region the Fly region of the Supabase project, the same in both fly.toml files: "fra" (Frankfurt)
+#                  with Supabase "eu-central-1", chosen by the product owner on 2026-11-10.
 #
 # The API has no public address: deploy with --no-public-ips and keep `fly ips list` empty. Only the web app
 # (Caddy) calls it, over the private network (6PN). Every secret and per-environment value comes from
 # `fly secrets set` (names in the runbook); never write a value in this file.
 
-app = "vybe-api"
-primary_region = "REGION-NOT-SET"
+app = "vybe-prod-api"
+primary_region = "fra"
 # Kestrel stops on SIGTERM and lets running requests complete (ASP.NET Core shutdown timeout: 30 s).
 kill_signal = "SIGTERM"
 kill_timeout = "35s"
