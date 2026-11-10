@@ -28,6 +28,23 @@ public sealed class OpsConfigurationTests
     [Fact]
     public void Complete_HasNoProblems() => Assert.Empty(ProductionConfiguration.Problems(Build(Complete)));
 
+    [Theory]
+    [InlineData("Host=pooler;Port=6543;Database=postgres;Max Auto Prepare=0", true)]
+    [InlineData("Host=pooler;Port=6543;Database=postgres;No Reset On Close=true", false)] // Max Auto Prepare is 0 by default
+    [InlineData("Host=pooler;Port=6543;Database=postgres;No Reset On Close=true;Max Auto Prepare=20", true)]
+    [InlineData("Host=pooler;Port=6543;Database=postgres;Max Auto Prepare=0;No Reset On Close=true", false)]
+    [InlineData("Host=pooler;Port=5432;Database=postgres", false)]
+    [InlineData("Host=db;Database=vybe", false)]
+    public void TransactionPooler_NeedsNoResetOnCloseAndNoAutoPrepare(string connectionString, bool isProblem)
+    {
+        var settings = new Dictionary<string, string?>(Complete) { ["ConnectionStrings:Vybe"] = connectionString };
+
+        var problems = ProductionConfiguration.Problems(Build(settings));
+
+        Assert.Equal(isProblem, problems.Any(p => p.Contains("transaction pooler", StringComparison.Ordinal)));
+        Assert.DoesNotContain(problems, p => p.Contains("pooler;", StringComparison.Ordinal)); // never the value
+    }
+
     [Fact]
     public void Empty_NamesEveryRequiredSetting()
     {

@@ -62,6 +62,16 @@ check_env_files() {
   done
 }
 
+# An installed kernel update replaces the module files of the running kernel; Docker then cannot load "veth"
+# ("failed to add the host <=> sandbox pair interfaces"). unattended-upgrades reboots at 04:30 UTC; before that,
+# a deploy stops here with the fix instead of a failed release.
+check_kernel() {
+  if [ -f /var/run/reboot-required.pkgs ] && grep -q '^linux-image' /var/run/reboot-required.pkgs \
+     && ! modprobe veth 2>/dev/null; then
+    fail "a kernel update waits for a reboot and Docker networking cannot start: reboot the VM (sudo reboot), then deploy again"
+  fi
+}
+
 image_of() { sed -n "s/^$2=//p" "$1" 2>/dev/null || true; }
 
 status() {
@@ -112,6 +122,7 @@ case "$1" in
   status) status ;;
   deploy)
     check_env_files
+    check_kernel
     next="$ROOT/release.next.env"
     printf 'VYBE_RELEASE=%s\nVYBE_API_IMAGE=%s\nVYBE_WEB_IMAGE=%s\n' "$2" "$3" "$4" > "$next"
     deploy_release "$next"

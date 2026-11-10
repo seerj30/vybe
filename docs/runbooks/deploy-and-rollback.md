@@ -30,7 +30,7 @@ The image sets `ASPNETCORE_ENVIRONMENT=Production`; set `Staging` on staging.
 
 | Setting (environment variable) | Required | Secret | Notes |
 |---|---|---|---|
-| `ConnectionStrings__Vybe` | yes | yes | API role (owns no tables). Supavisor transaction pooler: add `Max Auto Prepare=0`. |
+| `ConnectionStrings__Vybe` | yes | yes | API role (owns no tables). Supavisor transaction pooler (port 6543): add `Max Auto Prepare=0` and `No Reset On Close=true` (without it the pooler rejects Npgsql's `DISCARD ALL` and queries hang; the API refuses to start without both). |
 | `ConnectionStrings__Migrations` | for `migrate`/`seed` | yes | Owner role. Direct connection or session-mode pooler. Never the transaction pooler. Do not give it to the API process. |
 | `Auth__Supabase__Authority` | yes | no | `https://<ref>.supabase.co/auth/v1` |
 | `Auth__Supabase__ApiKey` | yes | no (publishable key) | Supabase publishable (anon) key. |
@@ -201,7 +201,7 @@ Do these steps in this order. Keep each value in the password manager of the tea
 5. **Connection strings** (Supavisor, IPv4; the user name has the form `role.<project ref>`). Make them in
    the password manager:
    - API, transaction pooler, port 6543:
-     `Host=<pooler host>;Port=6543;Database=postgres;Username=vybe_api.<ref>;Password=<password>;SSL Mode=Require;Max Auto Prepare=0;Maximum Pool Size=20`
+     `Host=<pooler host>;Port=6543;Database=postgres;Username=vybe_api.<ref>;Password=<password>;SSL Mode=Require;Max Auto Prepare=0;Maximum Pool Size=20;No Reset On Close=true`
    - Owner, session pooler, port 5432, never 6543:
      `Host=<pooler host>;Port=5432;Database=postgres;Username=vybe_owner.<ref>;Password=<password>;SSL Mode=Require`
    - With two API machines, the total pool (2 × 20) must stay below the pooler client limit of the compute size.

@@ -80,7 +80,7 @@ write() {
 origin="https://$host"
 echo "Writing $ENV_DIR/api.env ..." >&2
 {
-  printf "ConnectionStrings__Vybe='Host=%s;Port=6543;Database=postgres;Username=vybe_api.%s;Password=%s;SSL Mode=Require;Max Auto Prepare=0;Maximum Pool Size=20'\n" \
+  printf "ConnectionStrings__Vybe='Host=%s;Port=6543;Database=postgres;Username=vybe_api.%s;Password=%s;SSL Mode=Require;Max Auto Prepare=0;Maximum Pool Size=20;No Reset On Close=true'\n" \
     "$POOLER" "$REF" "$api_password"
   printf "Auth__Supabase__Authority='https://%s.supabase.co/auth/v1'\n" "$REF"
   printf "Auth__Supabase__ApiKey='%s'\n" "$anon_key"
