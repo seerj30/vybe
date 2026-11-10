@@ -483,7 +483,7 @@ Product sign-off on 2026-11-07 (record and reasons: `docs/decisions/`). v1.4 (§
 |---|---|---|---|
 | 1 | Age eligibility, minors, countries | Adults only (18+ or local age of majority), neutral age gate before guest creation | Country list and gate wording (counsel, DPO) |
 | 2 | Guest lifetime, recovery | Sliding 30 days of inactivity, cap 90 days; no support transfer | — |
-| 3 | 3D art direction, licensing, ownership | Contractor or studio under work-for-hire; one in-house pipeline owner | Contract (counsel); final style guide (art lead) |
+| 3 | 3D art direction, licensing, ownership | Code-built art in the repository for the beta (Blender scripts → glTF, amended 2026-11-10); later a contractor or studio under work-for-hire on the same rig | Counsel note on code-built assets; contract for the later art pass |
 | 4 | Street Hoops tuning, thresholds | v1 gameplay values and deadlines kept; full-length run and score floor for rewards; `review_flags` starting thresholds | Re-tune after 2 weeks of beta data |
 | 5 | Economy balance | Earn formulas kept; catalog repriced and grown (≥ 30 items at beta) | Review after 2 weeks of beta data |
 | 6 | Profile visibility | Signed-in players only by default; "private" toggle | Counsel review |
