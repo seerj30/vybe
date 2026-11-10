@@ -1,9 +1,13 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from "@angular/core";
+import { ChangeDetectionStrategy, Component, type ElementRef, Injector, afterNextRender, computed, inject, signal, viewChild } from "@angular/core";
 import { RouterLink } from "@angular/router";
 import type { Schemas } from "@vybe/contracts";
 import { ActionKeys, isApiError } from "../api/api-client";
 import { API } from "../api/api";
 import { errorMessage } from "../api/messages";
+import { itemPicture } from "../avatar/asset-manifest";
+import { EMPTY_OUTFIT, type Outfit, outfitFromEquipped, withItem } from "../avatar/avatar-look";
+import { type AvatarPresets, DEFAULT_PRESETS, pickPresets } from "../avatar/presets";
+import { AvatarViewport } from "../avatar-viewport/avatar-viewport";
 import { PlayerStore } from "../player/player-store";
 import { ItemThumb } from "../ui/item-thumb";
 import { SLOT_LABELS, SLOTS } from "../ui/labels";
@@ -25,7 +29,7 @@ const PAGE_SIZE = 48;
  */
 @Component({
   selector: "vybe-shop",
-  imports: [ItemThumb, RouterLink],
+  imports: [AvatarViewport, ItemThumb, RouterLink],
   template: `
     <section class="page">
       <h1>Shop</h1>
@@ -46,6 +50,21 @@ const PAGE_SIZE = 48;
       }
       <p class="sr-status" aria-live="polite">{{ announcement() }}</p>
 
+      @if (previewItem(); as item) {
+        <section class="card preview" aria-labelledby="preview-title">
+          <vybe-avatar-viewport
+            [presets]="avatarPresets()"
+            [outfit]="previewOutfit()"
+            [emote]="item.slot === 'emote' ? item.sku : null"
+          />
+          <div>
+            <h2 id="preview-title" tabindex="-1" #previewTitle>Preview: {{ item.name }}</h2>
+            <p class="muted">Your avatar with {{ item.name }}. A preview changes nothing you own or wear.</p>
+            <button type="button" class="button secondary" (click)="previewItem.set(null)">Close preview</button>
+          </div>
+        </section>
+      }
+
       @if (loadError(); as error) {
         <p class="error" role="alert">{{ error }}</p>
         <button type="button" class="button" (click)="reload()">Try again</button>
@@ -58,10 +77,11 @@ const PAGE_SIZE = 48;
       <ul class="grid">
         @for (item of items(); track item.id) {
           <li class="card item" [attr.aria-label]="item.name">
-            <vybe-item-thumb [src]="item.previewUrl" [name]="item.name" (failed)="picturesFailed.set(true)" />
+            <vybe-item-thumb [src]="picture(item)" [name]="item.name" (failed)="picturesFailed.set(true)" />
             <h2>{{ item.name }}</h2>
             <p class="muted meta">{{ slotLabels[item.slot] }} · {{ item.rarity }} · level {{ item.minLevel }}+</p>
             <p class="price">{{ item.price }} V-Coins</p>
+            <button type="button" class="link" (click)="preview(item)">Preview<span class="visually-hidden"> {{ item.name }}</span></button>
             @let state = purchases()[item.id];
             @if (item.owned) {
               <p class="owned">Owned · <a routerLink="/wardrobe">Wear it</a></p>
@@ -112,6 +132,12 @@ const PAGE_SIZE = 48;
     .item p { font-size: 14px; }
     .item .button { margin-top: auto; }
     .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .preview { display: grid; gap: 16px; align-items: center; margin-bottom: 16px; }
+    .preview vybe-avatar-viewport { max-width: 220px; margin: 0 auto; }
+    .preview h2 { margin: 0 0 6px; font-size: 18px; }
+    .preview h2:focus { outline: none; }
+    .link { align-self: flex-start; min-height: 44px; padding: 0; border: 0; background: none; color: #8fb3ff; font: inherit; font-size: 14px; text-decoration: underline; cursor: pointer; }
+    @media (min-width: 768px) { .preview { grid-template-columns: 240px 1fr; } }
     .sr-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -135,6 +161,19 @@ export class Shop {
   private readonly balance = computed(() => this.player.me()?.walletBalance ?? 0);
   private readonly level = computed(() => this.player.me()?.level ?? 1);
 
+  /** Shop preview (spec §3): the player's avatar with one catalog item on; loaded on the first preview. */
+  protected readonly previewItem = signal<CatalogItem | null>(null);
+  protected readonly avatarPresets = signal<AvatarPresets>(DEFAULT_PRESETS);
+  protected readonly worn = signal<Outfit>(EMPTY_OUTFIT);
+  /** The worn items with the previewed item on (emotes do not change the outfit). */
+  protected readonly previewOutfit = computed((): Outfit => {
+    const item = this.previewItem();
+    return item === null ? this.worn() : withItem(this.worn(), item.slot, item.sku);
+  });
+  private avatarLoad: Promise<void> | null = null;
+  private readonly previewTitle = viewChild<ElementRef<HTMLElement>>("previewTitle");
+  private readonly injector = inject(Injector);
+
   constructor() {
     // Fresh balance and level for the buy hints.
     void this.player.refresh().catch(() => undefined);
@@ -146,6 +185,27 @@ export class Shop {
     if (this.level() < item.minLevel) return `Needs level ${item.minLevel}`;
     if (this.balance() < item.price) return "Not enough V-Coins";
     return null;
+  }
+
+  protected picture(item: CatalogItem): string {
+    return itemPicture(item.sku, item.previewUrl);
+  }
+
+
+  protected preview(item: CatalogItem): void {
+    this.previewItem.set(item);
+    // Keyboard and screen reader users land on the preview that just opened.
+    afterNextRender(() => this.previewTitle()?.nativeElement.focus(), { injector: this.injector });
+    // Without the avatar (a failed load), the preview uses the default avatar.
+    this.avatarLoad ??= Promise.all([this.api.getAvatar(), this.api.getInventory()]).then(
+      ([avatar, inventory]) => {
+        this.avatarPresets.set(pickPresets(avatar));
+        this.worn.set(outfitFromEquipped(avatar.equipped, inventory.items));
+      },
+      () => {
+        this.avatarLoad = null;
+      },
+    );
   }
 
   protected failure(item: CatalogItem): string {

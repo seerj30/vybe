@@ -2,8 +2,9 @@ import { ChangeDetectionStrategy, Component, inject, signal } from "@angular/cor
 import { RouterLink } from "@angular/router";
 import { API } from "../api/api";
 import { errorMessage } from "../api/messages";
-import { AvatarPortrait } from "../avatar/avatar-portrait";
+import { EMPTY_OUTFIT, type Outfit, outfitFromEquipped } from "../avatar/avatar-look";
 import { type AvatarPresets, DEFAULT_PRESETS, pickPresets } from "../avatar/presets";
+import { AvatarViewport } from "../avatar-viewport/avatar-viewport";
 import { GuestExpiryNotice } from "../player/guest-expiry";
 import { PlayerStore } from "../player/player-store";
 import { QuestsCard } from "../quests/quests-card";
@@ -11,7 +12,7 @@ import { QuestsCard } from "../quests/quests-card";
 /** `/hub` (spec §3): avatar, level, wallet, quests and the way to play. A failed avatar or quest load is a partial load. */
 @Component({
   selector: "vybe-hub",
-  imports: [AvatarPortrait, GuestExpiryNotice, QuestsCard, RouterLink],
+  imports: [AvatarViewport, GuestExpiryNotice, QuestsCard, RouterLink],
   template: `
     <section class="page">
       <h1>Hub</h1>
@@ -19,7 +20,7 @@ import { QuestsCard } from "../quests/quests-card";
         <vybe-guest-expiry class="expiry" [me]="me" />
         <div class="grid">
           <div class="card profile">
-            <vybe-avatar-portrait [presets]="presets()" />
+            <vybe-avatar-viewport class="avatar" [presets]="presets()" [outfit]="outfit()" />
             <div>
               <p class="handle">{{ me.handle }}</p>
               <p class="muted">{{ me.kind === "guest" ? "Guest" : "Registered" }} · Level {{ me.level }} · {{ me.xpTotal }} XP</p>
@@ -52,6 +53,7 @@ import { QuestsCard } from "../quests/quests-card";
     .expiry { display: block; margin-bottom: 16px; }
     .expiry:empty { display: none; }
     .profile { display: flex; gap: 16px; align-items: center; }
+    .avatar { width: 150px; flex: none; }
     .handle { font-size: 20px; font-weight: 700; margin: 0; }
     h2 { margin: 0 0 8px; font-size: 18px; }
     .balance { font-size: 28px; font-weight: 800; margin: 0; color: #ffc83d; font-variant-numeric: tabular-nums; }
@@ -65,10 +67,16 @@ export class Hub {
   protected readonly presets = signal<AvatarPresets>(DEFAULT_PRESETS);
   protected readonly avatarError = signal<string | null>(null);
 
+  protected readonly outfit = signal<Outfit>(EMPTY_OUTFIT);
+
   constructor() {
     void this.player.refresh().catch(() => undefined);
-    this.api.getAvatar().then(
-      (avatar) => this.presets.set(pickPresets(avatar)),
+    // The inventory names the equipped items; without it the avatar still shows (no items).
+    Promise.all([this.api.getAvatar(), this.api.getInventory().catch(() => null)]).then(
+      ([avatar, inventory]) => {
+        this.presets.set(pickPresets(avatar));
+        if (inventory !== null) this.outfit.set(outfitFromEquipped(avatar.equipped, inventory.items));
+      },
       (error: unknown) => this.avatarError.set(errorMessage(error)),
     );
   }

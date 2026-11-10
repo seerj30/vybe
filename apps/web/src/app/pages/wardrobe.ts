@@ -4,7 +4,9 @@ import type { Schemas } from "@vybe/contracts";
 import { isApiError } from "../api/api-client";
 import { API } from "../api/api";
 import { errorMessage } from "../api/messages";
-import { AvatarPortrait } from "../avatar/avatar-portrait";
+import { itemPicture } from "../avatar/asset-manifest";
+import { outfitFromEquipped } from "../avatar/avatar-look";
+import { AvatarViewport } from "../avatar-viewport/avatar-viewport";
 import { pickPresets, presetLabel } from "../avatar/presets";
 import { OutfitsPanel } from "../outfits/outfits-panel";
 import { ItemThumb } from "../ui/item-thumb";
@@ -37,7 +39,7 @@ const ACCESSORY: readonly Place[] = [
  */
 @Component({
   selector: "vybe-wardrobe",
-  imports: [AvatarPortrait, ItemThumb, OutfitsPanel, RouterLink],
+  imports: [AvatarViewport, ItemThumb, OutfitsPanel, RouterLink],
   template: `
     <section class="page">
       <h1>Wardrobe</h1>
@@ -47,7 +49,7 @@ const ACCESSORY: readonly Place[] = [
       } @else if (avatar(); as avatar) {
         <div class="layout">
           <div class="card preview">
-            <vybe-avatar-portrait [presets]="presets()!" />
+            <vybe-avatar-viewport [presets]="presets()!" [outfit]="outfit()!" />
             <p class="muted small">{{ bodyLabel() }}</p>
           </div>
           <div>
@@ -64,7 +66,7 @@ const ACCESSORY: readonly Place[] = [
                 <ul>
                   @for (item of group.items; track item.itemId) {
                     <li class="card item">
-                      <vybe-item-thumb [src]="item.previewUrl" [name]="item.name" (failed)="picturesFailed.set(true)" />
+                      <vybe-item-thumb [src]="picture(item)" [name]="item.name" (failed)="picturesFailed.set(true)" />
                       <div class="info">
                         <h3>{{ item.name }}</h3>
                         @if (!fits(item)) {
@@ -105,7 +107,7 @@ const ACCESSORY: readonly Place[] = [
   styles: `
     .layout { display: grid; gap: 16px; }
     .preview { display: flex; flex-direction: column; align-items: center; }
-    .preview vybe-avatar-portrait { width: 160px; }
+    .preview vybe-avatar-viewport { max-width: 220px; }
     .small { font-size: 13px; margin-bottom: 0; }
     .slot h2 { font-size: 18px; margin: 16px 0 8px; }
     ul { display: grid; gap: 12px; padding: 0; margin: 0; list-style: none; }
@@ -133,6 +135,10 @@ export class Wardrobe {
     const avatar = this.avatar();
     return avatar === null ? null : pickPresets(avatar);
   });
+  protected readonly outfit = computed(() => {
+    const avatar = this.avatar();
+    return avatar === null ? null : outfitFromEquipped(avatar.equipped, this.inventory());
+  });
   protected readonly bodyLabel = computed(() => presetLabel("bodyPresetId", this.avatar()?.bodyPresetId ?? ""));
   protected readonly itemNames = computed(() => new Map(this.inventory().map((item) => [item.itemId, item.name])));
   protected readonly groups = computed((): SlotGroup[] =>
@@ -157,6 +163,10 @@ export class Wardrobe {
   protected outfitApplied(updated: Schemas["EquipmentUpdated"]): void {
     const avatar = this.avatar();
     if (avatar !== null) this.avatar.set({ ...avatar, revision: updated.revision, equipped: updated.equipped });
+  }
+
+  protected picture(item: InventoryItem): string {
+    return itemPicture(item.sku, item.previewUrl);
   }
 
   protected places(slot: ItemSlot): readonly Place[] {

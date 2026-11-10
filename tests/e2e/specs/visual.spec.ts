@@ -7,7 +7,7 @@ import { powerMeter, startButton, test } from "./street-hoops.ts";
  * playwright.config.ts). Stable baselines: every test makes a new guest with the default avatar and the seeded
  * catalog in name order; locale, time zone and reduced motion are fixed by the project; CSS animations are off;
  * the handle and dates get fixed text, the HUD clock and score are masked, and the game canvas (random basket path
- * per seed) is hidden. Baselines: tests/e2e/specs/__screenshots__/<project>/. Update: docs/runbooks/visual-baselines.md.
+ * per seed) is hidden, and the 3D avatar canvas is masked. Baselines: tests/e2e/specs/__screenshots__/<project>/. Update: docs/runbooks/visual-baselines.md.
  */
 
 /**
@@ -19,6 +19,8 @@ async function settled(page: Page, ready: Locator[]): Promise<void> {
   for (const locator of ready) await expect(locator).toBeVisible();
   await page.evaluate(async () => {
     await document.fonts.ready;
+    // A full-page capture must not depend on which lazy item pictures the browser started.
+    for (const image of Array.from(document.querySelectorAll("img[loading=lazy]"))) (image as HTMLImageElement).loading = "eager";
     await Promise.all(
       Array.from(document.images)
         .filter((image) => !image.complete)
@@ -69,15 +71,20 @@ async function sortCatalog(page: Page): Promise<void> {
  */
 const STATIC_PHONE_NAV = "@media (max-width: 767px) { .nav { position: static !important; } }";
 
+/**
+ * The 3D avatar (WebGL, software rendering in CI) is masked: its pixels depend on the GPU driver. Its own tests
+ * are in avatar.spec.ts. A screen with an avatar waits until the viewport has drawn it.
+ */
+function avatarReady(page: Page): Locator {
+  return page.locator('vybe-avatar-viewport[data-state="3d"]');
+}
+
 async function snap(page: Page, name: string, ready: Locator[], mask: Locator[] = []): Promise<void> {
   await page.addStyleTag({ content: STATIC_PHONE_NAV });
   await settled(page, ready);
   await fixText(page);
-  await expect(page).toHaveScreenshot(`${name}.png`, { fullPage: true, mask, maskColor: "#ff00ff" });
+  await expect(page).toHaveScreenshot(`${name}.png`, { fullPage: true, mask: [...mask, page.locator("vybe-avatar-viewport canvas")], maskColor: "#ff00ff" });
 }
-
-/** Item pictures are not served in E2E (dev server), so the shop and the wardrobe always show this notice. */
-const PICTURE_NOTICE = /^Some item pictures could not load/;
 
 test("landing", async ({ page }) => {
   await page.goto("/");
@@ -92,6 +99,7 @@ test("age gate", async ({ page }) => {
 test("hub", async ({ page }) => {
   await newPlayer(page);
   await snap(page, "hub", [
+    avatarReady(page),
     page.getByTestId("wallet-balance"),
     page.getByTestId("guest-expiry"),
     page.getByText("Score 1,500 points in one run"), // the daily quests loaded
@@ -102,13 +110,13 @@ test("shop", async ({ page }) => {
   await newPlayer(page);
   await sortCatalog(page);
   await page.goto("/shop");
-  await snap(page, "shop", [page.getByRole("heading", { name: "Swish" }), page.getByText(PICTURE_NOTICE)]);
+  await snap(page, "shop", [page.getByRole("heading", { name: "Swish" })]);
 });
 
 test("wardrobe", async ({ page }) => {
   await newPlayer(page);
   await page.goto("/wardrobe");
-  await snap(page, "wardrobe", [page.getByRole("heading", { name: "Starter Kicks" }), page.getByText(/^No saved outfits/), page.getByText(PICTURE_NOTICE)]);
+  await snap(page, "wardrobe", [avatarReady(page), page.getByRole("heading", { name: "Starter Kicks" }), page.getByText(/^No saved outfits/)]);
 });
 
 test("gameplay HUD", async ({ page }) => {

@@ -18,6 +18,8 @@ COPY tests/e2e/package.json tests/e2e/
 RUN pnpm install --frozen-lockfile --filter @vybe/web...
 COPY packages packages
 COPY assets/manifests assets/manifests
+# The avatar and catalog art (assets/source/build.sh); apps/web/art links to it and the build serves it at /assets.
+COPY assets/published assets/published
 COPY apps/web apps/web
 RUN pnpm --filter @vybe/web build
 
