@@ -109,7 +109,7 @@ V-Coins have no money value.
 | Processor | What | Region |
 |---|---|---|
 | Supabase (database, Auth, storage) | All game data, sign-in identities, export files | `[region of the project]` |
-| Fly.io (container host, decision 7) | Runs the VYBE API | `[same region as Supabase — still to choose]` |
+| Oracle Cloud (virtual machine host, decision 7) | Runs the VYBE API and web app | Frankfurt, Germany (EU) |
 | `[CDN]` | Delivers the web app and forwards API calls | `[global / region]` |
 | Sentry (optional) | Crash reports | `[region]` |
 

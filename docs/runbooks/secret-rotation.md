@@ -22,7 +22,6 @@
 | OTLP collector credentials (`OTEL_EXPORTER_OTLP_HEADERS`) | 12 months | None |
 | `Auth__Supabase__ApiKey` (publishable key) | Not secret; rotate with Supabase key rotation | None if both keys overlap |
 | `Auth__Supabase__ServiceRoleKey` | 6 months, and at once when exposed | None: Auth user deletions wait in `vybe.auth_user_deletions` and retry |
-| Fly.io deploy tokens (GitHub secrets `FLY_API_TOKEN_API`, `FLY_API_TOKEN_WEB`) | 12 months (token expiry) | None |
 
 ## Database password
 
@@ -80,19 +79,6 @@ The JWT signing keys are read from the issuer metadata; a key rotation in Supaba
 |---|---|---|---|
 | — | — | — | — |
 
-## Fly.io
+## Oracle VM
 
-- Secrets of an app: `fly secrets list -a <app>` shows names and digests only. Put a new value in with
-  `fly secrets import --stage -a <app>` (stdin; see [deploy-and-rollback.md](deploy-and-rollback.md),
-  one-time setup step 8). Then run the Deploy workflow, or `fly secrets deploy -a <app>`. The workflow uses
-  the bluegreen strategy, so there is no gap; `fly secrets deploy` restarts the machines and, with one
-  machine, the API is down for some seconds.
-- `ConnectionStrings__Migrations` is **not** a Fly secret: it is the GitHub environment secret
-  `VYBE_MIGRATIONS_CONNECTION_STRING`, used only by the release step of the deploy workflow (ADR 0008).
-  Rotate the password like the other database passwords, then
-  `gh secret set VYBE_MIGRATIONS_CONNECTION_STRING --env production` (paste at the prompt).
-- Deploy tokens: `fly tokens create deploy -a <app> -x 8760h | gh secret set FLY_API_TOKEN_API --env production`
-  (or `FLY_API_TOKEN_WEB`), run the Deploy workflow, then revoke the old token: `fly tokens list -a <app>` and
-  `fly tokens revoke <id>`.
-- An exposed deploy token: revoke it at once (SEV-1 if a deploy that nobody approved is possible), then
-  check `fly releases -a <app>` for deploys that nobody approved.
+The steps for each secret on the production VM are in [oracle-vm.md](oracle-vm.md), "Secret rotation".

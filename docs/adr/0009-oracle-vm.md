@@ -51,7 +51,7 @@ logs without request paths, deploys of reviewed commits by digest.
    made on the VM and kept on later runs. The owner credential is never on the VM.
 7. **Images for `linux/arm64` on GHCR, by digest, attested.** `deploy-oracle.yml` has three jobs, each with only
    its own permissions. `guard` (no secrets): by hand or `v*` tag only, the commit on `master` with green CI (as
-   `deploy.yml`), rollback inputs (a rollback SHA must also be on `master`). `build` (no environment, no secrets;
+   the Fly.io `deploy.yml` did), rollback inputs (a rollback SHA must also be on `master`). `build` (no environment, no secrets;
    `packages: write`, `id-token: write`): builds both images on the free native arm64 runner
    (`ubuntu-24.04-arm`, no QEMU), pushes `ghcr.io/seerj30/vybe-api` and `vybe-web` by digest and signs a build
    provenance attestation for each (`actions/attest-build-provenance`). `deploy` (environment
@@ -104,7 +104,8 @@ logs without request paths, deploys of reviewed commits by digest.
     settings plus `jq` rules (ports, subnet, hardening), a native arm64 build of both images, and
     `infra/oracle/test-stack.sh`: the compose stack against PostgreSQL with Caddy's internal CA (TLS, `/`,
     `/api/v1/catalog/items`, headers, 404 for `/health`, http redirect, forged `X-Forwarded-For`, read-only and
-    healthy containers). The Fly.io CI job stays.
+    healthy containers). The Fly.io CI job stays as an image and proxy-rule check (its Fly.io config step was removed
+    on 2026-11-10).
 
 ## Not done
 
@@ -130,4 +131,5 @@ logs without request paths, deploys of reviewed commits by digest.
 - A deploy is one approved workflow run; a failed migration stops it before the VM changes; a bad image does not
   replace a healthy one.
 - A change to the server files needs the owner on the VM (`bootstrap.sh --files-only`) before the next deploy.
-- The Fly.io files and `deploy.yml` stay for a later paid move (runbook "Move to Fly.io later").
+- The Fly.io files and `deploy.yml` were removed on 2026-11-10 ([ADR 0008](0008-fly-deployment.md), superseded). A
+  later paid move starts from the git history.

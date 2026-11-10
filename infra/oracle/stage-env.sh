@@ -6,7 +6,7 @@
 #
 # The script asks for each secret without echo (paste it from the password manager). The values go to the files
 # through stdin only: never on the screen, in shell history, in a file outside /etc/vybe or in process arguments.
-# The same list as infra/fly/stage-secrets.sh (Fly.io). Run it again to change a value: it writes both files again.
+# Run it again to change a value: it writes both files again.
 # The invite secret stays the same unless you add --new-invite-secret (a new value ends all open invites).
 set -euo pipefail
 

@@ -9,7 +9,7 @@ namespace Vybe.Api.Infrastructure;
 /// Deploy steps that run as their own process, never at API start-up:
 /// <c>migrate</c> applies the EF Core migrations; <c>seed</c> loads rulesets, catalog and quests
 /// (idempotent); <c>release</c> runs <c>migrate</c> then <c>seed</c> in one process (one deploy step, for example
-/// in .github/workflows/deploy.yml). They use <c>ConnectionStrings:Migrations</c> (a direct
+/// in .github/workflows/deploy-oracle.yml). They use <c>ConnectionStrings:Migrations</c> (a direct
 /// or session-mode connection with the owner role), else <c>ConnectionStrings:Vybe</c>. <c>replay-deletions</c> runs after a database restore and
 /// before the API takes traffic: it applies the deletion log again (<see cref="DeletionReplay"/>) with the
 /// API's own settings. Usage: <c>dotnet Vybe.Api.dll migrate|seed|release|replay-deletions</c>.

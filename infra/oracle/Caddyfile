@@ -1,4 +1,4 @@
-# VYBE web host on the Oracle Cloud VM (ADR 0009). The same rules as infra/web/Caddyfile (Fly.io, ADR 0008), with
+# VYBE web host on the Oracle Cloud VM (ADR 0009). The same rules as infra/web/Caddyfile (image default, ADR 0008), with
 # two differences: Caddy ends TLS itself (automatic HTTPS, Let's Encrypt) for the public host name, and no proxy is in
 # front of it, so the client address is the TCP peer (no trusted_proxies, no client IP header).
 # compose.yml mounts this file read-only over /etc/caddy/Caddyfile of the web image.
