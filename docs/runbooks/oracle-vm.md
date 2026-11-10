@@ -66,7 +66,8 @@ The host name is the web origin `https://<host>`. When it changes, change all of
 
 1. `stage-env.sh` on the VM (it writes `VYBE_PUBLIC_HOST` and `Challenges__ShareBaseUrl=https://<host>`).
 2. Supabase → Authentication → URL configuration: **Site URL** `https://<host>` and **Redirect URLs**
-   `https://<host>/`. Today they are `https://vybe-prod-web.fly.dev`: change them before the first sign-in test.
+   `https://<host>/`. Today they are `https://141-144-232-12.sslip.io` and `https://141-144-232-12.sslip.io/`
+   (checked 2026-11-10).
    Sign-in and email links go to the Site URL.
 3. GitHub environment variable `VYBE_PUBLIC_ORIGIN` = `https://<host>`.
 4. A deploy (or "Restart" below), so the containers read the new values.
