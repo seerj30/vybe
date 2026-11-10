@@ -5,6 +5,10 @@ mesh, Blender 4.5 LTS exports glTF 2.0 and renders the thumbnails, and a checker
 spec §9 in CI. No generative-model (AI) tool makes or changes any asset. A contractor can later replace
 items on the same rig and manifests.
 
+![Starter, court, street and epic outfits on body A (top) and body B (bottom)](preview-outfits.jpg)
+
+![Thumbnails of the 43 catalog items](preview-items.jpg)
+
 ## Files
 
 | Path | Content |
