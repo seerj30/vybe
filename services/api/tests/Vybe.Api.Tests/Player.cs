@@ -18,10 +18,13 @@ public sealed class Player(ApiFactory api, HttpClient http)
     {
         ArgumentNullException.ThrowIfNull(api);
         var player = new Player(api, api.CreateBrowser());
-        var created = await Contract.AssertAsync(await player.Http.PostAsync("/api/v1/guests", null), HttpStatusCode.Created, "GuestCreated");
+        var created = await Contract.AssertAsync(await player.Http.PostAsync("/api/v1/guests", AdultGuest()), HttpStatusCode.Created, "GuestCreated");
         player.Id = created.GetProperty("playerId").GetGuid();
         return player;
     }
+
+    /// <summary>The <c>createGuest</c> body of an adult (spec §17 decision 1).</summary>
+    public static JsonContent AdultGuest() => JsonContent.Create(new { birthYear = 1990, birthMonth = 6 });
 
     public async Task<JsonElement> MeAsync() =>
         await Contract.AssertAsync(await Http.GetAsync("/api/v1/me"), HttpStatusCode.OK, "Me");

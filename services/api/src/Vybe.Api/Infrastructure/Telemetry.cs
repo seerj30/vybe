@@ -52,7 +52,9 @@ public static class Telemetry
                         options.Filter = context => !context.Request.Path.StartsWithSegments("/health", StringComparison.Ordinal);
                         options.EnrichWithHttpResponse = (activity, response) => ScrubServerSpan(activity, response.HttpContext);
                     })
-                    .AddHttpClientInstrumentation()
+                    // Outgoing URLs can carry a Supabase Auth user id (J4 deletion): redact it like a request path.
+                    .AddHttpClientInstrumentation(options => options.EnrichWithHttpRequestMessage = (activity, request) =>
+                        activity.SetTag("url.full", Redaction.Redact(request.RequestUri?.GetLeftPart(UriPartial.Path))))
                     .AddSource("Npgsql"))
                 .WithMetrics(metrics => metrics
                     .AddAspNetCoreInstrumentation()

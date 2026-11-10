@@ -3,7 +3,7 @@ import { defineConfig, devices } from "@playwright/test";
 // PostgreSQL with `services/api/db/schema.sql` applied (`pnpm --filter @vybe/e2e db:up` locally).
 import { DATABASE_URL } from "./specs/db.ts";
 // Fake Supabase Auth for sign-in, linking and admin roles (tests/e2e/fake-auth; port E2E_AUTH_PORT).
-import { AUTH_ANON_KEY, AUTH_ISSUER, AUTH_PORT, AUTH_URL } from "./fake-auth/config.ts";
+import { AUTH_ANON_KEY, AUTH_ISSUER, AUTH_PORT, AUTH_SERVICE_ROLE_KEY, AUTH_URL } from "./fake-auth/config.ts";
 
 // Override the ports to run several worktrees at the same time (tests/e2e/scripts/db-up.sh).
 const PORT = Number(process.env["E2E_WEB_PORT"] ?? 4321);
@@ -73,6 +73,8 @@ export default defineConfig({
         // Supabase bearer tokens from the fake Auth (http is accepted in Development only).
         Auth__Supabase__Authority: AUTH_ISSUER,
         Auth__Supabase__ApiKey: AUTH_ANON_KEY,
+        // J4 deletes the Auth user through the fake Auth admin API (spec §17 decision 8).
+        Auth__Supabase__ServiceRoleKey: AUTH_SERVICE_ROLE_KEY,
         // Exports and deletions finish within seconds.
         Privacy__PollSeconds: "1",
       },

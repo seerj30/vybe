@@ -1,4 +1,4 @@
-import { expect, newPlayer, saveAvatar, startAsGuest } from "./app.ts";
+import { expect, newPlayer, passAgeGate, saveAvatar, startAsGuest } from "./app.ts";
 import { test } from "./street-hoops.ts";
 
 test("E01 (part): new guest → avatar saved → persists after reload → hub", async ({ page }) => {
@@ -46,13 +46,13 @@ test("a failed guest creation shows a retry and creates no player", async ({ pag
     await route.abort("connectionreset");
   });
   await page.goto("/play");
-  await page.getByRole("button", { name: "Start as guest" }).click();
+  await passAgeGate(page);
   await expect(page.getByRole("alert")).toHaveText(/No connection to VYBE/);
 
   await page.goto("/hub");
   await expect(page).toHaveURL(/\/play$/);
 
-  await page.getByRole("button", { name: "Start as guest" }).click();
+  await passAgeGate(page);
   await expect(page.getByRole("heading", { name: "Create your avatar" })).toBeVisible();
 });
 
@@ -83,9 +83,14 @@ test("keyboard only: start as a guest and save the avatar", async ({ page }) => 
   await page.keyboard.press("Tab");
   await expect(start).toBeFocused();
   await page.keyboard.press("Enter");
-  const create = page.getByRole("button", { name: "Start as guest" });
-  await create.focus();
-  await page.keyboard.press("Enter");
+  const month = page.getByLabel("Month");
+  await month.focus();
+  await page.keyboard.type("Jun"); // type-ahead chooses the month without opening the list
+  await expect(month).toHaveValue("6");
+  await page.keyboard.press("Tab");
+  await expect(page.getByLabel("Year")).toBeFocused();
+  await page.keyboard.type("1990");
+  await page.keyboard.press("Enter"); // submits the age-gate form
   await expect(page.getByRole("heading", { name: "Create your avatar" })).toBeVisible();
 
   const bodyA = page.getByRole("radio", { name: "Body A" });

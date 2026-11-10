@@ -1,6 +1,6 @@
 import { accessToken, createUser, updateUser } from "../fake-auth/users.ts";
 import { bearer, confirmLink, fillSignIn, guestPost, json, openNav } from "./account-flows.ts";
-import { expect, newPlayer } from "./app.ts";
+import { ADULT_GUEST, expect, newPlayer } from "./app.ts";
 import { playerId } from "./db.ts";
 import { test } from "./street-hoops.ts";
 
@@ -26,7 +26,7 @@ test("E12: data export → ready → short-lived link → a new link; another pl
   const exportId = await page.evaluate(async (id) => localStorage.getItem(`vybe.export.${id}`), await playerId(page));
   expect(exportId).not.toBeNull();
   const other = await browser.newContext({ baseURL: test.info().project.use.baseURL });
-  await guestPost(other.request, "/guests", undefined);
+  await guestPost(other.request, "/guests", ADULT_GUEST);
   expect((await other.request.get(`/api/v1/me/data-export/${exportId}`)).status()).toBe(404);
   await other.close();
 });
@@ -76,14 +76,18 @@ test("E12: a registered player confirms the deletion with a new sign-in (verific
   await expect(section.getByRole("heading", { name: "Verification required" })).toBeVisible();
 
   await updateUser(user, { amrAgeSeconds: 0 });
+  const token = await accessToken(user);
   await section.getByLabel("Password").fill(user.password);
   await section.getByRole("button", { name: "Confirm and delete" }).click();
   await expect(page.getByTestId("deletion-status")).toContainText("Your account is deleted", WORKER);
 
   // After the anonymization the identity has no player any more.
-  const after = await page.request.get("/api/v1/me", { headers: bearer(await accessToken(user)) });
+  const after = await page.request.get("/api/v1/me", { headers: bearer(token) });
   expect(after.status()).toBe(404);
   expect(((await after.json()) as { code: string }).code).toBe("player_not_found");
+
+  // J4 also deletes the Supabase Auth user (spec §17 decision 8): the email and password sign in no more.
+  await expect.poll(() => accessToken(user).then(() => "signed in", () => "no user"), WORKER).toBe("no user");
 });
 
 test("E12: deletion without a recent sign-in is refused by the API (403 reauthentication_required)", async ({ page }) => {

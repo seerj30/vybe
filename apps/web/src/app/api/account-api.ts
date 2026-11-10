@@ -23,6 +23,11 @@ export class AccountApi {
     return this.data("POST", "/accounts/link", { body: { linkProof }, guestOnly: true });
   }
 
+  /** Who can see the own profile (spec §17 decision 6). */
+  updatePrivacy(body: Schemas["PrivacySettings"]): Promise<Schemas["PrivacySettings"]> {
+    return this.data("PATCH", "/me/privacy", { body });
+  }
+
   listBlocks(cursor?: string): Promise<Schemas["BlockedPlayerPage"]> {
     return this.data("GET", "/me/blocks", { query: { cursor } });
   }

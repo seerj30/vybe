@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -8,11 +9,42 @@ using Vybe.Data.Entities;
 
 namespace Vybe.Api.Features;
 
+public sealed record GuestCreateRequest(int? BirthYear, int? BirthMonth);
+
 public sealed record GuestCreated(Guid PlayerId, string Handle, DateTime GuestExpiresAt);
 
 public sealed record MeResponse(
     Guid Id, string Handle, PlayerKind Kind, string Status, DateTime? SuspendedUntil, int Level, long XpTotal,
-    long WalletBalance, long AvatarRevision);
+    long WalletBalance, long AvatarRevision, DateTime? GuestExpiresAt, ProfileVisibility ProfileVisibility);
+
+/// <summary>
+/// Spec §17 decision 1: VYBE is for adults. The gate asks for the birth month and year; the API keeps only the
+/// result (time, policy version, band), never the month or the year. Without a day, the rule is conservative:
+/// the month of the 18th birthday must be before the current UTC month (in that month itself the player can
+/// still be 17, so it is refused).
+/// </summary>
+public static class AgePolicy
+{
+    /// <summary>The adult age; per-country values come later (counsel country list).</summary>
+    public const int MinimumAge = 18;
+
+    /// <summary>Stored with every confirmation; change it when the age policy text changes.</summary>
+    public const string Version = "2026-11-07";
+
+    /// <summary>Oldest accepted birth year: <c>current year - MaxAge</c>.</summary>
+    public const int MaxAge = 120;
+
+    public static bool IsAdult(int birthYear, int birthMonth, DateTime now) =>
+        MonthIndex(birthYear + MinimumAge, birthMonth) < MonthIndex(now.Year, now.Month);
+
+    /// <summary>True for a real month that is not after the current UTC month and not more than <see cref="MaxAge"/> years ago.</summary>
+    public static bool IsPossible(int birthYear, int birthMonth, DateTime now) =>
+        birthMonth is >= 1 and <= 12
+        && birthYear >= now.Year - MaxAge
+        && MonthIndex(birthYear, birthMonth) <= MonthIndex(now.Year, now.Month);
+
+    private static int MonthIndex(int year, int month) => (year * 12) + month - 1;
+}
 
 public sealed record AvatarResponse(
     string BodyPresetId, string SkinToneId, string FacePresetId, string HairPresetId, string HairColorId,
@@ -46,8 +78,30 @@ public static class IdentityEndpoints
         }
 
         var now = clock.UtcNowForDb();
+        var body = await RequestBody.ReadAsync(context, cancellationToken);
+        var request = body.Length == 0 ? new GuestCreateRequest(null, null) : RequestBody.Deserialize<GuestCreateRequest>(body);
+        var birthYear = request.BirthYear ?? throw Problem.ValidationFailed("/birthYear", "required", "birthYear is required");
+        var birthMonth = request.BirthMonth ?? throw Problem.ValidationFailed("/birthMonth", "required", "birthMonth is required");
+        if (!AgePolicy.IsPossible(birthYear, birthMonth, now))
+        {
+            throw Problem.ValidationFailed("/birthYear", "out_of_range", "birthYear and birthMonth are not a possible birth month");
+        }
+
+        // An under-age answer creates nothing: no player, no cookie, no record of the answer. A caller with a
+        // Supabase identity that has no player (sign-in before the gate) also loses that Auth user: J4 queue.
+        if (!AgePolicy.IsAdult(birthYear, birthMonth, now))
+        {
+            if (context.User.FindFirstValue(AuthSchemes.AuthKindClaim) != AuthSchemes.Guest
+                && context.User.FindFirstValue("sub") is { Length: > 0 } subject)
+            {
+                await AuthUserDeletions.QueueAsync(db, subject, now, cancellationToken);
+            }
+
+            throw Problem.Of(403, "age_not_eligible");
+        }
+
         var token = GuestTokens.NewToken();
-        var expiresAt = now + GuestTokens.Lifetime;
+        var expiresAt = GuestTokens.ExpiryAt(now, now);
         var starterSkus = content.StarterSkus.ToArray();
         var starterItems = await db.CatalogItems.AsNoTracking()
             .Where(i => starterSkus.Contains(i.Sku))
@@ -62,6 +116,11 @@ public static class IdentityEndpoints
                 HandleNormalized = string.Empty,
                 Kind = PlayerKind.Guest,
                 Status = PlayerStatus.Active,
+                CreatedAt = now,
+                UpdatedAt = now,
+                AgeConfirmedAt = now,
+                AgePolicyVersion = AgePolicy.Version,
+                AgeBand = AgeBand.Adult,
             };
             player.HandleNormalized = player.Handle;
 
@@ -121,8 +180,13 @@ public static class IdentityEndpoints
             _ => "active",
         };
 
+        // Spec §17 decision 2: the end of the current guest session; null for registered players.
+        var guestExpiresAt = player.Kind == PlayerKind.Guest
+            ? await db.GuestSessions.Where(s => s.PlayerId == id && s.RevokedAt == null && s.ExpiresAt > now)
+                .MaxAsync(s => (DateTime?)s.ExpiresAt, cancellationToken)
+            : null;
         return new MeResponse(player.Id, player.Handle, player.Kind, status, suspended ? player.SuspendedUntil : null,
-            player.Level, player.XpTotal, balance, revision);
+            player.Level, player.XpTotal, balance, revision, guestExpiresAt, player.ProfileVisibility);
     }
 
     private static async Task<AvatarResponse> GetAvatarAsync(VybeDbContext db, CurrentPlayer current, CancellationToken cancellationToken)

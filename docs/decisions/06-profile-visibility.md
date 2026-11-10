@@ -61,3 +61,11 @@ Reasons:
 | `/settings` privacy control; `/profile/:handle` "unavailable" state | `apps/web` | stream C successor |
 | Spec §1, §3, §5, §17 item 6 resolved | spec (new version and changelog entry) | orchestrator |
 | Privacy notice text on profiles | [decision 8](08-legal-wording.md) | counsel |
+
+## Implementation notes (stream J, ADR 0007)
+
+- Done as signed (option B): anonymous callers and other players' private profiles get the 404 of an
+  unknown handle; `PATCH /me/privacy`; a private recipient handle gets 404 on `POST /challenges`.
+- **Accepted risk:** blocks and reports by handle still accept a private handle. Their answers (204, 202)
+  tell a signed-in player that the handle exists. A private player must stay blockable and reportable,
+  so this is accepted (ADR 0005).
