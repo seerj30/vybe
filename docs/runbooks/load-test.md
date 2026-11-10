@@ -15,25 +15,30 @@ dedicated load-test environment, set `VYBE_LOAD_TARGET_CONFIRMED` to its host na
 
 ## What the script does
 
-Three scenarios run at the same time, each at a constant arrival rate:
+Four scenarios run at the same time, each at a constant arrival rate:
 
 | Scenario | Rate | Requests per iteration | Requests/s |
 |---|---|---|---|
 | `guests` | 2/s | `POST /guests`, `GET /catalog/items`, `GET /me` | ~6 |
 | `runs` | 1/s | `POST /games/street-hoops/sessions`, `POST …/start`, wait for the run (~60 s), `POST …/submit` with about 45–90 random shots | ~3 (about 65 runs open at the same time) |
-| `purchases` | 5/s | `POST /purchases` (200, or 409 `insufficient_funds` for a new guest), `GET /me` | ~10 |
+| `purchases` | 4/s | `POST /purchases` (200, or 409 `insufficient_funds` for a new guest), `GET /me` | ~8 |
+| `challenges` | 1 per 4 s | Creator: `POST /guests`, a full-length run (create, start, wait 58.5 s, submit), `POST /challenges`. Recipient: `POST /guests`, `GET /invites/{token}`, `POST /invites/{token}/accept`, a full-length recipient run, `GET /challenges/{id}` (must be `completed`) | ~3 (12 requests in about 2 minutes; about 30 iterations open at the same time) |
 
-Total at steady state: about 19–20 requests/s. The first minute has fewer, because the first runs are still
-open. Every VU uses its own guest and replaces it after 40 writes, so the per-player write limit
-(120 per minute) does not interfere.
+Total at steady state: about 20 requests/s. The first two minutes have fewer, because the first runs and
+challenges are still open. Every VU uses its own guest and replaces it after 40 writes, so the per-player
+write limit (120 per minute) does not interfere.
+
+Challenge acceptance (spec §13, J2) needs reward-eligible runs (spec v1.4 §7): the creator run and the
+recipient run each wait `minRunMsForRewards` (58 s) of real time before the submit. So one iteration takes
+about 2 minutes, and its rate is low (one every 4 s) to keep the total near 20 requests/s. The `challenges`
+scenario has `gracefulStop: 150s`: after the 5 minutes, the open iterations complete their runs (the test
+takes about 7.5 minutes in total, with a lower rate at the end).
 
 Thresholds (the run fails when one is not met):
 
 - reads: p95 < 300 ms (spec §13 beta SLO);
 - writes: p95 < 800 ms (provisional, until a baseline exists);
 - failed requests < 1 %; checks > 99 % (a submit must be `verified`).
-
-Challenge acceptance is not in the script yet (it needs two players and an invite link per iteration).
 
 The script imports nothing from the network (only k6 built-in modules). `BASE_URL` must have the form
 `http(s)://host[:port][/path]`; a URL with user info (`http://localhost@other.example`), a query or a fragment
@@ -49,7 +54,7 @@ is refused.
    ```bash
    until curl -sf http://localhost:8080/health/ready; do sleep 1; done
    ```
-3. Run k6 (5 minutes by default; set `DURATION` to change it):
+3. Run k6 (5 minutes of arrivals by default, about 7.5 minutes in total; set `DURATION` to change it):
    ```bash
    docker run --rm -i -e BASE_URL=http://host.docker.internal:8080 grafana/k6:1.3.0 run - < infra/load/street-hoops.js
    ```
@@ -69,3 +74,4 @@ beta gate, in an isolated environment, with production-like compute.
 |---|---|---|---|---|---|---|---|
 | 2026-11-06 | Local compose on a developer laptop (Apple silicon, Docker Desktop) | 90 s trial | 14.9 (ramp-up included) | 5 ms | 16 ms | 0 % | Pass (script check, not a capacity result) |
 | 2026-11-07 | Local compose on a developer laptop (Apple silicon, Docker Desktop), master 4cfd254 (streams A–H) | 5 min | 17.6 (ramp-up included) | 4.2 ms | 16.3 ms | 0 % (0 of 5,798) | Pass: all thresholds, 5,796 of 5,796 checks (not a capacity result) |
+| 2026-11-10 | Local compose on a developer laptop (Apple silicon, Docker Desktop), master 878cf5a + challenge scenario (stream L) | 5 min of arrivals + 2 min drain (6 min 57 s) | 14.6 (ramp-up and drain included) | 5.0 ms | 16.2 ms | 0 % (0 of 6,107) | Pass: all thresholds, 6,105 of 6,105 checks; 76 challenges created, accepted and completed (not a capacity result) |
