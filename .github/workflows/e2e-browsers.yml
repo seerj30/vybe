@@ -89,6 +89,12 @@ jobs:
       - name: Install ${{ matrix.browser }}
         run: pnpm --filter @vybe/e2e exec playwright install --with-deps ${{ matrix.browser }}
 
+      # Headless Firefox needs a system OpenGL driver for WebGL (the court); Mesa llvmpipe renders in software.
+      # Chromium and WebKit bring their own software renderer.
+      - name: Install Mesa (software OpenGL)
+        if: ${{ matrix.browser == 'firefox' }}
+        run: sudo apt-get install -y --no-install-recommends libgl1-mesa-dri libegl1 libegl-mesa0 libglx-mesa0
+
       # Project names per engine (playwright.config.ts). BROWSER is a fixed matrix value, never user input.
       - name: Projects
         env:
