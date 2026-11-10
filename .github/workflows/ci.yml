@@ -168,6 +168,36 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  assets:
+    # Spec §9, §13: avatar and catalog art (docs/art/README.md). The checker reads the committed files; the
+    # rebuild proves that the committed files come from the scripts (same bytes, pinned Blender image).
+    name: Assets (budgets, rig, reproducible build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Unit tests (checker, geometry)
+        run: |
+          python3 -m unittest discover -s assets/tools -v
+          python3 -m unittest discover -s assets/source -v
+
+      - name: Budget and compatibility check
+        run: python3 assets/tools/check_assets.py
+
+      - name: Rebuild the art (Blender 4.5 LTS in Docker)
+        run: |
+          mkdir -p "$RUNNER_TEMP/committed/assets"
+          cp -R assets/published assets/manifests "$RUNNER_TEMP/committed/assets/"
+          assets/source/build.sh
+
+      # Models and manifests: the same bytes. Thumbnails: the same pixels within a small tolerance
+      # (assets/tools/compare_build.py explains why).
+      - name: The rebuild matches the committed files
+        run: python3 assets/tools/compare_build.py "$RUNNER_TEMP/committed" .
+
   deploy-config:
     name: Images (API and web, proxy rules)
     runs-on: ubuntu-24.04

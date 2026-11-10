@@ -19,3 +19,5 @@ TestResults/
 
 # Secrets
 .env*.local
+assets/build/
+__pycache__/
