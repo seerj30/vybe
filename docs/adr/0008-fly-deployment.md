@@ -2,7 +2,8 @@
 
 - Status: **superseded by [ADR 0009](0009-oracle-vm.md)** (nobody deployed to Fly.io). Decision 7 changed to an
   Oracle Cloud Always Free VM on 2026-11-10. The same day `infra/fly/`, `deploy.yml`, the Fly.io CI step and the
-  Fly.io runbook sections were removed; they are in the git history before that commit. `infra/web/` (Caddyfile with
+  Fly.io runbook sections were removed (they are in the git history before that commit), and the
+  Fly.io apps and the organization `vybe-prod` were deleted. `infra/web/` (Caddyfile with
   the `Fly-Client-IP` rule) stays: the local compose stack and CI use it, and the VM mounts its own Caddyfile.
 - Date: 2026-11-07 (review fixes the same day)
 - Spec: [v1.4 §13 and changelog item 7](../spec/VYBE_Technical_Specification_v1.3.md#v14-2026-11-07--signed-17-decisions);

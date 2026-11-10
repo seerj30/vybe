@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-time (and repeatable) set-up of the VYBE production VM: Oracle Cloud Always Free, VM.Standard.A1.Flex,
-# Ubuntu 24.04 aarch64 (ADR 0009). Runbook: docs/runbooks/oracle-vm.md, "Bootstrap the VM".
+# Ubuntu 24.04 or 26.04 LTS, aarch64 (ADR 0009). Runbook: docs/runbooks/oracle-vm.md, "Bootstrap the VM".
 #
 # From the owner's Mac (the files of this folder at a reviewed commit of master):
 #   scp -r infra/oracle ubuntu@<public ip>:vybe-oracle
@@ -45,7 +45,10 @@ done
 [ "$(id -u)" -eq 0 ] || fail "run it with sudo"
 # shellcheck source=/dev/null
 . /etc/os-release
-if [ "${ID:-}" != ubuntu ] || [ "${VERSION_ID:-}" != "24.04" ]; then fail "this script is for Ubuntu 24.04"; fi
+case "${ID:-} ${VERSION_ID:-}" in
+  "ubuntu 24.04" | "ubuntu 26.04") ;;
+  *) fail "this script is for Ubuntu 24.04 or 26.04 LTS (found ${ID:-?} ${VERSION_ID:-?})" ;;
+esac
 [ "$(uname -m)" = aarch64 ] || echo "bootstrap: warning: not aarch64 ($(uname -m)); the images are built for linux/arm64" >&2
 admin="${SUDO_USER:-}"
 
@@ -108,6 +111,14 @@ Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
 Unattended-Upgrade::Remove-Unused-Dependencies "true";
 EOF
 systemctl enable --now unattended-upgrades
+
+say "No release upgrades (a new Ubuntu release is a planned change, runbook \"OS and Docker updates\")"
+# The login message offers "do-release-upgrade"; on 2026-11-10 it moved the production VM from 24.04 to 26.04
+# between two deploy steps. Prompt=never removes the offer; a release upgrade stays possible by hand.
+if [ -f /etc/update-manager/release-upgrades ]; then
+  sed -i -E 's/^Prompt=.*/Prompt=never/' /etc/update-manager/release-upgrades
+  grep -qx 'Prompt=never' /etc/update-manager/release-upgrades || fail "could not set Prompt=never in /etc/update-manager/release-upgrades"
+fi
 
 say "Docker Engine and the compose plugin (Docker's apt repository)"
 install -d -m 0755 /etc/apt/keyrings
