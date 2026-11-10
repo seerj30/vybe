@@ -1,6 +1,8 @@
 # ADR 0008: Fly.io deployment for the closed beta
 
-- Status: accepted (configuration only; nobody has deployed yet)
+- Status: accepted (configuration only; nobody has deployed yet). **Kept, not used since 2026-11-10:** decision 7
+  changed to an Oracle Cloud Always Free VM ([ADR 0009](0009-oracle-vm.md)). The files, `deploy.yml` and the CI job
+  stay for a later paid move; the Fly apps have no machines (no cost).
 - Date: 2026-11-07 (review fixes the same day)
 - Spec: [v1.4 §13 and changelog item 7](../spec/VYBE_Technical_Specification_v1.3.md#v14-2026-11-07--signed-17-decisions);
   hosting: [decision 7](../decisions/07-hosting.md) (signed, option A; the product owner chose Fly.io on 2026-11-07);

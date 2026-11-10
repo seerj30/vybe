@@ -112,6 +112,42 @@ public sealed class OpsExportStorageTests : IAsyncLifetime, IDisposable
         Assert.DoesNotContain(await ListAsync(), e => e.ExportId == entry.RequestId);
     }
 
+    // The weekly database dumps share the bucket (docs/runbooks/backup-restore.md); the orphan sweep deletes only
+    // what ListAsync returns, so it must never see them, also with an empty export prefix.
+    [Theory]
+    [InlineData("exports/")]
+    [InlineData("")]
+    public async Task List_NeverReturnsBackups(string prefix)
+    {
+        using var storage = new S3ExportStorage(new S3ExportStorageOptions
+        {
+            ServiceUrl = _minio.GetConnectionString(),
+            Region = "us-east-1",
+            Bucket = Bucket,
+            AccessKeyId = _minio.GetAccessKey(),
+            SecretAccessKey = _minio.GetSecretKey(),
+            Prefix = prefix,
+        }, _clock);
+        using var admin = new AmazonS3Client(
+            new BasicAWSCredentials(_minio.GetAccessKey(), _minio.GetSecretKey()),
+            new AmazonS3Config { ServiceURL = _minio.GetConnectionString(), ForcePathStyle = true, AuthenticationRegion = "us-east-1" });
+        foreach (var key in new[] { "backups/vybe-20261110T031700Z.dump.age", $"backups/{Guid.NewGuid():D}.json" })
+        {
+            await admin.PutObjectAsync(new PutObjectRequest { BucketName = Bucket, Key = key, ContentBody = "x" });
+        }
+
+        var exportId = Guid.CreateVersion7();
+        var exportKey = await storage.WriteAsync(exportId, [1], CancellationToken.None);
+        var listed = new List<string>();
+        await foreach (var (_, key) in storage.ListAsync(CancellationToken.None))
+        {
+            listed.Add(key);
+        }
+
+        Assert.Contains(exportKey, listed);
+        Assert.DoesNotContain(listed, key => key.StartsWith("backups/", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void IncompleteOptions_FailOnConstruction() =>
         Assert.Throws<InvalidOperationException>(() => new S3ExportStorage(new S3ExportStorageOptions { Bucket = Bucket }, _clock));

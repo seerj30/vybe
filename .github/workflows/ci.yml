@@ -228,3 +228,38 @@ jobs:
       - name: Web container logs
         if: failure()
         run: docker logs vybe-web; docker logs stub
+
+  oracle-config:
+    name: Oracle VM config (scripts, compose, arm64 images, stack)
+    # The VM is Ampere A1 (linux/arm64): build and run the images natively, as the deploy workflow does.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Shellcheck the server and helper scripts
+        run: |
+          command -v shellcheck >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q shellcheck; }
+          shellcheck -x infra/oracle/*.sh infra/fly/stage-secrets.sh infra/web/entrypoint.sh
+
+      - name: docker compose config (dummy settings)
+        run: |
+          d=$(mktemp -d)
+          touch "$d/api.env" "$d/web.env"
+          VYBE_ENV_DIR="$d" VYBE_API_IMAGE=ghcr.io/seerj30/vybe-api@sha256:0 VYBE_WEB_IMAGE=ghcr.io/seerj30/vybe-web@sha256:0 \
+            VYBE_RELEASE=0 docker compose -f infra/oracle/compose.yml config --format json > "$d/config.json"
+          # Only the web container publishes ports (80, 443); the API trusts forwarded headers from the fixed subnet only.
+          jq -e '(.services.api.ports // []) == [] and ([.services.web.ports[].target] | sort) == [80, 443]
+            and .services.api.environment.ReverseProxy__KnownNetworks__0 == .networks.vybe.ipam.config[0].subnet
+            and .services.api.read_only and .services.web.read_only
+            and .services.api.cap_drop == ["ALL"] and .services.web.cap_drop == ["ALL"]' "$d/config.json"
+
+      - name: Build the images (linux/arm64)
+        run: |
+          docker build -f services/api/Dockerfile -t vybe-api:ci .
+          docker build -f infra/web/Dockerfile -t vybe-web:ci .
+
+      - name: Compose stack against PostgreSQL (TLS, proxy, headers, client address)
+        run: infra/oracle/test-stack.sh vybe-api:ci vybe-web:ci

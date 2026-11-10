@@ -1,6 +1,12 @@
 using Vybe.Api;
 using Vybe.Api.Infrastructure;
 
+// Container health check (the chiseled image has no curl): calls /health/ready on the local port and exits.
+if (HealthProbe.IsCommand(args))
+{
+    return await HealthProbe.RunAsync(HealthProbe.ReadyUrl(Environment.GetEnvironmentVariable("ASPNETCORE_HTTP_PORTS")), TimeSpan.FromSeconds(4));
+}
+
 // Deploy steps (migrate, seed) run as their own process and exit; the API never migrates at start-up.
 if (OpsCommands.IsCommand(args))
 {
