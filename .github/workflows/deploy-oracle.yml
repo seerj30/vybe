@@ -75,7 +75,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0 # the ancestry checks below need origin/master
 
-      # A v* tag can point at any commit: deploy only reviewed commits (on master) that passed CI (as deploy.yml).
+      # A v* tag can point at any commit: deploy only reviewed commits (on master) that passed CI.
       - name: The commit is on master and CI passed on it
         env:
           GH_TOKEN: ${{ github.token }}

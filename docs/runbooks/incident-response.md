@@ -84,15 +84,5 @@ personal data sent to a wrong place) has legal deadlines (GDPR: report to the su
 - Logs and traces never contain invite tokens (redacted), request bodies, cookies or client addresses.
 - Background workers run in every API instance; they are safe with many instances (`SKIP LOCKED`).
 - The guest cookie is `__Host-vybe_guest`; never ask a player for it.
-
-## Fly.io commands
-
-| Need | Command |
-|---|---|
-| State of the machines and checks | `fly status -a vybe-prod-api`, `fly checks list -a vybe-prod-api` |
-| Live logs (JSON, redacted) | `fly logs -a vybe-prod-api`, `fly logs -a vybe-prod-web` |
-| Releases and their images | `fly releases -a vybe-prod-api --image` |
-| Restart one machine | `fly machine restart <machine id> -a vybe-prod-api` |
-| Stop writes (data loss incident) | `fly scale count 0 -a vybe-prod-api` ([backup-restore.md](backup-restore.md)) |
-| Roll back | [deploy-and-rollback.md](deploy-and-rollback.md), "Rollback on Fly.io" |
-| Platform status | <https://status.flyio.net>, Supabase: <https://status.supabase.com> |
+- Production VM commands (state, logs, restart, rollback): [oracle-vm.md](oracle-vm.md). Platform status:
+  Supabase <https://status.supabase.com>, Oracle Cloud <https://ocistatus.oraclecloud.com>.

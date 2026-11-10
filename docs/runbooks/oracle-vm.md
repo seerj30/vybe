@@ -6,8 +6,8 @@
   [ADR 0009](../adr/0009-oracle-vm.md). The database and Auth stay on Supabase (Free, `eu-central-1`).
 - Related: [deploy-and-rollback.md](deploy-and-rollback.md) (settings, generic procedure),
   [backup-restore.md](backup-restore.md) (weekly dump, restore), [secret-rotation.md](secret-rotation.md),
-  [incident-response.md](incident-response.md). The Fly.io files ([ADR 0008](../adr/0008-fly-deployment.md)) are
-  kept, not used.
+  [incident-response.md](incident-response.md). The Fly.io design ([ADR 0008](../adr/0008-fly-deployment.md)) is
+  superseded; its files were removed on 2026-11-10.
 
 ## Rules for every step with a secret
 
@@ -180,7 +180,7 @@ Do the steps in this order. Keep each value in the password manager.
 12. **Make the images public** (no secrets are in the images; the VM then needs no registry credential):
     GitHub → your profile → Packages → `vybe-api` → Package settings → Change visibility → Public. The same for
     `vybe-web`. Check "Manage Actions access": the repository `seerj30/vybe` has the role "Write".
-13. **Grants** (if not done for Fly.io): as the owner role, with the service `vybe-owner` in
+13. **Grants** (if not done before): as the owner role, with the service `vybe-owner` in
     `~/.pg_service.conf` and the password in `~/.pgpass` (both mode 600):
     ```bash
     PGSERVICE=vybe-owner psql -v ON_ERROR_STOP=1 -v api_role=vybe_api -f infra/db/grants.sql
@@ -330,18 +330,6 @@ network under 20 %, and memory under 20 % (A1 shapes). A beta with few players c
 - Do not run load only to look busy: it uses the shared free capacity and Oracle can change the rule.
 - If Oracle stops the VM: start it in the console (Compute → Instances → Start). The containers start by
   themselves. The heartbeat and the uptime monitor show the outage.
-
-## Move to Fly.io later
-
-The Fly.io files stay in the repository ([ADR 0008](../adr/0008-fly-deployment.md), `infra/fly/`,
-`.github/workflows/deploy.yml`, CI job "Deployment config"). To move (a paid plan):
-
-1. Do the Fly.io one-time setup of [deploy-and-rollback.md](deploy-and-rollback.md) (the apps exist; stage the
-   secrets with `infra/fly/stage-secrets.sh`).
-2. Deploy with `deploy.yml` (it builds `linux/amd64` images for Fly; the database stays the same).
-3. Change the host name everywhere ("Host name" above) to the Fly origin or domain.
-4. Watch for one day, then stop the VM stack (`vc down`). Keep the VM until the next restore drill, then
-   terminate it.
 
 ## Cost
 

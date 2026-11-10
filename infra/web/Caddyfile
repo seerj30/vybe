@@ -1,8 +1,9 @@
 # VYBE web host (ADR 0008): serves the Angular production build and proxies /api/* to the API on the same origin,
-# so the guest cookie (__Host-vybe_guest) is first-party. TLS ends at the Fly edge; Caddy listens on plain http.
+# so the guest cookie (__Host-vybe_guest) is first-party. Caddy listens on plain http (local compose, CI). The
+# production VM mounts infra/oracle/Caddyfile over this file (TLS, no trusted proxy; ADR 0009).
 #
 # Environment (read once at start-up):
-#   VYBE_API_HOST, VYBE_API_PORT  the API machines (Fly: <api app>.internal, 8080; compose: api, 8080)
+#   VYBE_API_HOST, VYBE_API_PORT  the API (compose: api, 8080)
 #   VYBE_SUPABASE_URL             the Supabase origin for connect-src (checked by entrypoint.sh); empty = guest-only
 {
 	admin off

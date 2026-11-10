@@ -169,17 +169,13 @@ jobs:
           retention-days: 14
 
   deploy-config:
-    name: Deployment config (Fly.io files, images)
+    name: Images (API and web, proxy rules)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      # flyctl config validate needs a Fly.io token, so pull requests use the offline check (ADR 0008).
-      - name: Check infra/fly/*.fly.toml
-        run: python3 infra/fly/check-config.py
 
       - name: Build the API image
         run: docker build -f services/api/Dockerfile -t vybe-api:ci .
@@ -245,7 +241,7 @@ jobs:
       - name: Shellcheck the server and helper scripts
         run: |
           command -v shellcheck >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q shellcheck; }
-          shellcheck -x infra/oracle/*.sh infra/fly/stage-secrets.sh infra/web/entrypoint.sh
+          shellcheck -x infra/oracle/*.sh infra/web/entrypoint.sh
 
       - name: docker compose config (dummy settings)
         run: |

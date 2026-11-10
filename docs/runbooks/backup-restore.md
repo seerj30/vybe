@@ -10,7 +10,7 @@ Hosting ([decision 7](../decisions/07-hosting.md), changed on 2026-11-10): Supab
 ([ADR 0009](../adr/0009-oracle-vm.md), [oracle-vm.md](oracle-vm.md)). Supabase Free has **no automatic
 backups**: the weekly encrypted dump (section "Weekly dump on Supabase Free") is the only backup until the
 upgrade to Pro. This runbook has a provider part (managed backups) and a provider-neutral part (logical dump
-with `pg_dump`). Do both when the plan has managed backups. Fly.io (kept, not used): section "Fly.io" at the end.
+with `pg_dump`). Do both when the plan has managed backups.
 
 ## What to back up
 
@@ -30,7 +30,7 @@ backup script applies its own retention.
 
 Supabase Pro: daily backups are included; the retention depends on the plan (7 days on Pro on 2026-11-07,
 to check on the Supabase price page when the project is created). Point-in-time recovery is an add-on
-(cost: [deploy-and-rollback.md](deploy-and-rollback.md), "Cost estimate"). Write the retention of the
+(check its price on the Supabase price page). Write the retention of the
 production project here when it exists: **retention: TBD**.
 
 ## What a restore loses, and the deletion log
@@ -304,33 +304,3 @@ For "Restore production after data loss":
 - Step 7: `stage-env.sh` (new values), the new owner string in `VYBE_MIGRATIONS_CONNECTION_STRING` and
   `VYBE_BACKUP_DB_PASSWORD`, then `vc up -d --wait`. A new project ref also changes the constants in
   `stage-env.sh` and `backup.sh` (a PR), the Supabase URLs and the anon key.
-
-## Fly.io (kept, not used)
-
-The API on Fly.io keeps no data: no volumes, and the release machine keeps nothing. Only the database
-(Supabase) and the export bucket (Supabase Storage) need backups. Images stay in `registry.fly.io` and can
-be built again from git.
-
-For "Restore production after data loss":
-
-- Step 1, stop writes: `fly scale count 0 -a vybe-prod-api`. The web app stays up; `/api` answers 502.
-  Write down `fly scale show -a vybe-prod-api` first, to scale back to the same count.
-- Step 2: on Supabase, use "Restore to a new project" (Database → Backups) if the plan offers it. An
-  in-place restore overwrites the damaged database: only with the approval of the incident lead.
-- Steps 3–6 (grants, `migrate`, `replay-deletions`): run them from a trusted machine with the image of the
-  current release (`fly releases -a vybe-prod-api --image`), as in the drill, but with the production bucket
-  settings. Do not use `fly machine run` here: it starts the machine with the old connection strings of
-  the app. Give each secret through the environment, never as an argument or a file in `/tmp`:
-  ```bash
-  read -rs ConnectionStrings__Migrations && export ConnectionStrings__Migrations   # paste, then Enter
-  docker run --rm -e ConnectionStrings__Migrations registry.fly.io/vybe-prod-api@sha256:<digest> migrate
-  ```
-  Use the same form for `replay-deletions` (`ConnectionStrings__Vybe` and the `Storage__Exports__*`
-  settings). Close the shell afterwards.
-- Step 7: put the new API connection string in with `fly secrets import --stage -a vybe-prod-api` (see the
-  deploy runbook, one-time setup step 8), and the new owner string in the GitHub environment secret
-  `VYBE_MIGRATIONS_CONNECTION_STRING` (step 10; it is never a Fly secret). Then `fly secrets deploy -a vybe-prod-api` and
-  `fly scale count <count> -a vybe-prod-api --region <region>`. Check `fly checks list -a vybe-prod-api`.
-- A new Supabase project has a new project ref: also change `Auth__Supabase__*`, `Storage__Exports__*`,
-  and the web settings `VYBE_SUPABASE_URL` and `VYBE_SUPABASE_ANON_KEY` (`fly secrets set -a vybe-prod-web`).
-  Players must sign in again.
