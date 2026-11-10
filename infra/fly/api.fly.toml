@@ -41,6 +41,8 @@ kill_timeout = "35s"
   # API process. A stopped machine stops them (decision 7).
   auto_stop_machines = "off"
   auto_start_machines = false
+  # Not the machine count (it only limits auto-stop, which is off). The count belongs to the app: `fly scale count 2`
+  # adds the second machine before the social beta (runbook, "Scaling before the social beta"); deploys keep it.
   min_machines_running = 1
 
   [http_service.concurrency]
@@ -67,7 +69,8 @@ kill_timeout = "35s"
     timeout = "5s"
     grace_period = "20s"
 
-# Beta size (decision 7: about 20 rps at the 10x load-test target). One machine now; two before the social beta.
+# Beta size (decision 7: about 20 rps at the 10x load-test target). One machine now; two before the social beta
+# (`fly scale count 2`). Every background worker is safe on many machines (MultiInstanceWorkerTests).
 [[vm]]
   size = "shared-cpu-2x"
   memory = "1gb"
