@@ -46,6 +46,8 @@ OpenGL, and the Firefox projects set the preference `webgl.force-enabled`.
 - Masks (magenta in the baseline): the HUD values (clock and score). The game canvas is hidden in the HUD
   screenshot: the basket path depends on a random seed.
 - Each screen waits for its own ready elements (the data it loads), the web fonts, and each started image.
+- In the phone layout, the fixed bottom nav is put in the page flow for the screenshot: a full-page capture puts a
+  fixed element at a different height from run to run (WebKit).
 - Tolerance: at most 0.2 % of the pixels may differ (`maxDiffPixelRatio: 0.002`, color `threshold: 0.2`).
   The visual projects have no retries: a screenshot that passes only on a second try is not stable.
 - A pull request that changes the matrix runs each screenshot of Firefox and WebKit 3 times (`--repeat-each=3`).

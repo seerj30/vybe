@@ -63,7 +63,14 @@ async function sortCatalog(page: Page): Promise<void> {
   });
 }
 
+/**
+ * The phone layout has a fixed bottom nav (app.css `.nav`). A full-page capture puts a fixed element at a different
+ * height from run to run (WebKit), so the screenshots keep the nav in the page flow instead.
+ */
+const STATIC_PHONE_NAV = "@media (max-width: 767px) { .nav { position: static !important; } }";
+
 async function snap(page: Page, name: string, ready: Locator[], mask: Locator[] = []): Promise<void> {
+  await page.addStyleTag({ content: STATIC_PHONE_NAV });
   await settled(page, ready);
   await fixText(page);
   await expect(page).toHaveScreenshot(`${name}.png`, { fullPage: true, mask, maskColor: "#ff00ff" });
