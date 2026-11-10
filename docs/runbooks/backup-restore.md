@@ -251,7 +251,7 @@ exports.
 
 | Date | Backup used | RTO | RPO | Deletions replayed | Result | Done by |
 |---|---|---|---|---|---|---|
-| — | — | — | — | — | No drill yet | — |
+| 2026-11-10 | `backups/vybe-20261110T105316Z.dump.age` (weekly dump, Supabase Free) | about 30 s (download, decrypt in memory, `pg_restore` into a local `postgres:17.6-alpine`) | 0 (dump of the same day) | not run (local copy only, no production data path) | **Pass**: the age key from the password manager decrypted the dump; 26 tables of schema `vybe` restored, including `__ef_migrations_history`. Partial drill: no `migrate`/`replay-deletions`/API start against the restored copy yet | product owner with Claude |
 
 ## Restore production after data loss
 
