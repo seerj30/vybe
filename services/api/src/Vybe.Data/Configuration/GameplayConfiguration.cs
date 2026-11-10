@@ -57,7 +57,9 @@ internal sealed class GameSessionConfiguration : IEntityTypeConfiguration<GameSe
             .HasDatabaseName("ix_game_sessions_created_start_deadline");
         b.HasIndex(x => x.SubmitDeadline).HasFilter("status = 'active'")
             .HasDatabaseName("ix_game_sessions_active_submit_deadline");
-        // Moderator list of flagged runs (GET /admin/flagged-runs), newest first; few rows have a flag.
+        // Moderator list of flagged runs (GET /admin/flagged-runs), newest first; few rows have a flag. Migration
+        // ReviewFlagsIndex creates it with a plain CREATE INDEX (the table was small then). A later index on a large
+        // table needs CREATE INDEX CONCURRENTLY outside a transaction (docs/runbooks/migrations.md).
         b.HasIndex(x => new { x.VerifiedAt, x.Id }).IsDescending(true, true).HasFilter("cardinality(review_flags) > 0")
             .HasDatabaseName("ix_game_sessions_flagged_verified_at");
 

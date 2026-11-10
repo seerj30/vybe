@@ -10,6 +10,9 @@ namespace Vybe.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            // A plain CREATE INDEX locks writes to game_sessions while it runs: acceptable here, because the table was
+            // small before the beta. A later index on a large table needs CREATE INDEX CONCURRENTLY in
+            // migrationBuilder.Sql(..., suppressTransaction: true) (docs/runbooks/migrations.md).
             migrationBuilder.CreateIndex(
                 name: "ix_game_sessions_flagged_verified_at",
                 schema: "vybe",
