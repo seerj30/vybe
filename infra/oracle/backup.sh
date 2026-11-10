@@ -19,7 +19,8 @@ readonly DB_HOST="${BACKUP_DB_HOST:-aws-0-eu-central-1.pooler.supabase.com}"
 readonly DB_PORT="${BACKUP_DB_PORT:-5432}"
 readonly DB_USER="${BACKUP_DB_USER:-vybe_owner.$REF}"
 readonly DB_NAME="${BACKUP_DB_NAME:-postgres}"
-readonly DB_SSLMODE="${BACKUP_DB_SSLMODE:-require}"
+# verify-full: the pooler's certificate must chain to the Supabase root CA in supabase-ca.crt (from the dashboard).
+readonly DB_SSLMODE="${BACKUP_DB_SSLMODE:-verify-full}"
 readonly DOCKER_NETWORK="${BACKUP_DOCKER_NETWORK:-bridge}"
 readonly S3_ENDPOINT="${BACKUP_S3_ENDPOINT:-https://$REF.storage.supabase.co/storage/v1/s3}"
 readonly BUCKET="${BACKUP_BUCKET:-vybe-exports}"
@@ -28,8 +29,8 @@ readonly RETENTION_DAYS=35
 readonly MIN_KEEP=4
 # pg_dump must have the server's major version or newer. Pinned by digest (update: docker buildx imagetools inspect).
 readonly PG_IMAGE="postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94"
-RECIPIENTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/backup-recipients.txt"
-readonly RECIPIENTS
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly HERE RECIPIENTS="$HERE/backup-recipients.txt" CA_FILE="$HERE/supabase-ca.crt"
 
 fail() { echo "backup: $*" >&2; exit 1; }
 
@@ -39,6 +40,12 @@ if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
 fi
 grep -q '^age1[a-z0-9]\{58\}$' "$RECIPIENTS" || fail "$RECIPIENTS has no age public key (runbook: create the backup key)"
 command -v age >/dev/null || fail "age is not installed"
+tls_mount=()
+if [ "$DB_SSLMODE" = verify-full ]; then
+  grep -q 'BEGIN CERTIFICATE' "$CA_FILE" 2>/dev/null \
+    || fail "$CA_FILE is missing: add the Supabase root CA (runbook backup-restore.md, \"Weekly dump on Supabase Free\")"
+  tls_mount=(-v "$CA_FILE:/run/pg/ca.crt:ro" -e PGSSLROOTCERT=/run/pg/ca.crt)
+fi
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -59,7 +66,7 @@ name="vybe-$(date -u +%Y%m%dT%H%M%SZ).dump.age"
 echo "backup: dumping schema vybe to $name"
 docker run --rm --network "$DOCKER_NETWORK" --read-only --tmpfs /tmp --cap-drop ALL \
   --security-opt no-new-privileges:true --user "$(id -u):$(id -g)" \
-  -v "$work/pgpass:/run/pg/pgpass:ro" -v "$work/pg_service.conf:/run/pg/pg_service.conf:ro" \
+  -v "$work/pgpass:/run/pg/pgpass:ro" -v "$work/pg_service.conf:/run/pg/pg_service.conf:ro" ${tls_mount[@]+"${tls_mount[@]}"} \
   -e PGPASSFILE=/run/pg/pgpass -e PGSERVICEFILE=/run/pg/pg_service.conf -e PGSERVICE=vybe-owner \
   "$PG_IMAGE" pg_dump --schema=vybe --format=custom --no-owner \
   | age --encrypt --recipients-file "$RECIPIENTS" --output "$work/$name"

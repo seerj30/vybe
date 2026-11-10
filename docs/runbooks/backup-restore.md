@@ -5,9 +5,12 @@
 - Related: [incident-response.md](incident-response.md), [migrations.md](migrations.md),
   [secret-rotation.md](secret-rotation.md), [ADR 0006](../adr/0006-operations.md).
 
-Hosting is signed ([decision 7](../decisions/07-hosting.md)): Supabase Pro for the database, Fly.io for the API
-([ADR 0008](../adr/0008-fly-deployment.md)). This runbook has a provider part (managed backups) and a
-provider-neutral part (logical dump with `pg_dump`). Do both. Fly.io specifics: section "Fly.io" at the end.
+Hosting ([decision 7](../decisions/07-hosting.md), changed on 2026-11-10): Supabase **Free** for the database
+(Pro before the first real beta players), the API and the web app on an Oracle Cloud Always Free VM
+([ADR 0009](../adr/0009-oracle-vm.md), [oracle-vm.md](oracle-vm.md)). Supabase Free has **no automatic
+backups**: the weekly encrypted dump (section "Weekly dump on Supabase Free") is the only backup until the
+upgrade to Pro. This runbook has a provider part (managed backups) and a provider-neutral part (logical dump
+with `pg_dump`). Do both when the plan has managed backups. Fly.io (kept, not used): section "Fly.io" at the end.
 
 ## What to back up
 
@@ -16,12 +19,14 @@ provider-neutral part (logical dump with `pg_dump`). Do both. Fly.io specifics: 
 | PostgreSQL schema `vybe` | Database | Provider backups (daily; point-in-time recovery strongly recommended) and a weekly logical dump |
 | Deletion log (J4) | Export bucket, prefix `deletion-log/` | It is the backup of the deletion requests. Keep each object at least 90 days (longer than the oldest database backup). |
 | Data exports (J4) | Export bucket, prefix `exports/` | No backup. Exports are temporary (24 h) and can be made again. |
+| Weekly database dumps (encrypted) | Export bucket, prefix `backups/` | They are the backup. 35 days, at least the newest 4. The API's orphan sweep reads only `exports/` (test `List_NeverReturnsBackups`). |
 | Database privileges | [`infra/db/grants.sql`](../../infra/db/grants.sql) | Git. Run the script after every restore. |
 | Secrets | Platform secret store | Not in backups. Keep the list of names in [deploy-and-rollback.md](deploy-and-rollback.md). |
 | Content (rulesets, catalog, quests) | Git | Git is the source; `seed` loads it again. |
 
 Bucket lifecycle rules: a rule that deletes old exports must apply to the prefix `exports/` only. A rule for
-`deletion-log/` deletes objects after 90 days or more, never earlier.
+`deletion-log/` deletes objects after 90 days or more, never earlier. Do not add a rule for `backups/`: the
+backup script applies its own retention.
 
 Supabase Pro: daily backups are included; the retention depends on the plan (7 days on Pro on 2026-11-07,
 to check on the Supabase price page when the project is created). Point-in-time recovery is an add-on
@@ -78,6 +83,79 @@ PGSERVICE=vybe-owner pg_dump --schema=vybe --format=custom --no-owner \
 - Store it in a bucket in another account or provider than the database, with a lifecycle rule
   (for example: delete after 35 days). The dump has personal data: same access rules as production.
 - A failed dump must alert the on-call people (spec §12 "backup failure").
+
+## Weekly dump on Supabase Free
+
+The workflow [`backup.yml`](../../.github/workflows/backup.yml) runs
+[`infra/oracle/backup.sh`](../../infra/oracle/backup.sh) every Sunday at 03:17 UTC (and by hand: Actions →
+Backup → Run workflow on `master`):
+
+1. `pg_dump --schema=vybe --format=custom --no-owner` as `vybe_owner` through the session pooler (port 5432),
+   with `sslmode=verify-full` against the Supabase root CA. The password is in a pgpass file (mode 600) in a
+   private temporary directory, never in an argument.
+2. `age` encrypts the stream to the public keys in
+   [`infra/oracle/backup-recipients.txt`](../../infra/oracle/backup-recipients.txt). No plain dump is written to disk.
+3. Upload to `s3://vybe-exports/backups/vybe-<UTC time>.dump.age` (Supabase Storage S3).
+4. Retention: dumps older than 35 days are deleted; the newest 4 always stay.
+
+Limits: the dump has schema `vybe` only. Supabase Auth users (`auth` schema) are not in it. A restore into the
+same project keeps them. A restore into a new project has no Auth users: the incident lead decides how players
+get access to their accounts again (follow-up: a backup of the Auth users). The dumps are in the
+same Supabase project as the database: a lost project loses both. Before the social beta, copy the newest dump
+each month to a second place (for example the owner's encrypted disk, or OCI Object Storage, 20 GB Always Free).
+
+### One-time setup
+
+1. **Backup key** on the owner's Mac (`brew install age`):
+   ```bash
+   age-keygen -o ~/vybe-backup.key     # prints "Public key: age1..."
+   ```
+   Put the private key file in the password manager (as a file) and on an offline medium. Delete
+   `~/vybe-backup.key` after the restore drill. Open a PR that adds the `age1...` line to
+   `infra/oracle/backup-recipients.txt` (public key only). Add the backup on-call person's key the same way.
+2. **Supabase root CA**: Supabase dashboard → Project Settings → Database → SSL Configuration → Download
+   certificate. Check it, then add it as `infra/oracle/supabase-ca.crt` in the same PR:
+   ```bash
+   openssl x509 -in prod-ca-2021.crt -noout -subject -enddate -fingerprint -sha256
+   ```
+   Expected (seen on the pooler's certificate chain on 2026-11-10): subject `CN=Supabase Root 2021 CA`, valid
+   until 2031-04-26, SHA-256 fingerprint
+   `80:70:25:AD:50:D4:ED:21:9D:2C:9C:7D:29:9C:00:4F:82:4E:B0:0C:F7:F6:5A:FE:F6:07:D0:7B:72:E6:CA:FA`.
+   If the dashboard file has another fingerprint, stop and ask the engineering lead.
+3. **S3 key for backups**: Supabase → Storage → S3 connection → New access key, named `vybe-backup` (a key
+   separate from the API's key, so each can be revoked alone).
+4. **GitHub environment `backup`** (Settings → Environments): no required reviewers (a schedule cannot wait for
+   an approval); deployment branches: `master` only. Secrets:
+   ```bash
+   gh secret set VYBE_BACKUP_DB_PASSWORD --env backup -R seerj30/vybe              # the vybe_owner password
+   gh secret set VYBE_BACKUP_S3_ACCESS_KEY_ID --env backup -R seerj30/vybe         # vybe-backup key id
+   gh secret set VYBE_BACKUP_S3_SECRET_ACCESS_KEY --env backup -R seerj30/vybe     # vybe-backup secret
+   gh secret set VYBE_BACKUP_PING_URL --env backup -R seerj30/vybe                 # optional, see below
+   ```
+5. **Alert on a failed or missing backup** (spec §12 "backup failure"): GitHub emails the person who last changed
+   the schedule when a run fails. GitHub also disables schedules after 60 days without repository activity, and
+   then nothing runs and nothing fails. So make a free healthchecks.io check with period 7 days and grace 1 day,
+   email to the on-call people, and put its ping URL in `VYBE_BACKUP_PING_URL`. A failed run pings `/fail`.
+6. Run the workflow once by hand. Check the log ("backup: uploaded backups/vybe-….dump.age") and the object in
+   Storage → `vybe-exports` → `backups/`.
+
+### Restore from a weekly dump
+
+On a trusted machine with the private key (never on the VM):
+
+```bash
+d=$(mktemp -d)                                                   # mode 700
+AWS_ENDPOINT_URL_S3=https://pkrudxjeihxrkkdlfdmr.storage.supabase.co/storage/v1/s3 aws s3 ls s3://vybe-exports/backups/
+AWS_ENDPOINT_URL_S3=https://pkrudxjeihxrkkdlfdmr.storage.supabase.co/storage/v1/s3 \
+  aws s3 cp s3://vybe-exports/backups/vybe-<time>.dump.age "$d/"
+age --decrypt -i <private key file> "$d/vybe-<time>.dump.age" \
+  | PGSERVICE=vybe-restore pg_restore -d vybe --no-owner --exit-on-error
+rm -rf "$d"
+```
+
+The S3 key comes from the AWS CLI's normal credential prompt or environment (`aws configure` with a temporary
+profile, removed afterwards), with region `eu-central-1` and `addressing_style = path`. Then continue with step 5
+of the drill (grants), or step 3 of "Restore production after data loss".
 
 ## Quarterly restore drill
 
@@ -182,7 +260,25 @@ The rows between the restore point and the failure are gone, and VYBE has no oth
    never with SQL.
 5. Write the gap, the number of players compensated and the total coins in the incident review.
 
-## Fly.io
+## Oracle VM
+
+The VM keeps no player data: the database and the bucket are on Supabase. On the VM, only the Caddy certificates
+(`/var/lib/vybe/caddy`, made again on demand) and the settings files (`/etc/vybe`, made again with `stage-env.sh`
+from the password manager) exist. A lost VM is a new VM: [oracle-vm.md](oracle-vm.md), one-time setup steps 4–7.
+
+For "Restore production after data loss":
+
+- Step 1, stop writes: on the VM, `vc stop api` ([oracle-vm.md](oracle-vm.md), "Restart, logs, one-off commands").
+- Steps 2–4: restore the newest weekly dump ("Restore from a weekly dump") into a **new** Supabase project, or
+  into the existing project only with the approval of the incident lead. Then grants and `migrate` (workflow
+  mode `release-only` with the new owner string).
+- Step 5, `replay-deletions`: after `stage-env.sh` has the new API connection string, on the VM:
+  `vc run --rm --no-deps api replay-deletions`. Do not continue until the exit code is 0.
+- Step 7: `stage-env.sh` (new values), the new owner string in `VYBE_MIGRATIONS_CONNECTION_STRING` and
+  `VYBE_BACKUP_DB_PASSWORD`, then `vc up -d --wait`. A new project ref also changes the constants in
+  `stage-env.sh` and `backup.sh` (a PR), the Supabase URLs and the anon key.
+
+## Fly.io (kept, not used)
 
 The API on Fly.io keeps no data: no volumes, and the release machine keeps nothing. Only the database
 (Supabase) and the export bucket (Supabase Storage) need backups. Images stay in `registry.fly.io` and can

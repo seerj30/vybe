@@ -12,6 +12,7 @@ readonly HERE
 readonly PG_IMAGE="postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94"
 readonly HTTP_PORT="${VYBE_TEST_HTTP_PORT:-8480}" HTTPS_PORT="${VYBE_TEST_HTTPS_PORT:-8443}"
 # A '$' in the password: compose must read the env file values literally (single quotes).
+# shellcheck disable=SC2016 # a literal '$', on purpose
 readonly DB_PASSWORD='test$only-not-a-secret'
 
 work=$(mktemp -d)
