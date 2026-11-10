@@ -8,18 +8,20 @@ namespace Vybe.Api.Infrastructure;
 /// <summary>
 /// Deploy steps that run as their own process, never at API start-up:
 /// <c>migrate</c> applies the EF Core migrations; <c>seed</c> loads rulesets, catalog and quests
-/// (idempotent). Both use <c>ConnectionStrings:Migrations</c> (a direct or session-mode connection with the
-/// owner role), else <c>ConnectionStrings:Vybe</c>. <c>replay-deletions</c> runs after a database restore and
+/// (idempotent); <c>release</c> runs <c>migrate</c> then <c>seed</c> in one process (one deploy step, for example
+/// in .github/workflows/deploy.yml). They use <c>ConnectionStrings:Migrations</c> (a direct
+/// or session-mode connection with the owner role), else <c>ConnectionStrings:Vybe</c>. <c>replay-deletions</c> runs after a database restore and
 /// before the API takes traffic: it applies the deletion log again (<see cref="DeletionReplay"/>) with the
-/// API's own settings. Usage: <c>dotnet Vybe.Api.dll migrate|seed|replay-deletions</c>.
+/// API's own settings. Usage: <c>dotnet Vybe.Api.dll migrate|seed|release|replay-deletions</c>.
 /// </summary>
 public static partial class OpsCommands
 {
     public const string Migrate = "migrate";
     public const string Seed = "seed";
+    public const string Release = "release";
     public const string ReplayDeletions = "replay-deletions";
 
-    public static bool IsCommand(string[] args) => args is [Migrate or Seed or ReplayDeletions, ..];
+    public static bool IsCommand(string[] args) => args is [Migrate or Seed or Release or ReplayDeletions, ..];
 
     /// <summary>Entry point from <c>Program</c>: the same configuration sources as the API (appsettings, environment, arguments).</summary>
     public static async Task<int> RunAsync(string[] args)
@@ -82,6 +84,14 @@ public static partial class OpsCommands
     public static async Task RunAsync(string command, IConfiguration configuration, ILogger logger, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(configuration);
+        if (command == Release)
+        {
+            // Seed after migrate: the seed writes into the new schema. A failed migrate stops before the seed.
+            await RunAsync(Migrate, configuration, logger, cancellationToken);
+            await RunAsync(Seed, configuration, logger, cancellationToken);
+            return;
+        }
+
         var connectionString = configuration.GetConnectionString("Migrations") is { Length: > 0 } migrations
             ? migrations
             : configuration.GetConnectionString("Vybe")
@@ -109,7 +119,7 @@ public static partial class OpsCommands
                 break;
 
             default:
-                throw new ArgumentException($"unknown command '{command}' (use {Migrate} or {Seed})", nameof(command));
+                throw new ArgumentException($"unknown command '{command}' (use {Migrate}, {Seed} or {Release})", nameof(command));
         }
     }
 

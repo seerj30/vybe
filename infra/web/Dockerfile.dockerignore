@@ -1,0 +1,16 @@
+# Allowlist for infra/web/Dockerfile (BuildKit reads <Dockerfile>.dockerignore before the root .dockerignore).
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!apps/web/
+!packages/contracts/
+!packages/game-rules/
+!tests/e2e/package.json
+!assets/manifests/
+!infra/web/Caddyfile
+!infra/web/entrypoint.sh
+**/node_modules/
+**/dist/
+**/.angular/
+**/.env*
