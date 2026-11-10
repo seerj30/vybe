@@ -104,8 +104,8 @@ files prepare everything else.
 
 ## Not done
 
-- The region (`REGION-NOT-SET` in both files; the deploy workflow stops while it is not set) and every
-  account, secret, DNS record and certificate: people do them (runbook, one-time setup).
+- Every account, secret, DNS record and certificate: people do them (runbook, one-time setup). The region
+  is `fra` (Frankfurt) with Supabase `eu-central-1`, chosen on 2026-11-10.
 - A caching CDN in front of the Fly edge. Decision 7 says "behind a CDN"; the Fly edge already ends TLS
   near the player, and hashed files are cached by browsers for a year. A CDN (for example Cloudflare)
   changes the client address chain: Caddy must then read the CDN's client header from the CDN's ranges

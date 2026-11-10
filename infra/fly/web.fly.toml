@@ -11,7 +11,7 @@
 #   container writes /runtime-config.json from them at start-up. Without both, sign-in is off (guest-only).
 
 app = "vybe-web"
-primary_region = "REGION-NOT-SET"
+primary_region = "fra"
 # Caddy completes running requests on SIGTERM (graceful shutdown), then exits.
 kill_signal = "SIGTERM"
 kill_timeout = "35s"
