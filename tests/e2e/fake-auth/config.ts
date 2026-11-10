@@ -5,6 +5,8 @@ export const AUTH_URL = `http://localhost:${AUTH_PORT}`;
 export const AUTH_ISSUER = `${AUTH_URL}/auth/v1`;
 /** Test-only publishable key. The fake server checks that clients send it. */
 export const AUTH_ANON_KEY = "vybe-e2e-anon-key";
+/** Test-only service-role key: only the API sends it, to delete Auth users (J4, spec §17 decision 8). */
+export const AUTH_SERVICE_ROLE_KEY = "vybe-e2e-service-role-key";
 /** The web app origin, the only origin that may call Auth from a page (CORS). */
 export const WEB_ORIGIN = `http://localhost:${process.env["E2E_WEB_PORT"] ?? 4321}`;
 

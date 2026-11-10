@@ -7,11 +7,12 @@ import { PlayerStore } from "../player/player-store";
 import { AccountDeletion, DELETION_REQUEST_KEY } from "../settings/account-deletion";
 import { BlockedPlayers } from "../settings/blocked-players";
 import { DataExportPanel } from "../settings/data-export";
+import { ProfilePrivacy } from "../settings/profile-privacy";
 
 /** `/settings` (spec §3): account state and linking, blocked players, data export, deletion. */
 @Component({
   selector: "vybe-settings",
-  imports: [DatePipe, RouterLink, AccountLinkPanel, BlockedPlayers, DataExportPanel, AccountDeletion],
+  imports: [DatePipe, RouterLink, AccountLinkPanel, BlockedPlayers, DataExportPanel, AccountDeletion, ProfilePrivacy],
   template: `
     <section class="page settings">
       <h1>Settings</h1>
@@ -63,6 +64,11 @@ import { DataExportPanel } from "../settings/data-export";
               <button type="button" class="button secondary" (click)="signOut()">Sign out</button>
             </div>
           }
+        </section>
+
+        <section class="card" aria-labelledby="privacy-title">
+          <h2 id="privacy-title">Privacy</h2>
+          <vybe-profile-privacy [current]="me.profileVisibility" />
         </section>
 
         <section class="card" aria-labelledby="blocks-title">

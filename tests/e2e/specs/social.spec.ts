@@ -56,7 +56,7 @@ test("report: a player reports another player from the profile", async ({ page, 
   // The own profile has no safety actions; an unknown handle is unavailable.
   const self = await me(page.request);
   await page.goto(`/profile/${self.handle}`);
-  await expect(page.getByText("This is your public profile.")).toBeVisible();
+  await expect(page.getByText("This is your profile.")).toBeVisible();
   await expect(page.getByRole("button", { name: /^Report/ })).toHaveCount(0);
   await page.goto("/profile/nobody_here_0");
   await expect(page.getByText("This profile is not available.")).toBeVisible();

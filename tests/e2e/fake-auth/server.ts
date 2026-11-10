@@ -19,7 +19,7 @@
  */
 import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign, verify } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { AUTH_ANON_KEY, AUTH_ISSUER, AUTH_PORT, AUTH_URL, WEB_ORIGIN, testSecret } from "./config.ts";
+import { AUTH_ANON_KEY, AUTH_ISSUER, AUTH_PORT, AUTH_SERVICE_ROLE_KEY, AUTH_URL, WEB_ORIGIN, testSecret } from "./config.ts";
 
 const TEST_SECRET = testSecret(); // the server does not start without it
 /** Host names this server answers to (no DNS rebinding through another name). */
@@ -224,6 +224,19 @@ async function route(request: IncomingMessage, url: URL): Promise<Answer> {
     const target = new URL(redirectTo);
     target.searchParams.set("code", code);
     return [303, null, { Location: target.toString() }];
+  }
+
+  const adminUser = /^\/auth\/v1\/admin\/users\/([^/]+)$/.exec(path);
+  if (method === "DELETE" && adminUser !== null) {
+    // Auth admin API (hard delete), as the VYBE API calls it in J4: only with the service-role key.
+    if (request.headers["apikey"] !== AUTH_SERVICE_ROLE_KEY || request.headers["authorization"] !== `Bearer ${AUTH_SERVICE_ROLE_KEY}`) {
+      throw new HttpError(401, "no_authorization", "This endpoint requires a service-role key");
+    }
+    const user = userById(adminUser[1] ?? "");
+    if (user === undefined) throw new HttpError(404, "user_not_found", "User not found");
+    users.delete(user.email.toLowerCase());
+    for (const [id, s] of sessions) if (s.userId === user.id) sessions.delete(id);
+    return [200, {}];
   }
 
   if (path.startsWith("/auth/v1/") && request.headers["apikey"] !== AUTH_ANON_KEY) {

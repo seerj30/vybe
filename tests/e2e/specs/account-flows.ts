@@ -1,6 +1,6 @@
 import type { APIRequestContext, APIResponse, Locator, Page } from "@playwright/test";
 import type { TestUser } from "../fake-auth/users.ts";
-import { expect } from "./app.ts";
+import { expect, passAgeGateDialog } from "./app.ts";
 
 /**
  * Helpers for sign-in, linking, privacy and admin specs. The Supabase session lives in memory only
@@ -16,10 +16,15 @@ export async function fillSignIn(scope: Locator | Page, user: TestUser): Promise
   await form.getByRole("button", { name: "Sign in" }).click();
 }
 
-/** Confirms the link of this browser's guest (or a new player) to the signed-in account `email`. */
+/**
+ * Confirms the link of this browser's guest (or a new player) to the signed-in account `email`. A new player
+ * passes the age gate first (spec §17 decision 1).
+ */
 export async function confirmLink(scope: Locator | Page, email: string): Promise<void> {
   await expect(scope.getByTestId("link-email")).toHaveText(email);
+  const newPlayer = (await scope.getByText("a new VYBE player").count()) > 0;
   await scope.getByRole("button", { name: "Link this account" }).click();
+  if (newPlayer) await passAgeGateDialog("page" in scope ? scope.page() : scope);
 }
 
 /** Landing → "Sign in" → form. */

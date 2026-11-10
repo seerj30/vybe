@@ -139,6 +139,42 @@ namespace Vybe.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Vybe.Data.Entities.AuthUserDeletion", b =>
+                {
+                    b.Property<string>("AuthSubject")
+                        .HasColumnType("text")
+                        .HasColumnName("auth_subject");
+
+                    b.Property<int>("Attempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("attempts");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateTime>("NextAttemptAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_attempt_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.HasKey("AuthSubject")
+                        .HasName("pk_auth_user_deletions");
+
+                    b.HasIndex("NextAttemptAt")
+                        .HasDatabaseName("ix_auth_user_deletions_next_attempt_at");
+
+                    b.ToTable("auth_user_deletions", "vybe", t =>
+                        {
+                            t.HasCheckConstraint("ck_auth_user_deletions_attempts", "attempts >= 0");
+                        });
+                });
+
             modelBuilder.Entity("Vybe.Data.Entities.AvatarConfig", b =>
                 {
                     b.Property<Guid>("PlayerId")
@@ -976,6 +1012,19 @@ namespace Vybe.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("AgeBand")
+                        .HasColumnType("text")
+                        .HasColumnName("age_band");
+
+                    b.Property<DateTime?>("AgeConfirmedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("age_confirmed_at");
+
+                    b.Property<string>("AgePolicyVersion")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("age_policy_version");
+
                     b.Property<string>("AuthSubject")
                         .HasColumnType("text")
                         .HasColumnName("auth_subject");
@@ -1015,6 +1064,13 @@ namespace Vybe.Data.Migrations
                         .HasColumnType("integer")
                         .HasDefaultValue(1)
                         .HasColumnName("level");
+
+                    b.Property<string>("ProfileVisibility")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasColumnName("profile_visibility")
+                        .HasDefaultValueSql("'players'");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -1058,6 +1114,10 @@ namespace Vybe.Data.Migrations
 
                     b.ToTable("players", "vybe", t =>
                         {
+                            t.HasCheckConstraint("ck_players_age_band", "age_band IN ('adult')");
+
+                            t.HasCheckConstraint("ck_players_age_confirmation", "(age_confirmed_at IS NULL) = (age_policy_version IS NULL) AND (age_confirmed_at IS NULL) = (age_band IS NULL)");
+
                             t.HasCheckConstraint("ck_players_auth_subject_by_kind", "status = 'deleted' OR (kind = 'guest') = (auth_subject IS NULL)");
 
                             t.HasCheckConstraint("ck_players_deleted_at", "(status = 'deleted') = (deleted_at IS NOT NULL)");
@@ -1071,6 +1131,8 @@ namespace Vybe.Data.Migrations
                             t.HasCheckConstraint("ck_players_kind", "kind IN ('guest', 'registered')");
 
                             t.HasCheckConstraint("ck_players_level", "level BETWEEN 1 AND 50");
+
+                            t.HasCheckConstraint("ck_players_profile_visibility", "profile_visibility IN ('players', 'private')");
 
                             t.HasCheckConstraint("ck_players_status", "status IN ('active', 'deleted', 'deleting', 'suspended')");
 
