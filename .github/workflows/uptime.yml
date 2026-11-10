@@ -1,0 +1,81 @@
+# Uptime check of production from outside (docs/runbooks/oracle-vm.md, "Monitoring").
+# Every 15 minutes: the web app, the API path through Caddy, and the TLS certificate (at least 14 days left).
+# On a failure it opens one issue with the label "production-down" (GitHub emails the repository owner) and keeps it
+# open without new comments while the failure lasts; on recovery it closes the issue. No secrets, no checkout.
+# GitHub may delay scheduled runs, and it disables schedules after 60 days without repository activity.
+name: Uptime (production)
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Public site, API and certificate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    env:
+      ORIGIN: ${{ vars.VYBE_UPTIME_ORIGIN || 'https://141-144-232-12.sslip.io' }}
+    steps:
+      - name: Check the site
+        run: |
+          set -u
+          : > problems.txt
+          code() { curl -s -o /dev/null -w '%{http_code}' --max-time 20 --retry 2 --retry-delay 10 --retry-all-errors "$1" || true; }
+          web=$(code "$ORIGIN/")
+          api=$(code "$ORIGIN/api/v1/catalog/items")
+          echo "web app: HTTP $web"
+          echo "API (catalog): HTTP $api"
+          [ "$web" = 200 ] || echo "- The web app (\`/\`) answered HTTP $web, not 200." >> problems.txt
+          [ "$api" = 200 ] || echo "- The API (\`/api/v1/catalog/items\`) answered HTTP $api, not 200." >> problems.txt
+          host=${ORIGIN#https://}
+          host=${host%%/*}
+          end=$(echo | timeout 20 openssl s_client -connect "$host:443" -servername "$host" 2>/dev/null \
+            | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
+          if [ -z "$end" ]; then
+            echo "- The TLS certificate could not be read." >> problems.txt
+          else
+            days=$(( ($(date -d "$end" +%s) - $(date +%s)) / 86400 ))
+            echo "certificate: $days days left ($end)"
+            [ "$days" -ge 14 ] || echo "- The TLS certificate expires in $days days ($end); Caddy renews it after 60 days." >> problems.txt
+          fi
+
+      - name: Open or close the outage issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -eu
+          existing=$(gh issue list --state open --label production-down --json number --jq '.[0].number // empty')
+          if [ -s problems.txt ]; then
+            if [ -z "$existing" ]; then
+              gh label create production-down --color B60205 --description "Uptime check failed" --force >/dev/null
+              {
+                echo "The uptime check of $ORIGIN failed at $(date -u '+%Y-%m-%d %H:%M UTC')."
+                echo
+                cat problems.txt
+                echo
+                echo "Run: $RUN_URL"
+                echo
+                echo "First steps: docs/runbooks/oracle-vm.md (\"Restart, logs, one-off commands\") and incident-response.md."
+                echo "This issue closes by itself when a later check passes."
+              } > body.md
+              gh issue create --title "Production check failed: $ORIGIN" --label production-down --body-file body.md
+            else
+              echo "Issue #$existing is already open; no new comment."
+            fi
+            exit 1
+          elif [ -n "$existing" ]; then
+            gh issue close "$existing" --comment "Recovered: the check passed at $(date -u '+%Y-%m-%d %H:%M UTC'). Run: $RUN_URL"
+          fi
