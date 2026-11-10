@@ -8,7 +8,7 @@ using Vybe.Data;
 
 namespace Vybe.Api.Tests;
 
-/// <summary>The deploy steps <c>migrate</c> and <c>seed</c> on an empty database, and readiness before and after.</summary>
+/// <summary>The deploy steps <c>migrate</c>, <c>seed</c> and <c>release</c> on an empty database, and readiness before and after.</summary>
 public sealed class OpsCommandTests : IAsyncLifetime
 {
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17.6-alpine").Build();
@@ -68,6 +68,19 @@ public sealed class OpsCommandTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Release_MigratesThenSeeds_AndIsIdempotent()
+    {
+        await RunAsync(OpsCommands.Release);
+        var first = await CountsAsync();
+        await RunAsync(OpsCommands.Release);
+
+        Assert.Equal(first, await CountsAsync());
+        Assert.True(first.Rulesets > 0 && first.Items > 0 && first.Quests > 0);
+        await using var db = CreateDb();
+        Assert.Equal(HealthStatus.Healthy, (await ReadyAsync(db)).Status);
+    }
+
+    [Fact]
     public async Task MigrationsConnection_IsPreferredOverTheApiConnection()
     {
         var configuration = Config(new() { ["ConnectionStrings:Vybe"] = "Host=127.0.0.1;Port=1;Timeout=1", ["ConnectionStrings:Migrations"] = _postgres.GetConnectionString() });
@@ -84,6 +97,7 @@ public sealed class OpsCommandTests : IAsyncLifetime
     [InlineData(new[] { "migrate" }, true)]
     [InlineData(new[] { "seed", "--environment", "Production" }, true)]
     [InlineData(new[] { "replay-deletions" }, true)]
+    [InlineData(new[] { "release" }, true)]
     [InlineData(new string[0], false)]
     [InlineData(new[] { "--urls", "http://+:8080" }, false)]
     public void IsCommand_OnlyForTheFirstArgument(string[] args, bool expected) => Assert.Equal(expected, OpsCommands.IsCommand(args));

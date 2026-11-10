@@ -164,3 +164,67 @@ jobs:
           path: ${{ github.workspace }}/TestResults/**/coverage.cobertura.xml
           if-no-files-found: warn
           retention-days: 14
+
+  deploy-config:
+    name: Deployment config (Fly.io files, images)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # flyctl config validate needs a Fly.io token, so pull requests use the offline check (ADR 0008).
+      - name: Check infra/fly/*.fly.toml
+        run: python3 infra/fly/check-config.py
+
+      - name: Build the API image
+        run: docker build -f services/api/Dockerfile -t vybe-api:ci .
+
+      - name: Build the web image
+        run: docker build -f infra/web/Dockerfile -t vybe-web:ci .
+
+      # The web image in front of a stub upstream (Caddy from the same image) that echoes the forwarded headers.
+      - name: Web container serves the app, the headers and the proxy rules
+        run: |
+          mkdir -p "$RUNNER_TEMP/stub"
+          printf '%s\n' '{' '  admin off' '  auto_https off' '}' ':8080 {' \
+            '  respond "xff=[{header.X-Forwarded-For}] fly=[{header.Fly-Client-IP}]"' '}' > "$RUNNER_TEMP/stub/Caddyfile"
+          chmod -R a+rX "$RUNNER_TEMP/stub"
+          docker network create vybe-ci
+          docker run -d --name stub --network vybe-ci -v "$RUNNER_TEMP/stub:/stub:ro" --entrypoint caddy \
+            vybe-web:ci run --config /stub/Caddyfile --adapter caddyfile
+          docker run -d --name vybe-web --network vybe-ci --read-only --tmpfs /tmp --cap-drop ALL \
+            --security-opt no-new-privileges:true -e VYBE_API_HOST=stub -p 127.0.0.1:8081:8080 vybe-web:ci
+          for _ in $(seq 1 20); do curl -fsS -o /dev/null http://127.0.0.1:8081/ && break; sleep 1; done
+          web=http://127.0.0.1:8081
+
+          curl -fsS -D headers.txt -o index.html "$web/hub"
+          grep -q '<vybe-root>' index.html
+          grep -qi "^content-security-policy:.*frame-ancestors 'none'" headers.txt
+          grep -qi '^referrer-policy: no-referrer' headers.txt
+          grep -qi '^strict-transport-security: max-age=' headers.txt
+          grep -qi '^cache-control: no-cache' headers.txt
+          # No inline script: the CSP (script-src 'self') would block it.
+          if grep -q '<script>' index.html; then echo "index.html has an inline script" >&2; exit 1; fi
+
+          status() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+          test "$(status "$web/chunk-MISSING1.js")" = 404
+          test "$(status "$web/missing.png")" = 404
+          test "$(status "$web/runtime-config.json")" = 404
+          test "$(status "$web/health")" = 404
+          test "$(status "$web/health/ready")" = 404
+          # Bodies over the proxy limit stop at Caddy.
+          head -c 70000 /dev/zero | tr '\0' 'a' > big.txt
+          test "$(status -X POST --data-binary @big.txt "$web/api/v1/guests")" = 413
+
+          # The client address: Fly-Client-IP from a private peer becomes the only X-Forwarded-For value, and a
+          # client-sent X-Forwarded-For never reaches the API.
+          body=$(curl -fsS -H 'X-Forwarded-For: 6.6.6.6' -H 'Fly-Client-IP: 203.0.113.7' "$web/api/v1/echo")
+          test "$body" = "xff=[203.0.113.7] fly=[]"
+          body=$(curl -fsS -H 'X-Forwarded-For: 6.6.6.6' "$web/api")
+          case "$body" in *6.6.6.6*|"xff=[]"*) echo "forged or empty X-Forwarded-For: $body" >&2; exit 1;; esac
+
+      - name: Web container logs
+        if: failure()
+        run: docker logs vybe-web; docker logs stub
