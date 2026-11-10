@@ -88,9 +88,12 @@ PGSERVICE=vybe-owner pg_dump --schema=vybe --format=custom --no-owner \
 
 The workflow [`backup.yml`](../../.github/workflows/backup.yml) runs
 [`infra/oracle/backup.sh`](../../infra/oracle/backup.sh) every Sunday at 03:17 UTC (and by hand: Actions →
-Backup → Run workflow on `master`):
+Backup → Run workflow on `master`). The schedule is **off** in the repository until a recipient key exists
+(one-time setup step 1).
 
-1. `pg_dump --schema=vybe --format=custom --no-owner` as `vybe_owner` through the session pooler (port 5432),
+1. `pg_dump --schema=vybe --format=custom --no-owner` as the **read-only role `vybe_backup`**, never the owner
+   role (the `backup` environment has no reviewer, so a changed workflow on `master` could read its secrets; the
+   owner password is only in `production-oracle`). Through the session pooler (port 5432),
    with `sslmode=verify-full` against the Supabase root CA. The password is in a pgpass file (mode 600) in a
    private temporary directory, never in an argument.
 2. `age` encrypts the stream to the public keys in
@@ -113,29 +116,45 @@ with `replay-deletions` (below). Say this time window in the privacy notice ([de
 
 ### One-time setup
 
-1. **Backup key** on the owner's Mac (`brew install age`):
+1. **Backup key** on the owner's Mac (`brew install age`). The private key never goes to the repository, to CI, to
+   the VM or to a chat:
    ```bash
    age-keygen -o ~/vybe-backup.key     # prints "Public key: age1..."
    ```
-   Put the private key file in the password manager (as a file) and on an offline medium. Delete
-   `~/vybe-backup.key` after the restore drill. Open a PR that adds the `age1...` line to
-   `infra/oracle/backup-recipients.txt` (public key only). Add the backup on-call person's key the same way.
-2. **Supabase root CA**: Supabase dashboard → Project Settings → Database → SSL Configuration → Download
-   certificate. Check it, then add it as `infra/oracle/supabase-ca.crt` in the same PR:
-   ```bash
-   openssl x509 -in prod-ca-2021.crt -noout -subject -enddate -fingerprint -sha256
+   Put the private key file in the password manager (as a file attachment, item "VYBE - backup age key") and on an
+   offline medium. Delete `~/vybe-backup.key` from the Mac afterwards; get it from the password manager for a
+   restore or a drill. Then open a PR that:
+   - adds the `age1...` line (the public key only) to `infra/oracle/backup-recipients.txt`;
+   - removes the `#` from the two `schedule` lines in `.github/workflows/backup.yml`.
+
+   Add the backup on-call person's public key the same way (one line per key). CODEOWNERS requires the owner's
+   review for this file: a new key there could read every later dump.
+2. **Supabase root CA**: in the repository as `infra/oracle/supabase-ca.crt` (public; from
+   `https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt`, the file that the
+   dashboard offers under Project Settings → Database → SSL Configuration). Its SHA-256 fingerprint
+   `80:70:25:AD:50:D4:ED:21:9D:2C:9C:7D:29:9C:00:4F:82:4E:B0:0C:F7:F6:5A:FE:F6:07:D0:7B:72:E6:CA:FA` (subject
+   `CN=Supabase Root 2021 CA`, valid until 2031-04-26) is the same as the root in the pooler's certificate chain
+   on 2026-11-10. Before 2031, or when Supabase announces a new CA, replace the file in a PR.
+   **Backup role** (once; the owner's step):
+   ```sql
+   -- as postgres (service file and password file as above)
+   CREATE ROLE vybe_backup LOGIN;
+   ALTER ROLE vybe_backup SET default_transaction_read_only = on;
+   \password vybe_backup
    ```
-   Expected (seen on the pooler's certificate chain on 2026-11-10): subject `CN=Supabase Root 2021 CA`, valid
-   until 2031-04-26, SHA-256 fingerprint
-   `80:70:25:AD:50:D4:ED:21:9D:2C:9C:7D:29:9C:00:4F:82:4E:B0:0C:F7:F6:5A:FE:F6:07:D0:7B:72:E6:CA:FA`.
-   If the dashboard file has another fingerprint, stop and ask the engineering lead.
+   ```bash
+   # as the owner role: read access to schema vybe, also for tables of later migrations
+   PGSERVICE=vybe-owner psql -v ON_ERROR_STOP=1 -f infra/oracle/backup-grants.sql
+   ```
+   Put the password in the password manager ("VYBE - vybe_backup"). Run `backup-grants.sql` again after every
+   restore (with `infra/db/grants.sql`).
 3. **S3 key for backups**: Supabase → Storage → S3 connection → New access key, named `vybe-backup` (a key
    separate from the API's key, so each can be revoked alone).
 4. **GitHub environment `backup`** (Settings → Environments): no required reviewers (a schedule cannot wait for
    an approval); deployment branches: `master` only. This branch rule is the only gate for these secrets (a
    branch could change the workflow file): check it after you create the environment. Secrets:
    ```bash
-   gh secret set VYBE_BACKUP_DB_PASSWORD --env backup -R seerj30/vybe              # the vybe_owner password
+   gh secret set VYBE_BACKUP_DB_PASSWORD --env backup -R seerj30/vybe              # the vybe_backup password (never vybe_owner)
    gh secret set VYBE_BACKUP_S3_ACCESS_KEY_ID --env backup -R seerj30/vybe         # vybe-backup key id
    gh secret set VYBE_BACKUP_S3_SECRET_ACCESS_KEY --env backup -R seerj30/vybe     # vybe-backup secret
    gh secret set VYBE_BACKUP_PING_URL --env backup -R seerj30/vybe                 # optional, see below
@@ -189,7 +208,7 @@ exports.
      PGSERVICE=vybe-restore pg_restore -d vybe --no-owner --exit-on-error vybe-<time>.dump
      ```
 5. Create the API role if it does not exist (`CREATE ROLE vybe_api LOGIN PASSWORD ...`), then apply the
-   privileges as the owner role:
+   privileges as the owner role (in production also `infra/oracle/backup-grants.sql` for the backup role):
    ```bash
    PGSERVICE=vybe-restore psql -d vybe -v ON_ERROR_STOP=1 -v api_role=vybe_api -f infra/db/grants.sql
    ```

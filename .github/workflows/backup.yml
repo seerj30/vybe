@@ -7,8 +7,10 @@
 name: Backup
 
 on:
-  schedule:
-    - cron: "17 3 * * 0" # Sundays 03:17 UTC
+  # The schedule is off until infra/oracle/backup-recipients.txt has the owner's age public key: the PR that adds the
+  # key also removes the "#" of the two lines below (runbook backup-restore.md, one-time setup step 1).
+  # schedule:
+  #   - cron: "17 3 * * 0" # Sundays 03:17 UTC
   workflow_dispatch:
 
 permissions:
@@ -35,7 +37,7 @@ jobs:
 
       - name: Dump, encrypt, upload, apply retention
         env:
-          VYBE_BACKUP_DB_PASSWORD: ${{ secrets.VYBE_BACKUP_DB_PASSWORD }}
+          VYBE_BACKUP_DB_PASSWORD: ${{ secrets.VYBE_BACKUP_DB_PASSWORD }} # vybe_backup (read-only), never vybe_owner
           AWS_ACCESS_KEY_ID: ${{ secrets.VYBE_BACKUP_S3_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.VYBE_BACKUP_S3_SECRET_ACCESS_KEY }}
         run: infra/oracle/backup.sh

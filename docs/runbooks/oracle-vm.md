@@ -59,8 +59,8 @@ Caddy gets a certificate from Let's Encrypt for `VYBE_PUBLIC_HOST`. Let's Encryp
 
 | Option | Host name | Cost | Notes |
 |---|---|---|---|
-| **No domain (default)** | `<public IPv4 with dashes>.sslip.io`, for example `130-61-10-20.sslip.io` | 0 | sslip.io answers with the IP in the name. No DNS set-up. A new IP is a new host name. |
-| Own domain | for example `play.vybe.example` | the domain | An `A` record to the VM's public IP. Set the record before the first deploy. |
+| **No domain (first deploy and tests only)** | `<public IPv4 with dashes>.sslip.io`, for example `130-61-10-20.sslip.io` | 0 | sslip.io answers with the IP in the name. No DNS set-up. A new IP is a new host name: so the reserved public IP of one-time setup step 4 is mandatory. sslip.io is a third party that you do not control. |
+| **Own domain (required before real players)** | for example `play.vybe.example` | the domain | An `A` record to the reserved public IP. You control the name, it survives a new VM, and it does not depend on sslip.io. |
 
 The host name is the web origin `https://<host>`. When it changes, change all of these together:
 
@@ -70,6 +70,11 @@ The host name is the web origin `https://<host>`. When it changes, change all of
    Sign-in and email links go to the Site URL.
 3. GitHub environment variable `VYBE_PUBLIC_ORIGIN` = `https://<host>`.
 4. A deploy (or "Restart" below), so the containers read the new values.
+
+**Before the first real players, move to an own domain.** Do steps 1–4 above with the domain, then check: sign-in
+with a test account (Supabase URLs), a new invite link opens on the domain (`Challenges__ShareBaseUrl`), and the
+domain answers with HSTS. Keep the sslip.io name working for some days (the IP stays the same), so links that
+testers already have still open.
 
 Effects of a change: invite links that players already shared (`Challenges__ShareBaseUrl`) point to the old
 host name. They stop working when the old name no longer reaches the VM (sslip.io with a new IP, or a removed
@@ -84,9 +89,12 @@ Do the steps in this order. Keep each value in the password manager.
    - **Home region: Germany Central (Frankfurt), `eu-frankfurt-1`.** You cannot change the home region later,
      and Always Free compute runs only in the home region. Supabase is in `eu-central-1` (Frankfurt).
    - Turn on multi-factor authentication for the account. Keep the recovery codes.
-   - Recommended: upgrade to **Pay As You Go** (Billing → Upgrade). Always Free resources stay free. Oracle does
-     not reclaim idle instances of Pay As You Go accounts (see "Idle reclaim"), and A1 capacity is easier to get.
-     Set a budget alert of USD 1 (Billing → Budgets), so any cost sends an email.
+   - **Mandatory: upgrade to Pay As You Go** (Billing → Upgrade and manage payment) **and set a budget alert of
+     USD 1** (Billing → Budgets → Create budget, alert at 100 % of USD 1, email to the owner and the on-call
+     primary). Why: Oracle reclaims (stops) Always Free instances of free accounts that stay under its idle
+     thresholds for 7 days (CPU 95th percentile, network and memory all under 20 %), and a small beta is under
+     them. Pay As You Go accounts keep the Always Free resources at no charge and are not reclaimed. The budget
+     alert tells you at once if anything starts to cost money. A1 capacity is also easier to get.
 2. **SSH key on the owner's Mac** (two keys: one for the admin, one for GitHub):
    ```bash
    ssh-keygen -t ed25519 -f ~/.ssh/vybe-admin -C vybe-admin      # use a passphrase
@@ -94,40 +102,46 @@ Do the steps in this order. Keep each value in the password manager.
    ```
 3. **Network.** Networking → Virtual cloud networks → Start VCN wizard → "Create VCN with Internet
    Connectivity". In the public subnet's security list, add ingress rules: TCP 80 and TCP 443 from `0.0.0.0/0`.
-   Keep TCP 22. Remove nothing else. (The VM firewall also allows only 22, 80 and 443.)
-4. **VM.** Compute → Instances → Create instance:
+   Keep TCP 22. Remove nothing else. The security list is the outer firewall. On the VM, ufw allows 22, 80 and
+   443, but **ufw does not govern ports that Docker publishes** (Docker's own iptables rules come first). So never
+   publish another port in `compose.yml`; the CI job checks that only `web` publishes 80 and 443.
+4. **Reserved public IP (mandatory, before the VM).** Networking → IP management → Reserved public IPs →
+   Reserve public IP address, name `vybe-prod`, in the home region. The host name (sslip.io or the domain's `A`
+   record), the GitHub variables and the host key line all use this IP; a reserved IP stays when you replace the
+   VM. Check on the price list that it costs nothing in your account (the budget alert also tells you).
+5. **VM.** Compute → Instances → Create instance:
    - Image: Canonical **Ubuntu 24.04** (aarch64; the "Minimal" image is also good).
    - Shape: **VM.Standard.A1.Flex** (Ampere), **2 OCPU, 12 GB** memory. The Always Free limit is 4 OCPU and
      24 GB in total, so a second VM of the same size for a drill or staging is also free.
    - Boot volume: 50 GB (the free total is 200 GB).
-   - Networking: the public subnet of step 3, "Assign a public IPv4 address".
+   - Networking: the public subnet of step 3, "Do not assign a public IPv4 address" (the reserved one comes next).
    - SSH key: paste `~/.ssh/vybe-admin.pub`.
    - "Out of capacity": try another availability domain, or try again later (Pay As You Go helps).
-5. **Public IP.** Write down the public IPv4. A reserved public IP stays the same when you replace the VM
-   (Networking → IP management → Reserved public IPs; check on the price list that it costs nothing in your
-   account). An ephemeral IP stays until you delete the VM. A new IP changes the sslip.io host name.
+   - After the VM is running: Instance → Attached VNICs → the VNIC → IPv4 addresses → Edit → "Reserved public
+     IP" → `vybe-prod`. Write down this IP: it is `<ip>` below.
 6. **Bootstrap the VM.** From the repository on the Mac, at a commit of `master`:
    ```bash
-   ssh -i ~/.ssh/vybe-admin ubuntu@<ip>                         # accept the host key once, then exit
-   scp -i ~/.ssh/vybe-admin -r infra/oracle ubuntu@<ip>:vybe-oracle
-   scp -i ~/.ssh/vybe-admin ~/.ssh/vybe-deploy.pub ubuntu@<ip>:vybe-oracle/
-   ssh -i ~/.ssh/vybe-admin ubuntu@<ip> sudo bash vybe-oracle/bootstrap.sh --deploy-key vybe-oracle/vybe-deploy.pub
+   ssh -o IdentitiesOnly=yes -i ~/.ssh/vybe-admin ubuntu@<ip>                         # accept the host key once, then exit
+   scp -o IdentitiesOnly=yes -i ~/.ssh/vybe-admin -r infra/oracle ubuntu@<ip>:vybe-oracle
+   scp -o IdentitiesOnly=yes -i ~/.ssh/vybe-admin ~/.ssh/vybe-deploy.pub ubuntu@<ip>:vybe-oracle/
+   ssh -o IdentitiesOnly=yes -i ~/.ssh/vybe-admin ubuntu@<ip> sudo bash vybe-oracle/bootstrap.sh --deploy-key vybe-oracle/vybe-deploy.pub
    ```
    The script updates the OS, sets unattended security upgrades (reboot at 04:30 UTC when necessary), installs
    Docker from Docker's repository (key checked by fingerprint), sets Docker log rotation, makes the user
-   `vybe-deploy`, sets SSH to keys only (no root login, only `ubuntu` and `vybe-deploy`), replaces Oracle's
+   `vybe-deploy`, sets SSH to keys only (no root login, only `ubuntu` and `vybe-deploy`, `MaxAuthTries 6`; tested
+   with `sshd -t` before the reload and checked with `sshd -T` after it), replaces Oracle's
    iptables rules with ufw (22, 80, 443), turns on fail2ban, adds a 2 GB swap file, limits journald, sets time
    sync, blocks container access to the OCI metadata service, installs the server files and the `vybe-monitor`
    timer. At the end it prints the SSH host key line.
    Copy it, then reboot:
    ```bash
-   ssh -i ~/.ssh/vybe-admin ubuntu@<ip> sudo reboot
+   ssh -o IdentitiesOnly=yes -i ~/.ssh/vybe-admin ubuntu@<ip> sudo reboot
    ```
    After the reboot, log in again in a **new** terminal before you close the old one (SSH still works).
    Compare the host key fingerprint that `ssh` shows with the one that the script printed.
 7. **Stage the settings** on the VM:
    ```bash
-   ssh -i ~/.ssh/vybe-admin ubuntu@<ip>
+   ssh -o IdentitiesOnly=yes -i ~/.ssh/vybe-admin ubuntu@<ip>
    bash vybe-oracle/stage-env.sh
    ```
    It suggests `<ip-with-dashes>.sslip.io` as the host name (press Enter) or takes your domain. Then it asks for
@@ -154,8 +168,9 @@ Do the steps in this order. Keep each value in the password manager.
    - Then delete the private key file from the Mac: `rm ~/.ssh/vybe-deploy` (GitHub has the only copy; a new
      key is "Secret rotation" below).
 9. **Monitoring** (free; see "Monitoring"): make the heartbeat check and the uptime check.
-10. **Backup** (free; [backup-restore.md](backup-restore.md), "Weekly dump on Supabase Free"): the age key,
-    the GitHub environment `backup`, the S3 key `vybe-backup`.
+10. **Backup** (free; [backup-restore.md](backup-restore.md), "Weekly dump on Supabase Free"): the age key (and the
+    PR that adds the public key and turns on the schedule), the read-only role `vybe_backup`, the S3 key
+    `vybe-backup`, the GitHub environment `backup`.
 11. **Dry run and images.** Actions → "Deploy (Oracle VM)" → Run workflow on `master`, mode `release-only`. A
     reviewer approves. The run builds both images for `linux/arm64`, runs `release` (migrate, then seed) on the
     runner, and pushes both images to GHCR. The log must show "The database schema is up to date" and
@@ -167,19 +182,27 @@ Do the steps in this order. Keep each value in the password manager.
     `~/.pg_service.conf` and the password in `~/.pgpass` (both mode 600):
     ```bash
     PGSERVICE=vybe-owner psql -v ON_ERROR_STOP=1 -v api_role=vybe_api -f infra/db/grants.sql
+    PGSERVICE=vybe-owner psql -v ON_ERROR_STOP=1 -f infra/oracle/backup-grants.sql   # after the role of step 10
     ```
 
 ## First deploy
 
-1. Make sure that steps 1–13 are done and that CI on `master` is green.
+1. Checklist. Do not start until every line is true:
+   - The Oracle account is **Pay As You Go** with the **USD 1 budget alert** (step 1).
+   - The VM has the **reserved public IP** (steps 4–5); `VYBE_VM_HOST` and `VYBE_VM_HOST_KEY` use it.
+   - Steps 6–13 are done; the Supabase Site URL and redirect URL are `https://<host>`.
+   - The heartbeat and the uptime check exist (step 9), and the backup is set up (step 10).
+   - CI on `master` is green.
 2. Actions → "Deploy (Oracle VM)" → Run workflow on `master`, mode `deploy`. A reviewer approves.
 3. The workflow:
    1. checks that the commit is on `master` and has a green CI run;
-   2. connects to the VM with the deploy key and the pinned host key, and checks that the VM's `compose.yml`,
-      `Caddyfile` and `vybe-deploy` are the files of this commit, and that the host name matches
-      `VYBE_PUBLIC_ORIGIN`;
-   3. builds both images natively for `linux/arm64` and runs `release` on the runner;
-   4. pushes both images to GHCR and deploys them **by digest** (the run summary lists both digests and the SHA);
+   2. job `build` (no secrets): builds both images natively for `linux/arm64`, pushes them to GHCR and signs a
+      provenance attestation for each digest;
+   3. job `deploy` (environment `production-oracle`, the approval): verifies both attestations (built by this
+      workflow, from this commit, on a GitHub-hosted runner), runs `release` on the runner, then writes the SSH
+      key and checks that the VM's `compose.yml`, `Caddyfile` and `vybe-deploy` are the files of this commit and
+      that the host name matches `VYBE_PUBLIC_ORIGIN`;
+   4. deploys the images **by digest** (the run summary lists both digests and the SHA), then removes the key;
    5. on the VM, `vybe-deploy` pulls the images and runs `docker compose up -d --wait`: it waits until both
       health checks pass (API: `/health/ready`). A release that does not become healthy is replaced by the
       current release again, and the run fails;
@@ -197,8 +220,8 @@ When a PR changes `infra/oracle/compose.yml`, `Caddyfile`, `deploy.sh` or `monit
 install them (by design). After the merge, install them, then deploy:
 
 ```bash
-scp -i ~/.ssh/vybe-admin -r infra/oracle ubuntu@<ip>:vybe-oracle     # from the merged master
-ssh -i ~/.ssh/vybe-admin ubuntu@<ip> sudo bash vybe-oracle/bootstrap.sh --files-only
+scp -o IdentitiesOnly=yes -i ~/.ssh/vybe-admin -r infra/oracle ubuntu@<ip>:vybe-oracle     # from the merged master
+ssh -o IdentitiesOnly=yes -i ~/.ssh/vybe-admin ubuntu@<ip> sudo bash vybe-oracle/bootstrap.sh --files-only
 ```
 
 The workflow refuses to deploy while the files differ ("The VM's compose.yml differs from this commit").
@@ -229,7 +252,8 @@ A rollback changes images only. It never reverts the database (expand-contract, 
 - **To the release before the current one:** Actions → "Deploy (Oracle VM)", mode `rollback`, all image inputs
   empty. `vybe-deploy` starts `release.previous.env` again (the two releases change places).
 - **To an older release:** mode `rollback` with `api_image`, `web_image` and `release_sha` from the summary of
-  that release's run.
+  that release's run. The SHA must be on `master`, and both images must have the attestation of this workflow for
+  that SHA; other images are refused.
 - **Without GitHub** (GitHub down): on the VM, `sudo /opt/vybe/bin/vybe-deploy rollback`.
 
 If the old image does not start on the new schema, roll forward with a fix ([deploy-and-rollback.md](deploy-and-rollback.md)).
@@ -252,6 +276,7 @@ All free. Alerts go to the on-call people ([incident-response.md](incident-respo
 | Check | What it finds | Set-up |
 |---|---|---|
 | Docker health checks and `restart: unless-stopped` | A crashed container restarts; `--wait` stops a bad deploy | `compose.yml` |
+| API auto-restart (`vybe-monitor`) | A hung API: unhealthy in 2 runs in a row (10 minutes) **and** `/health/live` fails. At most 3 restarts in 6 hours, then alerts only. When only readiness fails (database outage, pending migration), it alerts and does not restart. | `monitor.sh`; state in `/var/lib/vybe/monitor` |
 | **Heartbeat** (`vybe-monitor`, every 5 minutes) | Disk over 85 %, memory over 90 %, a container not healthy, the VM down | Make a free check at healthchecks.io (period 5 min, grace 10 min, email to on-call). On the VM: `sudo bash -c "umask 077; read -rs u; printf \"VYBE_MONITOR_PING_URL='%s'\n\" \"\$u\" > /etc/vybe/monitor.env"` and paste the ping URL. Test: `sudo /opt/vybe/bin/vybe-monitor`. |
 | **Uptime from outside** | DNS, certificate, Caddy, the API path | A free UptimeRobot HTTP(S) monitor on `https://<host>/api/v1/catalog/items`, every 5 minutes, alert after 2 failures. Also turn on its certificate expiry alert. |
 | Backup heartbeat | No successful weekly dump | [backup-restore.md](backup-restore.md) |
@@ -279,9 +304,10 @@ Log rotation: Docker's `local` log driver keeps at most 5 × 20 MB per container
 |---|---|
 | `vybe_api` password, anon/service_role keys, API S3 key | Change it at Supabase, then `stage-env.sh` on the VM, then "Restart". |
 | Invite secret | `stage-env.sh --new-invite-secret` (ends every open invite), then "Restart". |
+| Backup role password | Supabase (`\password vybe_backup`), then `gh secret set VYBE_BACKUP_DB_PASSWORD --env backup`. |
 | Deploy key | Make a new key (one-time setup step 2), copy the `.pub` file to `vybe-oracle/` on the VM, run `sudo bash vybe-oracle/bootstrap.sh --deploy-key vybe-oracle/vybe-deploy.pub` (it replaces the old key), then `gh secret set VYBE_VM_SSH_KEY …` (step 8) and delete the private file. |
 | VM host key (new VM) | New `VYBE_VM_HOST_KEY` variable from the bootstrap output. |
-| Owner password | Supabase, then `gh secret set VYBE_MIGRATIONS_CONNECTION_STRING --env production-oracle` and `VYBE_BACKUP_DB_PASSWORD --env backup`. |
+| Owner password | Supabase, then `gh secret set VYBE_MIGRATIONS_CONNECTION_STRING --env production-oracle`. The owner password is in no other environment. |
 
 Write each rotation in the record of [secret-rotation.md](secret-rotation.md).
 
@@ -296,7 +322,7 @@ room for one more 2 OCPU / 12 GB VM). Never restore into the production project 
 Oracle can reclaim (stop) Always Free instances that are idle for 7 days: CPU 95th percentile under 20 %,
 network under 20 %, and memory under 20 % (A1 shapes). A beta with few players can look idle.
 
-- **Best:** upgrade the account to Pay As You Go (one-time setup step 1). Always Free resources stay free, and
+- **Mandatory:** the account is Pay As You Go (one-time setup step 1). Always Free resources stay free, and
   Oracle does not reclaim idle instances of paid accounts. Keep the USD 1 budget alert.
 - Do not run load only to look busy: it uses the shared free capacity and Oracle can change the rule.
 - If Oracle stops the VM: start it in the console (Compute → Instances → Start). The containers start by

@@ -49,13 +49,18 @@ if [ "${ID:-}" != ubuntu ] || [ "${VERSION_ID:-}" != "24.04" ]; then fail "this 
 [ "$(uname -m)" = aarch64 ] || echo "bootstrap: warning: not aarch64 ($(uname -m)); the images are built for linux/arm64" >&2
 admin="${SUDO_USER:-}"
 
-# write_if_changed <file> <mode>: stdin to <file> when the content differs. Exit code 0 = changed.
+# write_if_changed <file> <mode>: stdin to <file> when the content differs. Sets CHANGED=true or false. Any error
+# (for example a failed install) stops the script (set -e); nothing here hides a failure.
+CHANGED=false
 write_if_changed() {
   local tmp
   tmp=$(mktemp)
   cat > "$tmp"
-  if [ -f "$1" ] && cmp -s "$tmp" "$1"; then rm -f "$tmp"; return 1; fi
-  install -o root -g root -m "$2" "$tmp" "$1"
+  CHANGED=false
+  if ! { [ -f "$1" ] && cmp -s "$tmp" "$1"; }; then
+    install -o root -g root -m "$2" "$tmp" "$1"
+    CHANGED=true
+  fi
   rm -f "$tmp"
 }
 
@@ -89,12 +94,12 @@ apt-get -y -q -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-conf
 apt-get -y -q install ca-certificates curl gnupg ufw fail2ban python3-systemd unattended-upgrades
 
 say "Unattended security upgrades (reboot at 04:30 UTC when a kernel or library needs it)"
-write_if_changed /etc/apt/apt.conf.d/20auto-upgrades 0644 <<'EOF' || true
+write_if_changed /etc/apt/apt.conf.d/20auto-upgrades 0644 <<'EOF'
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
 APT::Periodic::AutocleanInterval "7";
 EOF
-write_if_changed /etc/apt/apt.conf.d/52vybe-unattended-upgrades 0644 <<'EOF' || true
+write_if_changed /etc/apt/apt.conf.d/52vybe-unattended-upgrades 0644 <<'EOF'
 // VYBE (infra/oracle/bootstrap.sh): security updates only (the Ubuntu default origins). Docker updates stay manual
 // (runbook "OS and Docker updates"). The containers restart after a reboot (restart: unless-stopped).
 Unattended-Upgrade::Automatic-Reboot "true";
@@ -108,11 +113,16 @@ say "Docker Engine and the compose plugin (Docker's apt repository)"
 install -d -m 0755 /etc/apt/keyrings
 key=$(mktemp)
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o "$key"
-fingerprint=$(gpg --show-keys --with-colons "$key" 2>/dev/null | awk -F: '/^fpr/ {print $10; exit}')
-[ "$fingerprint" = "$DOCKER_KEY_FINGERPRINT" ] || { rm -f "$key"; fail "Docker's apt key has fingerprint '$fingerprint', expected $DOCKER_KEY_FINGERPRINT"; }
+# Exactly one primary key, with the expected fingerprint (a second key in the file would also be trusted by apt).
+keys=$(gpg --show-keys --with-colons "$key" 2>/dev/null | grep -c '^pub:' || true)
+fingerprint=$(gpg --show-keys --with-colons "$key" 2>/dev/null | awk -F: '/^pub:/ {getline; print $10; exit}')
+if [ "$keys" != 1 ] || [ "$fingerprint" != "$DOCKER_KEY_FINGERPRINT" ]; then
+  rm -f "$key"
+  fail "Docker's apt key file has $keys primary key(s), fingerprint '$fingerprint'; expected one key $DOCKER_KEY_FINGERPRINT"
+fi
 install -o root -g root -m 0644 "$key" /etc/apt/keyrings/docker.asc
 rm -f "$key"
-write_if_changed /etc/apt/sources.list.d/docker.sources 0644 <<EOF || true
+write_if_changed /etc/apt/sources.list.d/docker.sources 0644 <<EOF
 Types: deb
 URIs: https://download.docker.com/linux/ubuntu
 Suites: ${VERSION_CODENAME}
@@ -125,7 +135,7 @@ apt-get -y -q install docker-ce docker-ce-cli containerd.io docker-buildx-plugin
 install -d -m 0755 /etc/docker
 # Log rotation for every container; no userland proxy, so Caddy sees the real client address (published ports use
 # DNAT); containers keep running while dockerd restarts (updates); no privilege gain in any container.
-if write_if_changed /etc/docker/daemon.json 0644 <<'EOF'
+write_if_changed /etc/docker/daemon.json 0644 <<'EOF'
 {
   "log-driver": "local",
   "log-opts": { "max-size": "20m", "max-file": "5" },
@@ -134,7 +144,7 @@ if write_if_changed /etc/docker/daemon.json 0644 <<'EOF'
   "no-new-privileges": true
 }
 EOF
-then
+if [ "$CHANGED" = true ]; then
   systemctl restart docker
 fi
 systemctl enable --now docker
@@ -145,21 +155,21 @@ if [ -z "$(swapon --show --noheadings)" ]; then
   swapon /swapfile
   grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
 fi
-if write_if_changed /etc/sysctl.d/60-vybe.conf 0644 <<'EOF'
+write_if_changed /etc/sysctl.d/60-vybe.conf 0644 <<'EOF'
 vm.swappiness = 10
 EOF
-then
+if [ "$CHANGED" = true ]; then
   sysctl -q --system
 fi
 
 say "journald limits"
 install -d -m 0755 /etc/systemd/journald.conf.d
-if write_if_changed /etc/systemd/journald.conf.d/60-vybe.conf 0644 <<'EOF'
+write_if_changed /etc/systemd/journald.conf.d/60-vybe.conf 0644 <<'EOF'
 [Journal]
 SystemMaxUse=500M
 MaxRetentionSec=1month
 EOF
-then
+if [ "$CHANGED" = true ]; then
   systemctl restart systemd-journald
 fi
 
@@ -169,12 +179,12 @@ if systemctl is-active --quiet chrony; then
 else
   install -d -m 0755 /etc/systemd/timesyncd.conf.d
   # The OCI time server (link-local), then Ubuntu's pool.
-  if write_if_changed /etc/systemd/timesyncd.conf.d/60-vybe.conf 0644 <<'EOF'
+  write_if_changed /etc/systemd/timesyncd.conf.d/60-vybe.conf 0644 <<'EOF'
 [Time]
 NTP=169.254.169.254
 FallbackNTP=ntp.ubuntu.com
 EOF
-  then
+  if [ "$CHANGED" = true ]; then
     systemctl restart systemd-timesyncd
   fi
   timedatectl set-ntp true
@@ -192,10 +202,12 @@ usermod --home "$DEPLOY_HOME" --shell /bin/sh "$DEPLOY_USER"
 passwd -l "$DEPLOY_USER" >/dev/null
 # Not in the docker group (that is root without a password): vybe-deploy runs as root through this one rule and
 # checks its arguments.
-write_if_changed /etc/sudoers.d/vybe-deploy 0440 <<EOF || true
-$DEPLOY_USER ALL=(root) NOPASSWD: $ROOT/bin/vybe-deploy
-EOF
-visudo -cqf /etc/sudoers.d/vybe-deploy || fail "/etc/sudoers.d/vybe-deploy is not valid"
+# visudo checks the rule BEFORE it goes to /etc/sudoers.d: a bad file there would stop every sudo, also the admin's.
+sudoers_new=$(mktemp)
+printf '%s ALL=(root) NOPASSWD: %s/bin/vybe-deploy\n' "$DEPLOY_USER" "$ROOT" > "$sudoers_new"
+visudo -cqf "$sudoers_new" || { rm -f "$sudoers_new"; fail "the sudoers rule for $DEPLOY_USER is not valid"; }
+write_if_changed /etc/sudoers.d/vybe-deploy 0440 < "$sudoers_new"
+rm -f "$sudoers_new"
 home="$DEPLOY_HOME"
 if [ -n "$deploy_key" ]; then
   [ -f "$deploy_key" ] || fail "$deploy_key does not exist"
@@ -205,7 +217,7 @@ if [ -n "$deploy_key" ]; then
   install -d -o root -g root -m 0755 "$home/.ssh"
   # restrict: no shell, no pty, no forwarding. The key can only run vybe-deploy (SSH_ORIGINAL_COMMAND is checked).
   printf 'restrict,command="%s/bin/vybe-deploy" %s\n' "$ROOT" "$line" \
-    | write_if_changed "$home/.ssh/authorized_keys" 0644 || true
+    | write_if_changed "$home/.ssh/authorized_keys" 0644
 elif [ ! -s "$home/.ssh/authorized_keys" ]; then
   fail "the first run needs --deploy-key <file>"
 fi
@@ -218,22 +230,46 @@ if [ -n "$admin" ] && [ "$admin" != root ]; then
 else
   allow="# AllowUsers not set: run this script with sudo from the admin user to set it"
 fi
-# 00-: sshd uses the first value it reads, so this file wins over 50-cloud-init.conf.
-write_if_changed /etc/ssh/sshd_config.d/00-vybe.conf 0644 <<EOF || true
+# 00-: sshd uses the first value it reads, so this file wins over 50-cloud-init.conf. The new file is tested with
+# "sshd -t" before sshd reloads; on a failure the old file comes back (or the new one goes), so a bad file can never
+# leave password logins on or stop sshd from starting.
+sshd_conf=/etc/ssh/sshd_config.d/00-vybe.conf
+sshd_new=$(mktemp)
+cat > "$sshd_new" <<EOF
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 PermitRootLogin no
 PubkeyAuthentication yes
 AuthenticationMethods publickey
-MaxAuthTries 3
+MaxAuthTries 6
 LoginGraceTime 30
 X11Forwarding no
 AllowAgentForwarding no
 AllowTcpForwarding no
 $allow
 EOF
-sshd -t || fail "sshd configuration test failed: fix /etc/ssh/sshd_config.d/00-vybe.conf before you log out"
-systemctl reload ssh
+if ! { [ -f "$sshd_conf" ] && cmp -s "$sshd_new" "$sshd_conf"; }; then
+  sshd_old=""
+  if [ -f "$sshd_conf" ]; then sshd_old=$(mktemp); cp -p "$sshd_conf" "$sshd_old"; fi
+  install -o root -g root -m 0644 "$sshd_new" "$sshd_conf"
+  install -d -m 0755 /run/sshd   # sshd -t needs it; with socket activation it may not exist yet
+  if ! sshd -t; then
+    if [ -n "$sshd_old" ]; then mv "$sshd_old" "$sshd_conf"; else rm -f "$sshd_conf"; fi
+    fail "sshd -t refused the new $sshd_conf; the previous state is back, sshd was not reloaded"
+  fi
+  rm -f "$sshd_old"
+  if systemctl is-active --quiet ssh; then systemctl reload ssh; fi
+fi
+rm -f "$sshd_new"
+# The effective settings, as sshd computes them for each user that may log in.
+for user in "${admin:-root}" "$DEPLOY_USER"; do
+  effective=$(sshd -T -C "user=$user,host=localhost,addr=127.0.0.1")
+  for setting in "passwordauthentication no" "kbdinteractiveauthentication no" "permitrootlogin no" \
+    "authenticationmethods publickey" "maxauthtries 6"; do
+    grep -qx "$setting" <<< "$effective" || fail "sshd -T for $user does not show '$setting'"
+  done
+done
+echo "sshd: keys only, no root login, no forwarding (checked with sshd -T)"
 
 say "Firewall: ufw allows 22, 80 and 443 only"
 # Oracle's Ubuntu images block everything except 22 with iptables-persistent rules. ufw replaces them (after the
@@ -255,7 +291,7 @@ ufw status verbose
 say "Containers cannot reach the OCI metadata service (169.254.0.0/16)"
 # A request forgery bug in the API must not read instance metadata. DOCKER-USER is Docker's chain for own rules; this
 # unit adds the rule again after every Docker start. DNS and NTP of the host do not pass this chain.
-write_if_changed /etc/systemd/system/vybe-docker-rules.service 0644 <<'EOF' || true
+write_if_changed /etc/systemd/system/vybe-docker-rules.service 0644 <<'EOF'
 [Unit]
 Description=VYBE: containers on the vybe network cannot reach link-local addresses (OCI metadata)
 After=docker.service
@@ -275,7 +311,7 @@ systemctl enable vybe-docker-rules.service
 systemctl restart vybe-docker-rules.service
 
 say "fail2ban (SSH)"
-if write_if_changed /etc/fail2ban/jail.d/60-vybe.local 0644 <<'EOF'
+write_if_changed /etc/fail2ban/jail.d/60-vybe.local 0644 <<'EOF'
 [sshd]
 enabled = true
 backend = systemd
@@ -283,15 +319,17 @@ maxretry = 5
 findtime = 10m
 bantime = 1h
 EOF
-then
+if [ "$CHANGED" = true ]; then
   systemctl restart fail2ban
 fi
 systemctl enable --now fail2ban
+systemctl is-active --quiet fail2ban || fail "fail2ban is not running (journalctl -u fail2ban)"
+fail2ban-client status sshd >/dev/null || fail "the fail2ban jail sshd is not active"
 
 install_files
 
 say "vybe-monitor timer (every 5 minutes)"
-write_if_changed /etc/systemd/system/vybe-monitor.service 0644 <<EOF || true
+write_if_changed /etc/systemd/system/vybe-monitor.service 0644 <<EOF
 [Unit]
 Description=VYBE heartbeat (disk, memory, container health)
 After=docker.service
@@ -300,7 +338,7 @@ After=docker.service
 Type=oneshot
 ExecStart=$ROOT/bin/vybe-monitor
 EOF
-write_if_changed /etc/systemd/system/vybe-monitor.timer 0644 <<'EOF' || true
+write_if_changed /etc/systemd/system/vybe-monitor.timer 0644 <<'EOF'
 [Unit]
 Description=VYBE heartbeat every 5 minutes
 
