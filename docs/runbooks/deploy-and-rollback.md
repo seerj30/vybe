@@ -171,8 +171,11 @@ Do these steps in this order. Keep each value in the password manager of the tea
    while the value is `REGION-NOT-SET`.
 2. **Accounts.** Create a **dedicated** Fly.io organization for VYBE production, with no other apps.
    Every machine of the organization shares its private network: a machine there can reach the API and
-   can send a `Fly-Client-IP` to the web app. Create a Supabase organization (Pro plan). Use the company
-   billing account. Turn on two-factor authentication for every member. Give access to the named on-call
+   can send a `Fly-Client-IP` to the web app. Create a Supabase organization. It starts on the **Free** plan (product owner, 2026-11-10). Upgrade it
+   to Pro (Billing → Upgrade, no data move) before the first real beta players, when the database is near
+   400 MB, or at the first pause. While on Free: there are no automatic backups, so the weekly `pg_dump` of
+   [backup-restore.md](backup-restore.md) is the only backup; set a custom SMTP server for Auth emails
+   (the built-in sender allows only a few emails per hour). Turn on two-factor authentication for every member. Give access to the named on-call
    people only ([incident-response.md](incident-response.md)).
 3. **Supabase project** in the chosen region:
    - Settings → JWT keys: turn on the asymmetric signing keys (ES256 or RS256). The API does not accept HS256.
@@ -378,7 +381,7 @@ each price page before the budget review. Ceiling: USD 150 per month (decision 7
 
 | Component | Size | Estimate |
 |---|---|---|
-| Supabase Pro plan | base fee, includes Micro compute credit | 25 |
+| Supabase plan | Free until the beta (0); then Pro base fee, includes Micro compute credit | 0, then 25 |
 | Supabase compute | Small (if the load test needs more than Micro) | 0–15 |
 | Supabase point-in-time recovery (7 days) | add-on; needs Small compute or bigger | 100 (optional, see below) |
 | Fly API machine | 1 × `shared-cpu-2x`, 1 GB, always on | 7–12 |
