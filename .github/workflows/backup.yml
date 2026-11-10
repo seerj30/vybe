@@ -7,10 +7,10 @@
 name: Backup
 
 on:
-  # The schedule is off until infra/oracle/backup-recipients.txt has the owner's age public key: the PR that adds the
-  # key also removes the "#" of the two lines below (runbook backup-restore.md, one-time setup step 1).
-  # schedule:
-  #   - cron: "17 3 * * 0" # Sundays 03:17 UTC
+  # On since 2026-11-10, when infra/oracle/backup-recipients.txt got the owner's age public key (runbook
+  # backup-restore.md, one-time setup step 1).
+  schedule:
+    - cron: "17 3 * * 0" # Sundays 03:17 UTC
   workflow_dispatch:
 
 permissions:
