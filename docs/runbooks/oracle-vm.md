@@ -89,12 +89,14 @@ Do the steps in this order. Keep each value in the password manager.
    - **Home region: Germany Central (Frankfurt), `eu-frankfurt-1`.** You cannot change the home region later,
      and Always Free compute runs only in the home region. Supabase is in `eu-central-1` (Frankfurt).
    - Turn on multi-factor authentication for the account. Keep the recovery codes.
-   - **Mandatory: upgrade to Pay As You Go** (Billing → Upgrade and manage payment) **and set a budget alert of
-     USD 1** (Billing → Budgets → Create budget, alert at 100 % of USD 1, email to the owner and the on-call
-     primary). Why: Oracle reclaims (stops) Always Free instances of free accounts that stay under its idle
-     thresholds for 7 days (CPU 95th percentile, network and memory all under 20 %), and a small beta is under
-     them. Pay As You Go accounts keep the Always Free resources at no charge and are not reclaimed. The budget
-     alert tells you at once if anything starts to cost money. A1 capacity is also easier to get.
+   - **Pay As You Go: recommended, not used for now.** Oracle reclaims (stops) Always Free instances of free
+     accounts that stay under its idle thresholds for 7 days (CPU 95th percentile, network and memory all under
+     20 %), and a small beta is under them. Pay As You Go accounts (Billing → Upgrade and manage payment) keep
+     the Always Free resources at no charge and are not reclaimed; set a budget alert of USD 1 with it
+     (Billing → Budgets). **Decision of the product owner (2026-11-10): stay on Free Tier** (no upgrade). The
+     accepted risk: after a quiet week Oracle can stop the VM; start it in the console (Compute → Instances →
+     Start), and the containers start by themselves. The heartbeat and the uptime monitor show the stop.
+     Upgrade before real beta players, when an outage matters.
 2. **SSH key on the owner's Mac** (two keys: one for the admin, one for GitHub):
    ```bash
    ssh-keygen -t ed25519 -f ~/.ssh/vybe-admin -C vybe-admin      # use a passphrase
