@@ -1,9 +1,10 @@
 # Runbook: deploy and rollback
 
 - Owner: stream D (operations). On-call names: see [incident-response.md](incident-response.md).
-- Applies to: the API container (`services/api/Dockerfile`) on any container host, and the Fly.io
-  deployment of [decision 7](../decisions/07-hosting.md) (signed: Supabase Pro + Fly.io, `/api` on the same
-  origin as the web app). Fly.io procedure: section [Fly.io](#flyio-decision-7).
+- Applies to: the API container (`services/api/Dockerfile`) on any container host. Production since
+  2026-11-10 ([decision 7](../decisions/07-hosting.md) changed: no paid hosting) is one Oracle Cloud Always Free
+  VM: procedure in [oracle-vm.md](oracle-vm.md), design in [ADR 0009](../adr/0009-oracle-vm.md). The Fly.io
+  section ([Fly.io](#flyio-decision-7)) is **kept, not used**, for a later paid move.
 - Related: [migrations.md](migrations.md), [secret-rotation.md](secret-rotation.md), [ADR 0006](../adr/0006-operations.md),
   [ADR 0008](../adr/0008-fly-deployment.md).
 
@@ -14,7 +15,8 @@
 | Image | `docker build -f services/api/Dockerfile -t <registry>/vybe-api:<git-sha> .` (from the repository root) |
 | Migration step | `docker run --rm <env> <image> migrate` |
 | Seed step | `docker run --rm <env> <image> seed` (rulesets, catalog, quests; idempotent) |
-| Release step | `docker run --rm -e ConnectionStrings__Migrations <image> release` (migrate, then seed, in one process; on Fly.io the deploy workflow runs it on the runner) |
+| Release step | `docker run --rm -e ConnectionStrings__Migrations <image> release` (migrate, then seed, in one process; the deploy workflows run it on the runner) |
+| Health check | `<image> healthcheck` (exit 0 when `/health/ready` on the container's own port answers 200; for Docker health checks, because the image has no curl) |
 | API | `<image>` with no command, port 8080 |
 
 Tag every image with the git commit SHA. Do not deploy `latest`.
@@ -121,6 +123,9 @@ as an incident (SEV-2 or higher): roll forward with a fix, and add the missing c
 migration review.
 
 ## Fly.io (decision 7)
+
+> **Kept, not used** since 2026-11-10: production runs on the Oracle VM ([oracle-vm.md](oracle-vm.md)). Use this
+> section only for a move to Fly.io ([oracle-vm.md](oracle-vm.md), "Move to Fly.io later").
 
 Decision 7 is signed: Supabase Pro (PostgreSQL and Auth) and an always-on API container on Fly.io in the
 same region, with `/api` on the same origin as the web app. Design: [ADR 0008](../adr/0008-fly-deployment.md).

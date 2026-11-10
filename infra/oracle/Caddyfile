@@ -1,0 +1,128 @@
+# VYBE web host on the Oracle Cloud VM (ADR 0009). The same rules as infra/web/Caddyfile (Fly.io, ADR 0008), with
+# two differences: Caddy ends TLS itself (automatic HTTPS, Let's Encrypt) for the public host name, and no proxy is in
+# front of it, so the client address is the TCP peer (no trusted_proxies, no client IP header).
+# compose.yml mounts this file read-only over /etc/caddy/Caddyfile of the web image.
+#
+# Environment (read once at start-up, from /etc/vybe/web.env and compose.yml):
+#   VYBE_PUBLIC_HOST    the public host name: a domain, or <ip-with-dashes>.sslip.io (docs/runbooks/oracle-vm.md)
+#   VYBE_API_HOST       the API container (compose: api)
+#   VYBE_SUPABASE_URL   the Supabase origin for connect-src (checked by entrypoint.sh); empty = guest-only
+#   XDG_DATA_HOME       /data: certificates and ACME account (a host directory; they must survive restarts)
+{
+	admin off
+	persist_config off
+	servers {
+		# HTTP/1.1 and HTTP/2 only: no UDP port to open (HTTP/3 needs 443/udp).
+		protocols h1 h2
+		# Slow clients cannot hold connections open (bodies are at most 16 KB; see request_body below).
+		timeouts {
+			read_header 10s
+			read_body 30s
+			write 60s
+			idle 2m
+		}
+	}
+	# No access log. Error and warning logs drop the request (paths carry capabilities: /challenge/{token},
+	# /deletion/{requestId}, /api/.../invites/{token}; headers carry cookies and tokens; addresses are personal data).
+	log {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				request>uri delete
+				request>headers delete
+				request>remote_ip delete
+				request>remote_port delete
+				request>client_ip delete
+				uri delete
+			}
+		}
+		level WARN
+	}
+}
+
+# Container health check only (compose.yml). Not published: reachable inside the compose network only.
+http://:8081 {
+	respond "ok" 200
+}
+
+# Automatic HTTPS: port 80 answers the ACME HTTP challenge and redirects everything else to https.
+{$VYBE_PUBLIC_HOST} {
+	encode zstd gzip
+
+	# The API. Its own headers (strict CSP, no-store, HSTS on https) stay as the API sends them.
+	@api path /api /api/*
+	handle @api {
+		# The API refuses bodies over 16 KB (RequestBody.MaxBytes); stop bigger ones here, with margin.
+		request_body {
+			max_size 64KB
+		}
+		reverse_proxy {$VYBE_API_HOST}:8080 {
+			transport http {
+				dial_timeout 3s
+				response_header_timeout 30s
+			}
+			# One forwarded hop: the API (ForwardLimit 1) reads the last X-Forwarded-For value from this proxy only,
+			# and trusts it only from the compose network (ReverseProxy__KnownNetworks__0 in compose.yml).
+			# {client_ip} is the TCP peer here; a client-sent X-Forwarded-For is replaced, never appended to.
+			header_up X-Forwarded-For {client_ip}
+			# A deploy restarts the API container: wait for it instead of answering 502 at once.
+			lb_try_duration 20s
+			lb_try_interval 500ms
+		}
+	}
+
+	# Probes stay private (ADR 0006 #3): Docker calls the API container directly.
+	@health path /health /health/*
+	handle @health {
+		respond 404
+	}
+
+	# Sign-in settings of the web app (apps/web/README.md). Written by entrypoint.sh; missing = 404 = guest-only.
+	handle /runtime-config.json {
+		root * /tmp/vybe-runtime
+		header Cache-Control "no-store"
+		file_server
+	}
+
+	handle {
+		root * /srv
+
+		# Hashed build output (outputHashing "all"): content never changes under the same name.
+		@hashed {
+			path_regexp -[A-Za-z0-9_-]{8}\.(js|css|woff2?|ttf|png|jpe?g|svg|webp|avif)$
+			file
+		}
+		header @hashed Cache-Control "public, max-age=31536000, immutable"
+		# Everything else (index.html, routes): revalidate. "?" applies at response time, so @hashed wins.
+		header ?Cache-Control "no-cache"
+
+		# "route" keeps this order (directive sorting would run try_files first).
+		route {
+			# A missing file (an old chunk after a deploy, a mistyped asset): 404, not index.html. Client routes
+			# have no file extension (handles are [a-z0-9_], tokens and ids have no dot).
+			@missingFile {
+				path_regexp \.[A-Za-z0-9]+$
+				not file
+			}
+			respond @missingFile 404
+
+			# Single-page app: every other unknown path is a client route.
+			try_files {path} /index.html
+			file_server
+		}
+	}
+
+	# Hosting headers. "?" sets a header only when the response has none, so /api responses keep the API's own
+	# (stricter) values. connect-src must match the runtime CSP of the app
+	# (apps/web/src/app/auth/content-security-policy.ts); frame-ancestors works only as a header.
+	header {
+		-Server
+		-Via
+		?Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' {$VYBE_SUPABASE_URL}; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		?Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		?Referrer-Policy "no-referrer"
+		?X-Content-Type-Options "nosniff"
+		?X-Frame-Options "DENY"
+	}
+}
