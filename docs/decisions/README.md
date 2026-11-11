@@ -71,3 +71,13 @@ Fill one row per decision. A decision without a signed row is still open.
 | 6 | B — signed-in players (guest or registered) only by default; "private" toggle in `/settings`; `noindex` and `no-store` on profile responses | none | product owner (Sergiu Molnar); counsel pending | 2026-11-07 |
 | 7 | A — Supabase Pro + one always-on API container in the same region, same-origin `/api` behind a CDN; beta ceiling USD 150/month; on-call model 2 (named primary and backup, business hours) | **changed 2026-11-10 (product owner): no paid hosting; the API and web run on an Oracle Cloud Always Free ARM VM in Frankfurt (option D, self-managed), with Docker Compose and Caddy.** The Fly.io config (#36, #38) was removed on 2026-11-10 (in the git history). Earlier: container host Fly.io (chosen 2026-11-07); region `fra` with Supabase `eu-central-1` (2026-11-10); **Supabase starts on the Free plan** (2026-11-10, product owner) and moves to Pro before the first real beta players, at about 400 MB of data, or at the first pause | product owner (Sergiu Molnar); engineering lead | 2026-11-07 |
 | 8 | Ledger A (pseudonymized ledger kept without a time limit, if counsel accepts; else B); retention table as the draft; support A (email and web form, 3 business days); conservative wording | none | product owner (Sergiu Molnar); counsel and DPO: final wording pending | 2026-11-07 |
+
+## P1 decisions
+
+Decisions on P1 work (spec §16) after the social beta gate. One row per decision.
+
+| Date | Decision | Reason and follow-up | Signed by |
+|---|---|---|---|
+| 2026-11-11 | Build all four P1 features: friends and weekly leaderboard (stream O), a second mini-game (stream P), My Room 3D with more cosmetics (stream Q), then achievements | Owner choice; three streams at a time, achievements after the others | product owner (Sergiu Molnar) |
+| 2026-11-11 | **Accepted risk:** a Street Juggle bot can replay the server seed and play with deliberately imperfect timing (below the `perfect_rate_high` flag at 90 % perfect touches). It is not flagged and can win the weekly leaderboard | Coin and XP damage stays inside the shared daily caps (the same exposure as Street Hoops). Look again before public launch or when a bot shows on the board: a touch-timing variance flag, or keep flagged and suspicious runs off the board | product owner (Sergiu Molnar) |
+| 2026-11-11 | **Keep** the Street Juggle reward balance as built: XP reaches the 80 cap at a score of about 5,600, so Juggle pays out more easily than Street Hoops; both games share one daily cap | Review with the decision 5 economy review after 2 weeks of beta data | product owner (Sergiu Molnar) |

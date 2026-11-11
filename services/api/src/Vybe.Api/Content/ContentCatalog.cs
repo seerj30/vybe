@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Vybe.Api.Features;
 using Vybe.Api.Infrastructure;
 using Vybe.Data;
 using Vybe.Data.Entities;
@@ -69,7 +70,7 @@ public sealed record RoomGrid(int Columns, int Rows);
 
 public sealed record RoomFile(int Version, string? Description, RoomGrid Floor, RoomGrid Wall, int MaxItems, RoomEntry[] Items);
 
-public sealed record RulesetContent(string Id, string GameId, int Version, StreetHoopsConfig Config, string ConfigJson, string Checksum);
+public sealed record RulesetContent(string Id, string GameId, int Version, IRewardConfig Config, string ConfigJson, string Checksum);
 
 /// <summary>Versioned static content (ADR 0001: avatar manifest; spec §8 catalog; spec §7 rulesets), loaded once.</summary>
 public sealed class ContentCatalog
@@ -151,11 +152,17 @@ public sealed class ContentCatalog
             throw new InvalidDataException($"ruleset {path}: checksum does not match its config");
         }
 
+        var gameId = root.GetProperty("gameId").GetString()!;
+        if (!Games.IsKnown(gameId))
+        {
+            throw new InvalidDataException($"ruleset {path}: unknown game {gameId}");
+        }
+
         return new RulesetContent(
             root.GetProperty("id").GetString()!,
-            root.GetProperty("gameId").GetString()!,
+            gameId,
             root.GetProperty("version").GetInt32(),
-            config.Deserialize<StreetHoopsConfig>(FileJson)!,
+            Games.For(gameId).ParseConfig(config.GetRawText()),
             config.GetRawText(),
             checksum);
     }
@@ -222,7 +229,6 @@ public static class ContentSeeder
 
 public static class RulesetConfig
 {
-    public static StreetHoopsConfig Parse(string configJson) =>
-        JsonSerializer.Deserialize<StreetHoopsConfig>(configJson, ApiJson.Options)
-        ?? throw new InvalidDataException("ruleset config is empty");
+    /// <summary>The reward-relevant view of a stored ruleset config of game <paramref name="gameId"/>.</summary>
+    public static IRewardConfig Parse(string gameId, string configJson) => Games.For(gameId).ParseConfig(configJson);
 }

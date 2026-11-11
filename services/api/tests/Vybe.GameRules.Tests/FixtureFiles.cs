@@ -60,3 +60,5 @@ internal sealed record PcgVector(string InitState, string InitSeq, string Source
 internal sealed record PcgFile(IReadOnlyList<PcgVector> Vectors);
 
 internal sealed record RulesetFile(string Id, string GameId, int Version, StreetHoopsConfig Config, string Checksum);
+
+internal sealed record JuggleFixture(string Name, string Description, JuggleEvaluateInput Input, JsonElement Expected);

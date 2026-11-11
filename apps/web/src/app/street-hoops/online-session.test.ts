@@ -67,6 +67,28 @@ describe("OnlineSessions", () => {
     expect(api.createStreetHoopsSession).toHaveBeenNthCalledWith(2, {});
   });
 
+  it("creates the session through the game's own call", async () => {
+    const api = fakeApi({
+      createStreetJuggleSession: vi.fn(async () => ({
+        sessionId: SESSION_ID,
+        status: "created",
+        rulesetId: fixture.id,
+        rulesetChecksum: fixture.checksum,
+        startDeadline: "t",
+      })),
+    });
+    const game = { gameId: "street-hoops" as const, create: (client: ApiClient) => client.createStreetJuggleSession({}) };
+    await new OnlineSessions(api, passThrough, noSleep, game).prepare();
+    expect(api.createStreetJuggleSession).toHaveBeenCalledOnce();
+    expect(api.createStreetHoopsSession).not.toHaveBeenCalled();
+  });
+
+  it("refuses a ruleset of another game before it starts the clock", async () => {
+    const api = fakeApi({ getRuleset: vi.fn(async () => ({ ...fixture, gameId: "street-juggle" })) });
+    await expect(new OnlineSessions(api, passThrough).prepare()).rejects.toThrow(/is for street-juggle, not street-hoops/);
+    expect(api.startSession).not.toHaveBeenCalled();
+  });
+
   it("downloads and verifies a ruleset once per id", async () => {
     const api = fakeApi();
     const sessions = new OnlineSessions(api, passThrough);

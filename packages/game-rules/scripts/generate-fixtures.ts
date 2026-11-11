@@ -11,6 +11,9 @@ import { fileURLToPath } from "node:url";
 import { Pcg32 } from "../src/pcg32.ts";
 import { rulesetChecksum } from "../src/checksum.ts";
 import { evaluate, generateWaypoints, targetAt } from "../src/simulator.ts";
+import { evaluateJuggle } from "../src/juggle.ts";
+import { autoplay } from "../src/juggle-autoplay.ts";
+import type { JuggleEvaluateInput, JuggleTouch, StreetJuggleConfig } from "../src/juggle-types.ts";
 import type {
   EvaluateInput,
   EvaluateResult,
@@ -240,8 +243,155 @@ fixture("rejections", "cadence-violation", "Gap of 649 ms.", "cadence_violation"
 fixture("rejections", "submitted-too-early", "Trace claims more game time than has passed.", "submitted_too_early",
   makeInput([neutral(59_800)], { submitOffsetMs: 59_800 - config.earlyToleranceMs - 1 }));
 
+
+// ================================================================ Street Juggle (docs/design/p1-second-game.md)
+const JUGGLE_RULESET_PATH = `${FIXTURES}rulesets/street-juggle-v1.json`;
+
+interface JuggleRulesetFile {
+  id: string;
+  gameId: string;
+  version: number;
+  config: StreetJuggleConfig;
+  checksum: string;
+}
+
+const juggleRuleset = JSON.parse(readFileSync(JUGGLE_RULESET_PATH, "utf8")) as JuggleRulesetFile;
+const juggleConfig = juggleRuleset.config;
+files.set("rulesets/street-juggle-v1.json", { ...juggleRuleset, checksum: await rulesetChecksum(juggleConfig) });
+
+interface JuggleOptions {
+  seed?: number;
+  status?: SessionStatus;
+  startedAtMs?: number;
+  /** Offset from startedAtMs; default: game end + 500 ms. */
+  submitOffsetMs?: number;
+  submittedRulesetId?: string;
+  config?: StreetJuggleConfig;
+}
+
+function juggleInput(events: JuggleTouch[], o: JuggleOptions = {}): JuggleEvaluateInput {
+  const cfg = o.config ?? juggleConfig;
+  const startedAtMs = o.startedAtMs ?? STARTED_AT_MS;
+  return {
+    config: cfg,
+    rulesetId: juggleRuleset.id,
+    seed: o.seed ?? 12345,
+    session: {
+      status: o.status ?? "active",
+      startedAtMs,
+      submitDeadlineMs: startedAtMs + cfg.durationMs + cfg.graceMs,
+    },
+    submission: {
+      rulesetId: o.submittedRulesetId ?? juggleRuleset.id,
+      submittedAtMs: startedAtMs + (o.submitOffsetMs ?? cfg.durationMs + 500),
+      events,
+    },
+  };
+}
+
+const JUGGLE_DEADLINE_OFFSET_MS = juggleConfig.durationMs + juggleConfig.graceMs;
+
+/** Timing errors in ms with a fixed 31-bit LCG (fixture data only, not a game rule). */
+function timingErrors(count: number, spreadMs: number, start: number): number[] {
+  let s = start;
+  return Array.from({ length: count }, () => {
+    s = (Math.imul(s, 1103515245) + 12345) & 0x7fffffff;
+    return (s % (2 * spreadMs + 1)) - spreadMs;
+  });
+}
+
+function juggleFixture(dir: Dir, name: string, description: string, intent: Intent, input: JuggleEvaluateInput,
+  check: (expected: Extract<ReturnType<typeof evaluateJuggle>, { outcome: "verified" }>) => boolean = () => true): void {
+  const expected = evaluateJuggle(input);
+  const got = expected.outcome === "rejected" ? expected.reason : expected.outcome;
+  if (got !== intent) throw new Error(`street-juggle/${dir}/${name}: expected ${intent}, got ${got}`);
+  if (dir === "scoring" && (expected.outcome !== "verified" || !check(expected))) {
+    throw new Error(`street-juggle/${dir}/${name}: the fixture does not show what its description says`);
+  }
+  files.set(`street-juggle/${dir}/${name}.json`, { name, description, input, expected });
+}
+
+const cfgJ = juggleConfig;
+const bot = (seed: number, cfg: StreetJuggleConfig = cfgJ, o: Parameters<typeof autoplay>[2] = {}): JuggleTouch[] =>
+  autoplay(cfg, seed, o);
+
+// ---------------------------------------------------------------- juggle scoring
+juggleFixture("scoring", "bot-perfect", "A scripted player touches every ball at the ideal tick.", "verified",
+  juggleInput(bot(12345), { seed: 12345 }),
+  (e) => e.dropCount === 0 && e.perfectCount === e.kickCount && e.touches.some((t) => t.points > cfgJ.perfectPoints + cfgJ.streakMax));
+juggleFixture("scoring", "timing-error-30ms", "Timing errors up to ±60 ms: perfects and goods.", "verified",
+  juggleInput(bot(99, cfgJ, { offsetsMs: timingErrors(400, 60, 7) }), { seed: 99 }),
+  (e) => e.perfectCount > 0 && e.kickCount > e.perfectCount);
+juggleFixture("scoring", "timing-error-300ms", "Timing errors up to ±300 ms: whiffs, drops and new serves.", "verified",
+  juggleInput(bot(2026, cfgJ, { offsetsMs: timingErrors(400, 300, 11) }), { seed: 2026 }),
+  (e) => e.dropCount > 0 && e.touches.some((t) => t.result === "whiff"));
+juggleFixture("scoring", "wrong-spot-lock", "Every fifth touch goes to a wrong spot: whiff, streak reset and lock.", "verified",
+  juggleInput(bot(31, cfgJ, { wrongLane: (i) => i % 5 === 4 }), { seed: 31 }),
+  (e) => e.touches.some((t) => t.result === "whiff" && t.ballLane !== t.lane && t.ballLane >= 0));
+juggleFixture("scoring", "empty-trace", "No touches: every ball drops; verified with score 0.", "verified",
+  juggleInput([], { seed: 1 }), (e) => e.score === 0 && e.dropCount > 20);
+juggleFixture("scoring", "spam-all-spots", "400 touches every 150 ms, cycling the spots: the lock makes spam pay little.", "verified",
+  juggleInput(every(150, 400).map((tMs, i) => ({ tMs, lane: i % 3 })), { seed: 5 }),
+  (e) => e.eventCount === 400 && e.touches.filter((t) => t.result === "whiff").length > 300);
+juggleFixture("scoring", "touch-while-waiting", "Touches while the ball waits for its serve are whiffs.", "verified",
+  juggleInput([{ tMs: 0, lane: 1 }, { tMs: 2_500, lane: 0 }, { tMs: 3_400, lane: 2 }, { tMs: 3_550, lane: 1 }], { seed: 8 }),
+  (e) => e.touches.some((t) => t.ballLane === -1 && t.result === "whiff"));
+juggleFixture("scoring", "seed-zero", "Seed 0 with the scripted player.", "verified", juggleInput(bot(0), { seed: 0 }));
+juggleFixture("scoring", "seed-max-uint32", "Seed 4,294,967,295 (uint32 max).", "verified",
+  juggleInput(bot(0xffffffff, cfgJ, { offsetsMs: timingErrors(400, 40, 3) }), { seed: 0xffffffff }));
+const altJuggleStream: StreetJuggleConfig = { ...cfgJ, streamId: 0xffffffff };
+juggleFixture("scoring", "stream-id-max-uint32", "Same rules with streamId 4,294,967,295.", "verified",
+  juggleInput(bot(12345, altJuggleStream), { seed: 12345, config: altJuggleStream }));
+const oneSpot: StreetJuggleConfig = { ...cfgJ, lanes: 1, respawnMs: 0, whiffLockMs: 0, starPercent: 100, levelMs: 6_000 };
+juggleFixture("scoring", "one-spot-edge-config", "Edge config: one spot, no lock, no respawn pause, every ball gold, 10 levels.", "verified",
+  juggleInput(bot(77, oneSpot, { offsetsMs: timingErrors(400, 400, 5) }), { seed: 77, config: oneSpot }),
+  (e) => e.kickCount > 0 && e.dropCount > 0);
+juggleFixture("scoring", "epoch-ms-times", "Production-size epoch-millisecond times (above int32).", "verified",
+  juggleInput(bot(31), { seed: 31, startedAtMs: EPOCH_STARTED_AT_MS }));
+juggleFixture("scoring", "submit-at-deadline", "Submitted exactly at submitDeadlineMs: still verified.", "verified",
+  juggleInput(bot(5), { seed: 5, submitOffsetMs: JUGGLE_DEADLINE_OFFSET_MS }));
+juggleFixture("scoring", "submit-early-boundary", "Submitted exactly at startedAt + maxT - earlyTolerance: verified.", "verified",
+  juggleInput([{ tMs: 59_990, lane: 1 }], { seed: 5, submitOffsetMs: 59_990 - cfgJ.earlyToleranceMs }));
+
+// ---------------------------------------------------------------- juggle rejections
+const jValid = bot(12345, cfgJ, { maxTouches: 6 });
+const spot = (tMs: number, lane = 1): JuggleTouch => ({ tMs, lane });
+
+juggleFixture("rejections", "not-started", "Session still created: rejected not_started.", "not_started",
+  juggleInput(jValid, { status: "created" }));
+juggleFixture("rejections", "expired-status", "Session already expired: outcome expired.", "expired",
+  juggleInput(jValid, { status: "expired" }));
+juggleFixture("rejections", "late-submit", "One ms after submitDeadlineMs: outcome expired.", "expired",
+  juggleInput(jValid, { submitOffsetMs: JUGGLE_DEADLINE_OFFSET_MS + 1 }));
+juggleFixture("rejections", "late-beats-ruleset-mismatch", "Expiry is checked before the ruleset id.", "expired",
+  juggleInput(jValid, { submitOffsetMs: JUGGLE_DEADLINE_OFFSET_MS + 1, submittedRulesetId: "street-hoops-v1" }));
+juggleFixture("rejections", "ruleset-mismatch", "Submission names another game's ruleset.", "ruleset_mismatch",
+  juggleInput(jValid, { submittedRulesetId: "street-hoops-v1" }));
+const juggleOutOfRange: Array<[string, JuggleTouch]> = [
+  ["lane-high", { tMs: 2000, lane: 3 }],
+  ["lane-low", { tMs: 2000, lane: -1 }],
+  ["tms-negative", { tMs: -1, lane: 1 }],
+  ["tms-end", { tMs: cfgJ.durationMs, lane: 1 }],
+];
+for (const [suffix, event] of juggleOutOfRange) {
+  juggleFixture("rejections", `out-of-range-${suffix}`, `One field outside its range (${suffix}).`, "out_of_range",
+    juggleInput([spot(500), event].sort((a, b) => a.tMs - b.tMs)));
+}
+juggleFixture("rejections", "category-order", "Event 2 is non-monotonic and event 4 is out of range: out_of_range wins.",
+  "out_of_range", juggleInput([spot(0), spot(2000), spot(1000), spot(3000), { tMs: 4000, lane: 3 }]));
+juggleFixture("rejections", "too-many-events", "401 events (140 ms gap): too_many_events before cadence.",
+  "too_many_events", juggleInput(every(140, 401).map((t) => spot(t))));
+juggleFixture("rejections", "non-monotonic-equal", "Two events with the same tMs.", "non_monotonic",
+  juggleInput([spot(1000), spot(1000, 2)]));
+juggleFixture("rejections", "non-monotonic-decreasing", "tMs goes backwards.", "non_monotonic",
+  juggleInput([spot(5000), spot(4000)]));
+juggleFixture("rejections", "cadence-violation", "Gap of 149 ms.", "cadence_violation",
+  juggleInput([spot(1000), spot(1149, 0)]));
+juggleFixture("rejections", "submitted-too-early", "Trace claims more game time than has passed.", "submitted_too_early",
+  juggleInput([spot(59_800)], { submitOffsetMs: 59_800 - cfgJ.earlyToleranceMs - 1 }));
+
 // ---------------------------------------------------------------- write (only after every fixture succeeded)
-for (const dir of ["scoring", "rejections"]) {
+for (const dir of ["scoring", "rejections", "street-juggle/scoring", "street-juggle/rejections"]) {
   rmSync(`${FIXTURES}${dir}`, { recursive: true, force: true });
   mkdirSync(`${FIXTURES}${dir}`, { recursive: true });
 }
