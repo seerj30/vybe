@@ -70,6 +70,13 @@ public static class ProductionConfiguration
             problems.Add("Challenges:ShareBaseUrl must be an absolute https URL");
         }
 
+        // Item pictures in the catalog and inventory responses (spec §9); the default is a placeholder host.
+        if (!IsHttpsUrl(configuration["Content:AssetBaseUrl"])
+            || new Uri(configuration["Content:AssetBaseUrl"]!).Host.EndsWith(".invalid", StringComparison.OrdinalIgnoreCase))
+        {
+            problems.Add("Content:AssetBaseUrl must be the absolute https URL of the published art (https://<web origin>/assets)");
+        }
+
         var storage = configuration.GetSection(S3ExportStorageOptions.Section).Get<S3ExportStorageOptions>() ?? new S3ExportStorageOptions();
         problems.AddRange(storage.Problems());
         if (Uri.TryCreate(storage.ServiceUrl, UriKind.Absolute, out var storageUrl) && storageUrl.Scheme == Uri.UriSchemeHttp)
