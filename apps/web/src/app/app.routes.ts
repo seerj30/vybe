@@ -14,6 +14,7 @@ import { Wallet } from "./pages/wallet";
 import { Wardrobe } from "./pages/wardrobe";
 import { Friends } from "./pages/friends";
 import { Leaderboard } from "./pages/leaderboard";
+import { Achievements } from "./pages/achievements";
 import { requirePlayer } from "./player/guards";
 
 /** Shell layout per route: `bare` (no nav), `app` (nav), `fullscreen` (game canvas). */
@@ -78,6 +79,7 @@ export const routes: Routes = [
       { path: "profile/:handle", component: Profile, title: "Profile · VYBE" },
       { path: "friends", component: Friends, title: "Friends · VYBE" },
       { path: "leaderboard", component: Leaderboard, title: "Leaderboard · VYBE" },
+      { path: "achievements", component: Achievements, title: "Achievements · VYBE" },
     ],
   },
   { path: "**", redirectTo: "" },

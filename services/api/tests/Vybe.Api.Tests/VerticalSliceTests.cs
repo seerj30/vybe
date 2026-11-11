@@ -40,14 +40,16 @@ public sealed class VerticalSliceTests(ApiFactory api)
         Assert.Equal(150, rewards.GetProperty("coins").GetInt64());
         Assert.Equal(80, rewards.GetProperty("xp").GetInt32());
 
+        // P1 achievements: the first run unlocks "First Bucket" (+25 XP), so 105 XP reach level 2 (+100 V-Coins level reward).
+        Assert.Equal(["hoops_first_run"], run.GetProperty("achievementsUnlocked").EnumerateArray().Select(a => a.GetProperty("code").GetString()));
+        Assert.Equal(2, rewards.GetProperty("levelAfter").GetInt32());
         me = await player.MeAsync();
-        Assert.Equal(150, me.GetProperty("walletBalance").GetInt64());
-        Assert.Equal(80, me.GetProperty("xpTotal").GetInt64());
+        Assert.Equal(150 + 100, me.GetProperty("walletBalance").GetInt64());
+        Assert.Equal(80 + 25, me.GetProperty("xpTotal").GetInt64());
 
         var ledger = await Contract.AssertAsync(
             await player.Http.GetAsync("/api/v1/me/wallet/transactions"), HttpStatusCode.OK, "LedgerPage");
-        var entry = Assert.Single(ledger.GetProperty("items").EnumerateArray());
-        Assert.Equal("game_reward", entry.GetProperty("reason").GetString());
+        Assert.Equal(["game_reward", "level_reward"], ledger.GetProperty("items").EnumerateArray().Select(e => e.GetProperty("reason").GetString()).Order());
     }
 
     [Fact]

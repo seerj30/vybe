@@ -24,7 +24,8 @@ public static class ChallengeResolvedJob
     public sealed record Payload(Guid ChallengeId, Guid PlayerId);
 
     /// <summary>Runs the job; returns null when it is done, or the time to run it again (suspended player).</summary>
-    public static async Task<DateTime?> RunAsync(VybeDbContext db, Payload payload, DateTime now, CancellationToken cancellationToken)
+    public static async Task<DateTime?> RunAsync(
+        VybeDbContext db, AchievementCatalog catalog, Payload payload, DateTime now, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(db);
         ArgumentNullException.ThrowIfNull(payload);
@@ -70,6 +71,8 @@ public static class ChallengeResolvedJob
         }
 
         await QuestProgress.AddAsync(db, player.Id, QuestProgress.ChallengeOrStreak, day, 1, now, cancellationToken);
+        // P1 achievements: challenges completed, won and rematches (counts, so a retry changes nothing).
+        await AchievementProgress.SyncCountsAsync(db, catalog, player.Id, now, cancellationToken);
         return null;
     }
 }

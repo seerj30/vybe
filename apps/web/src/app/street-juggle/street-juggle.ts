@@ -13,6 +13,7 @@ import {
   viewChild,
 } from "@angular/core";
 import { RouterLink } from "@angular/router";
+import { AchievementToast } from "../achievements/achievement-toast";
 import {
   evaluateJuggle,
   type JuggleEvaluateResult,
@@ -82,7 +83,7 @@ function randomSeed(): number {
  */
 @Component({
   selector: "vybe-street-juggle",
-  imports: [RouterLink],
+  imports: [RouterLink, AchievementToast],
   templateUrl: "./street-juggle.html",
   styleUrl: "./street-juggle.css",
   changeDetection: ChangeDetectionStrategy.OnPush,

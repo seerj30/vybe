@@ -34,6 +34,7 @@ public static class ServiceSetup
         services.AddSingleton(sp => new ContentCatalog(
             configuration.GetSection(ContentOptions.Section).Get<ContentOptions>()
             ?? throw new InvalidOperationException("Content:Root is not configured")));
+        services.AddSingleton(sp => new AchievementCatalog(sp.GetRequiredService<ContentCatalog>().Options.Root));
         services.AddHttpContextAccessor();
         services.AddScoped<CurrentPlayer>();
         services.AddScoped<Idempotency>();
@@ -108,6 +109,7 @@ public static class ServiceSetup
         ReviewFlagEndpoints.Map(api);
         FriendEndpoints.Map(api);
         LeaderboardEndpoints.Map(api);
+        AchievementEndpoints.Map(api);
         return app;
     }
 
@@ -127,6 +129,11 @@ public static class ServiceSetup
             scope.ServiceProvider.GetRequiredService<TimeProvider>(),
             CancellationToken.None);
         await QuestSeeder.SeedAsync(scope.ServiceProvider.GetRequiredService<VybeDbContext>(), content.Options.Root, CancellationToken.None);
+        await AchievementSeeding.SeedAndBackfillAsync(
+            scope.ServiceProvider.GetRequiredService<VybeDbContext>(),
+            scope.ServiceProvider.GetRequiredService<AchievementCatalog>(),
+            scope.ServiceProvider.GetRequiredService<TimeProvider>(),
+            CancellationToken.None);
     }
 
     private static void AddAuthentication(IServiceCollection services, IConfiguration configuration, IHostEnvironment environment)

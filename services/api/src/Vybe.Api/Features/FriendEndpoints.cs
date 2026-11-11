@@ -109,6 +109,7 @@ public static class FriendEndpoints
             await EnsureBelowFriendLimitAsync(db, playerId, target.Id, cancellationToken);
             Accept(row, now);
             await db.SaveChangesAsync(cancellationToken);
+            await QueueAchievementsAsync(db, row, now, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return TypedResults.Ok(new FriendRequestResult(target.Handle, FriendshipStatus.Accepted));
         }
@@ -197,8 +198,10 @@ public static class FriendEndpoints
         }
 
         await EnsureBelowFriendLimitAsync(db, playerId, requester.Id, cancellationToken);
-        Accept(row, clock.UtcNowForDb());
+        var now = clock.UtcNowForDb();
+        Accept(row, now);
         await db.SaveChangesAsync(cancellationToken);
+        await QueueAchievementsAsync(db, row, now, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return new FriendRequestResult(requester.Handle, FriendshipStatus.Accepted);
     }
@@ -370,6 +373,16 @@ public static class FriendEndpoints
 
     private static IQueryable<Player> Listable(VybeDbContext db) =>
         db.Players.AsNoTracking().Where(p => p.Status != PlayerStatus.Deleting && p.Status != PlayerStatus.Deleted);
+
+    /// <summary>
+    /// P1 achievements (friends): one outbox job per friend. This transaction holds the pair lock and a shared lock on the
+    /// other player, so it does not take player row locks (docs/design/p1-achievements.md, Locks).
+    /// </summary>
+    private static async Task QueueAchievementsAsync(VybeDbContext db, Friendship row, DateTime now, CancellationToken cancellationToken)
+    {
+        await AchievementSyncJob.QueueAsync(db, row.RequesterPlayerId, now, cancellationToken);
+        await AchievementSyncJob.QueueAsync(db, row.AddresseePlayerId, now, cancellationToken);
+    }
 
     private static void Accept(Friendship row, DateTime now)
     {

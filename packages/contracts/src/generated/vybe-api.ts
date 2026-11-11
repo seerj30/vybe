@@ -934,6 +934,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/achievements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List achievements with the caller's progress
+         * @description Every active achievement (P1, docs/design/p1-achievements.md) in display order, with the
+         *     caller's server-computed progress. `progress` is the stat value capped at `target`; an
+         *     unlocked achievement has `progress = target` and `unlockedAt`. Read only.
+         *     `Cache-Control: private, no-store`.
+         */
+        get: operations["listMyAchievements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me/data-export": {
         parameters: {
             query?: never;
@@ -1326,6 +1349,8 @@ export interface components {
             displayName: components["schemas"]["DisplayName"];
             level: components["schemas"]["Level"];
             avatar: components["schemas"]["PublicAvatar"];
+            /** @description Unlocked achievements (P1), gold first. No unlock times (data minimization). */
+            badges: components["schemas"]["AchievementBadge"][];
         };
         PlayerSummary: {
             handle: components["schemas"]["Handle"];
@@ -1740,6 +1765,11 @@ export interface components {
             status: "verified";
             score: number;
             rewards: components["schemas"]["Rewards"];
+            /**
+             * @description Achievements this run unlocked (P1), empty when none. A replay of the same session gives the
+             *     same list. `rewards.levelAfter` includes their XP.
+             */
+            achievementsUnlocked: components["schemas"]["AchievementUnlocked"][];
         };
         SubmitRejected: {
             sessionId: components["schemas"]["Uuid"];
@@ -1863,6 +1893,46 @@ export interface components {
             coinsGranted: components["schemas"]["Coins"];
             xpGranted: number;
             level: components["schemas"]["Level"];
+        };
+        /** @enum {string} */
+        AchievementTier: "bronze" | "silver" | "gold";
+        /**
+         * @description Display group. New categories can come with new content.
+         * @example games
+         * @example play
+         * @example competition
+         * @example social
+         * @example collection
+         */
+        AchievementCategory: string;
+        Achievement: {
+            code: string;
+            name: string;
+            description: string;
+            category: components["schemas"]["AchievementCategory"];
+            tier: components["schemas"]["AchievementTier"];
+            /** @description XP granted once at unlock. Achievements pay no V-Coins. */
+            rewardXp: number;
+            target: number;
+            progress: number;
+            unlockedAt: components["schemas"]["NullableTimestamp"];
+        };
+        AchievementList: {
+            unlockedCount: number;
+            totalCount: number;
+            earnedXp: number;
+            achievements: components["schemas"]["Achievement"][];
+        };
+        AchievementBadge: {
+            code: string;
+            name: string;
+            tier: components["schemas"]["AchievementTier"];
+        };
+        AchievementUnlocked: {
+            code: string;
+            name: string;
+            tier: components["schemas"]["AchievementTier"];
+            rewardXp: number;
         };
         /** @enum {string} */
         ExportStatus: "queued" | "running" | "ready" | "failed";
@@ -3673,6 +3743,29 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             410: components["responses"]["Gone"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    listMyAchievements: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Achievements. */
+            200: {
+                headers: {
+                    "Cache-Control": components["headers"]["CacheControlPrivate"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AchievementList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
             default: components["responses"]["Problem"];
         };
     };

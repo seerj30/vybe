@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Vybe.Api.Features;
 using Vybe.Api.Infrastructure;
 using Vybe.Data;
 
@@ -53,7 +54,14 @@ public sealed partial class OutboxProcessor(IServiceScopeFactory scopes, TimePro
             {
                 ChallengeResolvedJob.Kind => await ChallengeResolvedJob.RunAsync(
                     db,
+                    scope.ServiceProvider.GetRequiredService<AchievementCatalog>(),
                     JsonSerializer.Deserialize<ChallengeResolvedJob.Payload>(job.Payload, PayloadJson) ?? throw new InvalidDataException("empty payload"),
+                    now,
+                    cancellationToken),
+                AchievementSyncJob.Kind => await AchievementSyncJob.RunAsync(
+                    db,
+                    scope.ServiceProvider.GetRequiredService<AchievementCatalog>(),
+                    JsonSerializer.Deserialize<AchievementSyncJob.Payload>(job.Payload, PayloadJson) ?? throw new InvalidDataException("empty payload"),
                     now,
                     cancellationToken),
                 _ => throw new InvalidOperationException($"unknown outbox job kind {job.Kind}"),

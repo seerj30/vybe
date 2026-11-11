@@ -23,6 +23,7 @@ import {
 } from "@vybe/game-rules";
 import { isApiError } from "../api/api-client";
 import { RouterLink } from "@angular/router";
+import { AchievementToast } from "../achievements/achievement-toast";
 import { API } from "../api/api";
 import { errorMessage as playerMessage } from "../api/messages";
 import { PlayerStore } from "../player/player-store";
@@ -89,7 +90,7 @@ function randomSeed(): number {
 
 @Component({
   selector: "vybe-street-hoops",
-  imports: [DecimalPipe, RouterLink],
+  imports: [DecimalPipe, RouterLink, AchievementToast],
   templateUrl: "./street-hoops.html",
   styleUrl: "./street-hoops.css",
   changeDetection: ChangeDetectionStrategy.OnPush,

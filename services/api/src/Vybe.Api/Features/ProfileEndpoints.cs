@@ -8,7 +8,7 @@ namespace Vybe.Api.Features;
 public sealed record PublicAvatar(
     string BodyPresetId, string SkinToneId, string FacePresetId, string HairPresetId, string HairColorId, Equipped Equipped);
 
-public sealed record PublicProfile(string Handle, string? DisplayName, int Level, PublicAvatar Avatar);
+public sealed record PublicProfile(string Handle, string? DisplayName, int Level, PublicAvatar Avatar, IReadOnlyList<AchievementBadge> Badges);
 
 public sealed record PrivacySettingsRequest(ProfileVisibility? ProfileVisibility);
 
@@ -34,7 +34,8 @@ public static class ProfileEndpoints
     /// blocked caller only would tell that caller about the block (spec §2 block privacy, ADR 0005).
     /// </summary>
     private static async Task<IResult> GetAsync(
-        string handle, HttpContext context, VybeDbContext db, CurrentPlayer current, CancellationToken cancellationToken)
+        string handle, HttpContext context, VybeDbContext db, CurrentPlayer current, AchievementCatalog achievements,
+        CancellationToken cancellationToken)
     {
         // Written here, not thrown: the exception handler would clear these headers from the 404.
         context.Response.Headers.CacheControl = "private, no-store"; // contract: never stored by shared caches
@@ -50,7 +51,9 @@ public static class ProfileEndpoints
         var avatar = await db.AvatarConfigs.AsNoTracking().SingleAsync(a => a.PlayerId == player.Id, cancellationToken);
         return TypedResults.Ok(new PublicProfile(player.Handle, player.DisplayName, player.Level, new PublicAvatar(
             avatar.BodyPresetId, avatar.SkinToneId, avatar.FacePresetId, avatar.HairPresetId, avatar.HairColorId,
-            Equipped.FromJson(avatar.EquippedJson))));
+            Equipped.FromJson(avatar.EquippedJson)),
+            // P1: unlocked badges only, under the same visibility rule as the rest of the profile (decision 6).
+            await AchievementEndpoints.BadgesAsync(db, achievements, player.Id, cancellationToken)));
     }
 
     /// <summary><c>PATCH /me/privacy</c>: sets who can see the caller's profile; idempotent.</summary>

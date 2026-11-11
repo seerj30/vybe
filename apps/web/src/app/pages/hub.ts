@@ -28,7 +28,7 @@ import { QuestsCard } from "../quests/quests-card";
               @if (avatarError(); as error) {
                 <p class="notice" role="status">Your avatar could not load, so a default picture shows. {{ error }}</p>
               }
-              <a routerLink="/avatar/create">Edit avatar</a>
+              <div class="links"><a routerLink="/avatar/create">Edit avatar</a> · <a routerLink="/achievements">Achievements</a></div>
             </div>
           </div>
           <div class="card">

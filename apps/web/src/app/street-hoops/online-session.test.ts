@@ -7,6 +7,7 @@ import type { RulesetFile } from "./ruleset";
 
 const SESSION_ID = "0190a000-0000-7000-8000-000000000001";
 const REWARDS: Schemas["Rewards"] = { coins: 30, xp: 15, levelAfter: 1, noCoinsReason: null };
+const UNLOCKED: Schemas["AchievementUnlocked"][] = [{ code: "hoops_first_run", name: "First Bucket", tier: "bronze", rewardXp: 25 }];
 
 function session(overrides: Partial<Schemas["GameSession"]>): Schemas["GameSession"] {
   return {
@@ -37,7 +38,7 @@ function fakeApi(overrides: Partial<Record<keyof ApiClient, unknown>> = {}): Api
     })),
     getRuleset: vi.fn(async () => ({ ...fixture })),
     startSession: vi.fn(async () => ({ seed: 42, startedAt: "t", submitDeadline: "t" })),
-    submitSession: vi.fn(async () => ({ sessionId: SESSION_ID, status: "verified", score: 100, rewards: REWARDS })),
+    submitSession: vi.fn(async () => ({ sessionId: SESSION_ID, status: "verified", score: 100, rewards: REWARDS, achievementsUnlocked: UNLOCKED })),
     getSession: vi.fn(async () => session({ status: "verified", score: 100, rewards: REWARDS })),
     ...overrides,
   } as unknown as ApiClient;
@@ -109,7 +110,7 @@ describe("OnlineSessions", () => {
     const run = await sessions.prepare();
     const events = [{ tMs: 1000, aimX: 0, power: 500 }];
 
-    await expect(sessions.submit(run, events, 100)).resolves.toEqual({ status: "verified", score: 100, rewards: REWARDS });
+    await expect(sessions.submit(run, events, 100)).resolves.toEqual({ status: "verified", score: 100, rewards: REWARDS, unlocked: UNLOCKED });
     expect(api.submitSession).toHaveBeenCalledWith(SESSION_ID, { rulesetId: fixture.id, events, clientReportedScore: 100 }, run.submitKey);
   });
 
@@ -144,7 +145,7 @@ describe("sessionOutcome", () => {
   });
 
   it("returns the stored outcome of a final session", () => {
-    expect(sessionOutcome(session({ status: "verified", score: 7, rewards: REWARDS }))).toEqual({ status: "verified", score: 7, rewards: REWARDS });
+    expect(sessionOutcome(session({ status: "verified", score: 7, rewards: REWARDS }))).toEqual({ status: "verified", score: 7, rewards: REWARDS, unlocked: [] });
     expect(sessionOutcome(session({ status: "rejected", rejectionReason: "out_of_range" }))).toEqual({ status: "rejected", reason: "out_of_range" });
     expect(sessionOutcome(session({ status: "expired" }))).toEqual({ status: "expired" });
   });
