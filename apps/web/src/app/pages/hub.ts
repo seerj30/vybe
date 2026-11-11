@@ -56,7 +56,7 @@ import { QuestsCard } from "../quests/quests-card";
           </div>
           <div class="card social">
             <h2>Friends and leaderboard</h2>
-            <p class="muted">Add friends, challenge them, and compare your best Street Hoops score this week.</p>
+            <p class="muted">Add friends, challenge them, and compare your best score in each game this week.</p>
             <div class="actions">
               <a class="button secondary" routerLink="/friends">Friends</a>
               <a class="button secondary" routerLink="/leaderboard">Weekly leaderboard</a>
