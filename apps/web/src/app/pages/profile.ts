@@ -12,6 +12,7 @@ import { Generations } from "../challenges/generations";
 import { isBlocked, REPORT_REASONS } from "../profiles/safety";
 import { FRIENDS_API } from "../api/friends-api";
 import { friendErrorMessage, requestSentText } from "../friends/friend-view";
+import { TIER_LABELS } from "../achievements/achievement-view";
 
 type PublicProfile = Schemas["PublicProfile"];
 type ReportReason = Schemas["ReportReason"];
@@ -57,6 +58,29 @@ interface Message {
               <p class="muted">{{ p.handle }} · Level {{ p.level }}</p>
             </div>
           </div>
+
+          @if (p.badges.length > 0) {
+            <section class="card badges" data-testid="badges" aria-labelledby="badges-title">
+              <h2 id="badges-title">Badges <span class="muted small">({{ p.badges.length }})</span></h2>
+              <ul>
+                @for (b of p.badges; track b.code) {
+                  <li [attr.data-badge]="b.code">
+                    <span class="medal" [attr.data-tier]="b.tier" aria-hidden="true">★</span>
+                    {{ b.name }}<span class="visually-hidden"> ({{ tier[b.tier] }})</span>
+                  </li>
+                }
+              </ul>
+              @if (isMe()) {
+                <a routerLink="/achievements">All achievements and progress</a>
+              }
+            </section>
+          } @else if (isMe()) {
+            <section class="card badges" aria-labelledby="badges-title">
+              <h2 id="badges-title">Badges</h2>
+              <p class="muted">No badges yet. Finish a run to unlock your first one.</p>
+              <a routerLink="/achievements">See all achievements</a>
+            </section>
+          }
 
           @if (isMe()) {
             @if (player.me()?.profileVisibility === "private") {
@@ -164,6 +188,13 @@ interface Message {
     .head h1 { margin: 0; }
     .head p { margin: 0; }
     .card + .card { margin-top: 16px; }
+    .badges { margin-bottom: 16px; }
+    .badges ul { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+    .badges li { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: #141826; font-weight: 600; }
+    .medal { color: #cd7f32; }
+    .medal[data-tier="silver"] { color: #c9d1e0; }
+    .medal[data-tier="gold"] { color: #ffc83d; }
+    .small { font-size: 14px; font-weight: 400; }
     h2:focus { outline: none; }
     h2 { margin: 0 0 8px; font-size: 18px; }
     fieldset { border: 0; padding: 0; margin: 0 0 12px; }
@@ -187,6 +218,7 @@ export class Profile {
   protected readonly name = playerName;
   protected readonly player = inject(PlayerStore);
   protected readonly reasons = REPORT_REASONS;
+  protected readonly tier = TIER_LABELS;
 
   protected readonly state = signal<Load>({ kind: "loading" });
   protected readonly blocked = signal(false);

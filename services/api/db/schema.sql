@@ -820,3 +820,28 @@ VALUES ('20261111065922_FriendsAndLeaderboard', '10.0.13');
 
 COMMIT;
 
+START TRANSACTION;
+ALTER TABLE vybe.achievements ADD is_active boolean NOT NULL DEFAULT FALSE;
+
+ALTER TABLE vybe.achievements ADD reward_xp integer NOT NULL DEFAULT 0;
+
+ALTER TABLE vybe.achievements ADD version integer NOT NULL DEFAULT 0;
+
+CREATE TABLE vybe.player_stats (
+    player_id uuid NOT NULL,
+    stat text NOT NULL,
+    value bigint NOT NULL,
+    updated_at timestamp with time zone NOT NULL DEFAULT (now()),
+    CONSTRAINT pk_player_stats PRIMARY KEY (player_id, stat),
+    CONSTRAINT ck_player_stats_stat CHECK (stat ~ '^[a-z0-9_:-]{1,64}$'),
+    CONSTRAINT ck_player_stats_value CHECK (value >= 0),
+    CONSTRAINT fk_player_stats_players_player_id FOREIGN KEY (player_id) REFERENCES vybe.players (id) ON DELETE RESTRICT
+);
+
+ALTER TABLE vybe.achievements ADD CONSTRAINT ck_achievements_reward_xp CHECK (reward_xp >= 0);
+
+INSERT INTO vybe.__ef_migrations_history (migration_id, product_version)
+VALUES ('20261111083937_Achievements', '10.0.13');
+
+COMMIT;
+

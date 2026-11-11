@@ -42,6 +42,11 @@ export class SocialApi {
     return this.data("POST", `/me/quests/${segment(playerQuestId)}/claim`, { idempotencyKey });
   }
 
+  /** P1 achievements (docs/design/p1-achievements.md): every achievement with the caller's server-computed progress. */
+  listAchievements(): Promise<Schemas["AchievementList"]> {
+    return this.data("GET", "/me/achievements");
+  }
+
   getProfile(handle: string): Promise<Schemas["PublicProfile"]> {
     return this.data("GET", `/profiles/${segment(handle)}`);
   }

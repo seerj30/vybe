@@ -52,7 +52,8 @@ public sealed class ChallengeTests(ApiFactory api)
         await RunOutboxAsync();
         Assert.Equal(1, await LedgerCountAsync(recipient.Id, $"challenge:{challengeId}"));
         Assert.Equal(0, await LedgerCountAsync(creator.Id, $"challenge:{challengeId}"));
-        Assert.Equal(150 + 50, (await recipient.MeAsync()).GetProperty("walletBalance").GetInt64());
+        // + 100: the first run's achievement XP (P1 "First Bucket") reaches level 2.
+        Assert.Equal(150 + 100 + 50, (await recipient.MeAsync()).GetProperty("walletBalance").GetInt64());
 
         var created = await ListAsync(creator, "?role=created");
         Assert.Contains(created.GetProperty("items").EnumerateArray(), c => c.GetProperty("challengeId").GetGuid() == challengeId);

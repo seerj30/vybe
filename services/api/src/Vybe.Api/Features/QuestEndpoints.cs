@@ -69,7 +69,7 @@ public static class QuestEndpoints
 
     private static async Task<IResult> ClaimAsync(
         Guid playerQuestId, HttpContext context, VybeDbContext db, CurrentPlayer current, Idempotency idempotency, TimeProvider clock,
-        CancellationToken cancellationToken)
+        AchievementCatalog achievements, CancellationToken cancellationToken)
     {
         var playerId = await current.GetIdAsync(cancellationToken);
         var body = await RequestBody.ReadAsync(context, cancellationToken);
@@ -108,6 +108,7 @@ public static class QuestEndpoints
             // Quest XP is not limited by the daily gameplay cap (spec §8).
             await RewardService.AddXpAsync(db, player, definition.RewardXp, ct);
             await db.SaveChangesAsync(ct);
+            await AchievementProgress.SyncCountsAsync(db, achievements, playerId, now, ct); // P1: quests_claimed
             return new OperationResult(200, new QuestClaimed(definition.RewardCoins, definition.RewardXp, player.Level));
         }, cancellationToken);
     }

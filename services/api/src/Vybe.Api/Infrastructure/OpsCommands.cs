@@ -115,6 +115,7 @@ public static partial class OpsCommands
                     ?? throw new InvalidOperationException("Content:Root is not configured"));
                 await ContentSeeder.SeedAsync(db, content, TimeProvider.System, cancellationToken);
                 await QuestSeeder.SeedAsync(db, content.Options.Root, cancellationToken);
+                await AchievementSeeding.SeedAndBackfillAsync(db, new AchievementCatalog(content.Options.Root), TimeProvider.System, cancellationToken);
                 LogSeeded(logger, content.Rulesets.Count, content.Catalog.Items.Length, content.Catalog.CatalogVersion);
                 break;
 

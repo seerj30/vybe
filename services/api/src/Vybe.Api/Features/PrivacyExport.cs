@@ -121,6 +121,14 @@ public static class PlayerDataExport
                 .OrderBy(s => s.WeekStart).ThenBy(s => s.GameId)
                 .Select(s => new { s.GameId, s.WeekStart, s.BestScore, s.SessionId, s.AchievedAt })
                 .ToListAsync(cancellationToken),
+            // P1 achievements: unlocks and the server-computed stats behind them.
+            achievements = await db.PlayerAchievements.AsNoTracking().Where(a => a.PlayerId == playerId)
+                .Join(db.Achievements, p => p.AchievementId, a => a.Id, (p, a) => new { a.Code, p.UnlockedAt })
+                .OrderBy(a => a.UnlockedAt).ThenBy(a => a.Code)
+                .ToListAsync(cancellationToken),
+            stats = await db.PlayerStats.AsNoTracking().Where(s => s.PlayerId == playerId).OrderBy(s => s.Stat)
+                .Select(s => new { s.Stat, s.Value, s.UpdatedAt })
+                .ToListAsync(cancellationToken),
         };
     }
 }

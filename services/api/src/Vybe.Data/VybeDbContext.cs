@@ -35,6 +35,7 @@ public sealed class VybeDbContext(DbContextOptions<VybeDbContext> options) : DbC
     public DbSet<Friendship> Friendships => Set<Friendship>();
     public DbSet<FriendRequestCounter> FriendRequestCounters => Set<FriendRequestCounter>();
     public DbSet<WeeklyLeaderboardScore> WeeklyLeaderboardScores => Set<WeeklyLeaderboardScore>();
+    public DbSet<PlayerStat> PlayerStats => Set<PlayerStat>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

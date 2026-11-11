@@ -1,59 +1,10 @@
-import type { Page } from "@playwright/test";
-import type { JuggleTouch, StreetJuggleConfig } from "../../../packages/game-rules/src/index.ts";
-import { autoplay } from "../../../packages/game-rules/src/juggle-autoplay.ts";
 import { expect, newPlayer, summaryValue, walletBalance } from "./app.ts";
 import { backdateRunStart } from "./shots.ts";
 import { test } from "./street-hoops.ts";
+import { openOnlineStreetJuggle, rewriteTouches, startRun, touch } from "./street-juggle.ts";
 
 // Street Juggle E2E cases (docs/design/p1-second-game.md §7).
 const VERIFIED = "Run verified by VYBE";
-const START_PATH = /\/api\/v1\/games\/sessions\/([^/]+)\/start$/;
-
-/**
- * Test data, as `rewriteShots` does for Street Hoops: before the submit leaves the page, the trace becomes the
- * scripted player's run for this seed (`perfect`) or a trace with one tampered value (`tampered`). The server
- * still checks the whole trace.
- */
-async function rewriteTouches(page: Page, mode: "perfect" | "tampered"): Promise<void> {
-  let seed: number | undefined;
-  page.on("response", async (response) => {
-    if (START_PATH.test(new URL(response.url()).pathname) && response.ok()) {
-      seed = ((await response.json()) as { seed: number }).seed;
-    }
-  });
-  await page.route("**/api/v1/games/sessions/*/submit", async (route) => {
-    const body = JSON.parse(route.request().postData() ?? "{}") as { rulesetId: string; events: JuggleTouch[] };
-    if (seed === undefined) throw new Error("The start response was not seen");
-    const ruleset = await page.request.get(`/api/v1/games/rulesets/${body.rulesetId}`);
-    const { config } = (await ruleset.json()) as { config: StreetJuggleConfig };
-    const events = mode === "perfect" ? autoplay(config, seed) : body.events.map((e, i) => (i === 0 ? { ...e, lane: config.lanes } : e));
-    await route.fallback({ postData: JSON.stringify({ ...body, events }) });
-  });
-}
-
-/** Opens Street Juggle on an API session (needs a player). */
-async function openOnlineStreetJuggle(page: Page): Promise<void> {
-  await page.goto("/arcade/street-juggle");
-  await expect(page.getByRole("button", { name: "Start 60 s run" })).toBeEnabled();
-}
-
-/** Starts a run; returns the session id. The spot buttons show while the run is on. */
-async function startRun(page: Page): Promise<string> {
-  const started = page.waitForResponse((r) => START_PATH.test(new URL(r.url()).pathname));
-  await page.getByRole("button", { name: /^(Start 60 s run|Play again)$/ }).click();
-  const sessionId = START_PATH.exec(new URL((await started).url()).pathname)?.[1] ?? "";
-  await expect(page.getByRole("button", { name: "Touch the centre spot" })).toBeVisible();
-  return sessionId;
-}
-
-/** Touches the spots with the keyboard, each more than minGapMs (150 ms) after the last. */
-async function touch(page: Page, count: number): Promise<void> {
-  const keys = ["ArrowLeft", "ArrowDown", "ArrowRight"];
-  for (let i = 0; i < count; i++) {
-    await page.keyboard.press(keys[i % keys.length]!);
-    await page.clock.runFor(200);
-  }
-}
 
 test("S1: guest → hub picker → Street Juggle run → verified score, coins and XP → wallet", async ({ page }) => {
   await newPlayer(page);
@@ -76,9 +27,12 @@ test("S1: guest → hub picker → Street Juggle run → verified score, coins a
   expect(await summaryValue(page, "XP")).toBeGreaterThan(0);
   await expect(page.getByRole("link", { name: "Challenge a friend with this run" })).toBeVisible();
 
+  // Each new level pays 100 V-Coins; the first run's achievement XP (P1, "First Touch") reaches level 2.
+  const levelCoins = (await summaryValue(page, "Level") - 1) * 100;
+
   await page.getByRole("link", { name: "Back to the arcade" }).click();
   await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Hub" }).click();
-  await expect(walletBalance(page)).toHaveText(String(coins));
+  await expect(walletBalance(page)).toHaveText(String(coins + levelCoins));
 });
 
 test("S2: a Street Juggle run with fewer than 5 touches is verified without rewards and says why", async ({ page }) => {

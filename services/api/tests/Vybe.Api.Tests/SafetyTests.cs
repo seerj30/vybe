@@ -21,7 +21,7 @@ public sealed class SafetyTests(ApiFactory api)
         Assert.Equal("private, no-store", seenByOther.Headers.NonValidated["Cache-Control"].ToString());
         var profile = await Contract.AssertAsync(seenByOther, HttpStatusCode.OK, "PublicProfile");
         Assert.Equal(handle, profile.GetProperty("handle").GetString());
-        Assert.Equal(["avatar", "displayName", "handle", "level"], profile.EnumerateObject().Select(p => p.Name).Order());
+        Assert.Equal(["avatar", "badges", "displayName", "handle", "level"], profile.EnumerateObject().Select(p => p.Name).Order());
 
         // A block never changes the answer, so the blocked player cannot detect it.
         await BlockOkAsync(player, await HandleAsync(other));

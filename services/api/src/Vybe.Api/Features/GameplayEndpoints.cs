@@ -201,7 +201,7 @@ public static class GameplayEndpoints
 
     private static async Task<IResult> SubmitAsync(
         Guid sessionId, HttpContext context, VybeDbContext db, CurrentPlayer current, Idempotency idempotency,
-        TimeProvider clock, CancellationToken cancellationToken)
+        TimeProvider clock, AchievementCatalog achievements, CancellationToken cancellationToken)
     {
         var playerId = await current.GetIdAsync(cancellationToken);
         var body = await RequestBody.ReadAsync(context, cancellationToken);
@@ -222,13 +222,13 @@ public static class GameplayEndpoints
             var hash = Idempotency.Hash("games.submit", sessionId.ToString(), body);
             var events = shape.Events.Clone();
             return await idempotency.RunAsync(context, playerId.ToString(), "games.submit", hash,
-                ct => VerifyAsync(db, clock, playerId, sessionId, shape.RulesetId, events, ct), cancellationToken);
+                ct => VerifyAsync(db, clock, achievements, playerId, sessionId, shape.RulesetId, events, ct), cancellationToken);
         }
     }
 
     private static async Task<OperationResult> VerifyAsync(
-        VybeDbContext db, TimeProvider clock, Guid playerId, Guid sessionId, string submittedRulesetId, JsonElement events,
-        CancellationToken cancellationToken)
+        VybeDbContext db, TimeProvider clock, AchievementCatalog achievements, Guid playerId, Guid sessionId, string submittedRulesetId,
+        JsonElement events, CancellationToken cancellationToken)
     {
         // Lock order player row, then session row: the same order as create-session, which locks the
         // player and then expires the open session. The opposite order deadlocks the two.
@@ -242,7 +242,7 @@ public static class GameplayEndpoints
         // A finished session always answers with its canonical result (spec §6).
         if (session.Status is GameSessionStatus.Verified or GameSessionStatus.Rejected or GameSessionStatus.Expired)
         {
-            return await CanonicalAsync(db, session, cancellationToken);
+            return await CanonicalAsync(db, achievements, session, cancellationToken);
         }
 
         var now = clock.UtcNowForDb();
@@ -296,9 +296,19 @@ public static class GameplayEndpoints
         session.RewardXp = rewards.Xp;
         AddTrace(db, session, eventsJson, eventCount, now);
         await db.SaveChangesAsync(cancellationToken);
-        if (LeaderboardEndpoints.Counts(session, runNumber is not null))
+        var counts = LeaderboardEndpoints.Counts(session, runNumber is not null);
+        if (counts)
         {
             await LeaderboardEndpoints.RecordAsync(db, session, verdict.Score, now, cancellationToken);
+        }
+
+        // P1 achievements: same transaction, after the leaderboard row (the weekly rank reads it). Reward-eligible runs only.
+        IReadOnlyList<AchievementUnlocked> unlocked = runNumber is { } number
+            ? await AchievementProgress.RecordRunAsync(db, achievements, session, counts, number, now, cancellationToken)
+            : [];
+        if (unlocked.Count > 0)
+        {
+            rewards = rewards with { LevelAfter = await db.Players.Where(p => p.Id == playerId).Select(p => p.Level).SingleAsync(cancellationToken) };
         }
 
         if (session.ChallengeId is not null)
@@ -306,7 +316,14 @@ public static class GameplayEndpoints
             await ChallengeRuns.ResolveAsync(db, session, verdict.Score, now, cancellationToken);
         }
 
-        return new OperationResult(200, new { sessionId = session.Id, status = "verified", score = verdict.Score, rewards });
+        return new OperationResult(200, new
+        {
+            sessionId = session.Id,
+            status = "verified",
+            score = verdict.Score,
+            rewards,
+            achievementsUnlocked = unlocked,
+        });
     }
 
     private static async Task<OperationResult> FinishRejectedAsync(
@@ -323,7 +340,8 @@ public static class GameplayEndpoints
         return new OperationResult(200, new { sessionId = session.Id, status = "rejected", rejectionReason = reason });
     }
 
-    private static async Task<OperationResult> CanonicalAsync(VybeDbContext db, GameSession session, CancellationToken cancellationToken) =>
+    private static async Task<OperationResult> CanonicalAsync(
+        VybeDbContext db, AchievementCatalog achievements, GameSession session, CancellationToken cancellationToken) =>
         session.Status switch
         {
             GameSessionStatus.Verified => new OperationResult(200, new
@@ -334,6 +352,7 @@ public static class GameplayEndpoints
                 rewards = await StoredRewardsAsync(db, session,
                     await db.Players.Where(p => p.Id == session.PlayerId).Select(p => p.Level).SingleAsync(cancellationToken),
                     cancellationToken),
+                achievementsUnlocked = await AchievementProgress.UnlockedByRunAsync(db, achievements, session, cancellationToken),
             }),
             GameSessionStatus.Rejected => new OperationResult(200, new
             {

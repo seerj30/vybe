@@ -61,7 +61,11 @@ internal sealed class AchievementConfiguration : IEntityTypeConfiguration<Achiev
 {
     public void Configure(EntityTypeBuilder<Achievement> b)
     {
-        b.ToTable("achievements", t => t.Check("criteria_object", "jsonb_typeof(criteria) = 'object'"));
+        b.ToTable("achievements", t =>
+        {
+            t.Check("criteria_object", "jsonb_typeof(criteria) = 'object'");
+            t.Check("reward_xp", "reward_xp >= 0");
+        });
         b.Property(x => x.Criteria).Jsonb();
         b.Property(x => x.CreatedAt).DefaultNow();
         b.HasIndex(x => x.Code).IsUnique();
@@ -80,5 +84,20 @@ internal sealed class PlayerAchievementConfiguration : IEntityTypeConfiguration<
         b.HasIndex(x => x.AchievementId);
         b.HasOne<Player>().WithMany().HasForeignKey(x => x.PlayerId);
         b.HasOne<Achievement>().WithMany().HasForeignKey(x => x.AchievementId);
+    }
+}
+
+internal sealed class PlayerStatConfiguration : IEntityTypeConfiguration<PlayerStat>
+{
+    public void Configure(EntityTypeBuilder<PlayerStat> b)
+    {
+        b.ToTable("player_stats", t =>
+        {
+            t.Check("value", "value >= 0");
+            t.Check("stat", "stat ~ '^[a-z0-9_:-]{1,64}$'");
+        });
+        b.HasKey(x => new { x.PlayerId, x.Stat });
+        b.Property(x => x.UpdatedAt).DefaultNow();
+        b.HasOne<Player>().WithMany().HasForeignKey(x => x.PlayerId);
     }
 }

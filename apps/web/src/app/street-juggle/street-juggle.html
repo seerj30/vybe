@@ -61,6 +61,7 @@
                   <div><dt>XP</dt><dd>+{{ o.rewards.xp }}</dd></div>
                   <div><dt>Level</dt><dd>{{ o.rewards.levelAfter }}</dd></div>
                 </dl>
+                <vybe-achievement-toast [unlocked]="o.unlocked" />
                 @if (o.rewards.noCoinsReason; as reason) {
                   @if (ruleset(); as r) {
                     <p class="help">{{ noCoinsText(reason, r.config) }}</p>

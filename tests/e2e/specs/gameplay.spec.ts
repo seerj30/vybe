@@ -31,10 +31,12 @@ test("E01: guest → avatar → tutorial → verified game → wallet", async ({
   const coins = await summaryValue(page, "V-Coins");
   expect(coins).toBeGreaterThan(0);
   expect(await summaryValue(page, "XP")).toBeGreaterThan(0);
+  // Each new level pays 100 V-Coins (achievement XP can reach level 2 on the first run, P1).
+  const levelCoins = (await summaryValue(page, "Level") - 1) * 100;
 
   await page.getByRole("link", { name: "Back to the arcade" }).click();
   await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Hub" }).click();
-  await expect(walletBalance(page)).toHaveText(String(coins));
+  await expect(walletBalance(page)).toHaveText(String(coins + levelCoins));
 });
 
 test("E05: a lost submit response, retried, and duplicate submits pay the reward once", async ({ page }) => {
@@ -62,6 +64,7 @@ test("E05: a lost submit response, retried, and duplicate submits pay the reward
   await expect(page.getByText(VERIFIED)).toBeVisible();
   const score = await summaryValue(page, "Score");
   const coins = await summaryValue(page, "V-Coins");
+  const levelCoins = (await summaryValue(page, "Level") - 1) * 100; // achievement XP can add a level (P1)
 
   // The same request again, with its key and with a new key: the canonical result, no second reward.
   if (first === null) throw new Error("The submit request was not seen");
@@ -80,7 +83,7 @@ test("E05: a lost submit response, retried, and duplicate submits pay the reward
   const reasons = await ledgerReasons(await page.request.get("/api/v1/me/wallet/transactions"));
   expect(reasons.filter((r) => r === "game_reward")).toHaveLength(1);
   await page.goto("/hub");
-  await expect(walletBalance(page)).toHaveText(String(coins));
+  await expect(walletBalance(page)).toHaveText(String(coins + levelCoins));
 });
 
 test("a trace that claims more game time than has passed is rejected and pays nothing", async ({ page }) => {

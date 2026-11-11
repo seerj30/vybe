@@ -60,7 +60,9 @@ All targets are *provisional*.
 (14 bronze, 10 silver, 5 gold): less than two days of the 800 daily game XP cap. Achievement XP is not limited by the
 daily game XP cap (same rule as quest XP, spec §8). **Effect on V-Coins:** XP raises the level, and every new level
 pays 100 V-Coins (spec §8). 1,350 XP moves a new player from level 1 to level 4 sooner (300 V-Coins earlier) and a
-level 20 player by at most one level. No achievement pays V-Coins directly.
+level 20 player by at most one level. No achievement pays V-Coins directly. In practice the first verified run of a new
+player now reaches level 2 at once (80 run XP + 25 XP for "First Bucket" ≥ 100), so the 100 V-Coin level reward comes
+on run 1 instead of run 2. Badge only is a one-line content change (`rewardXp: 0`) if product prefers it.
 
 ## Why a manifest
 
@@ -79,8 +81,9 @@ Definitions are versioned content in `assets/manifests/achievements.v1.json`, th
 
 The spec §4 tables exist since the initial schema and have no writer yet.
 
-**`achievements`** (exists): add `version int NOT NULL DEFAULT 1` and `is_active bool NOT NULL DEFAULT true`.
-`criteria` is `{"stat": text, "target": int ≥ 1}`.
+**`achievements`** (exists, no rows yet): add `version int`, `reward_xp int CHECK (reward_xp >= 0)` and
+`is_active bool` (all `NOT NULL`; the seeder sets them). `criteria` is `{"stat": text, "target": int ≥ 1}`. The unlock
+pays the `reward_xp` of the row, so the transaction needs no manifest.
 
 **`player_achievements`** (exists): `(player_id, achievement_id) PK`, `unlocked_at`. One row per unlock. A row is
 never updated.
@@ -107,7 +110,8 @@ that runs twice changes nothing. The `+1` writes run once per session: the sessi
 `active → verified` status change make the verification run once.
 
 The weekly rank uses the global board rule: 1 + the number of listed players (not private, not deleting, deleted or
-suspended) with a higher best score in the same game and week. Ties share a rank. The rank is the rank at the time of
+suspended) with a higher best score in the same game and week. Ties share a rank. A private player gets the own rank
+too, as in the board's `me` field (the badge then shows only to that player). The rank is the rank at the time of
 the run; a later better run of another player does not take the achievement away.
 
 ## Unlock rule
@@ -148,21 +152,24 @@ Why a job for friends and purchases: friend accept holds the pair lock and a `FO
 an upgrade to `FOR NO KEY UPDATE` there can deadlock with a second accept for the same player. The purchase locks the
 wallet before the player row is ever locked; a player row lock after it inverts the verification order (player →
 wallet). The job takes the player row in its own transaction, in the existing outbox order. The unlock then comes a
-few seconds later (outbox poll interval), which is acceptable for these achievements.
+few seconds later (outbox poll interval), which is acceptable for these achievements. Each event queues its own job
+(no dedupe key: an upsert on a pending job row could wait on the row that the running job locks, and that job then
+waits on the player and wallet rows). The volume is bounded by one purchase per item and the friend limits.
 
 ## API (contract `packages/contracts/openapi/vybe-api.v1.yaml`)
 
 **`GET /me/achievements`** (signed-in; `Cache-Control: private, no-store`): read only.
 
 ```json
-{ "unlockedCount": 3, "totalCount": 29, "totalXp": 1350,
+{ "unlockedCount": 3, "totalCount": 29, "earnedXp": 75,
   "achievements": [ { "code": "hoops_first_run", "name": "First Bucket", "description": "…",
     "category": "games", "tier": "bronze", "rewardXp": 25, "target": 1, "progress": 1,
     "unlockedAt": "2026-11-11T10:00:00Z" } ] }
 ```
 
-`progress` is `min(stat, target)`. Order: the manifest order (category, then tier). Categories: `games`, `play`,
-`challenges`, `social`, `collection`.
+`progress` is `min(stat, target)`. `earnedXp` is the XP of the unlocked achievements. Order: the manifest order
+(category, then tier). Categories: `games`, `play`, `competition` (challenges and the weekly leaderboard), `social`,
+`collection`.
 
 **Public profile** `GET /profiles/{handle}`: new field `badges: [{ code, name, tier }]`, unlocked only, gold first.
 The profile rules do not change (decision 6): signed-in callers only, a private profile only for its owner, every
@@ -170,17 +177,18 @@ other case is the 404 of an unknown handle. So a stranger never sees a private p
 the profile answer (ADR 0005: a different answer would tell the block), so they do not change the badges.
 No `unlockedAt` on the public profile (data minimization: unlock times tell when a player was online).
 
-**Run submit** (verified result) and `GET`-free replays: new field `achievementsUnlocked: [{ code, name, tier,
+**Run submit** (verified result and its replays): new field `achievementsUnlocked: [{ code, name, tier,
 rewardXp }]`, empty when nothing unlocked. A replay of the same session answers the same list (unlocks with
 `unlocked_at = verified_at` of that session, which only that transaction writes). `rewards.levelAfter` includes the
 achievement XP.
 
 ## Backfill
 
-Small data (beta): one computation, in the deploy `seed` step, after the achievement seeder. It runs when the seeder
-inserts a new definition (so once for this release, and again only when new achievements come). It also runs in
-Development and tests through the same seeder call. For each player that is not deleting or deleted, in its own
-transaction with the player row lock:
+Small data (beta): one computation in the deploy `seed` step (`release` runs it after `migrate`), after the achievement
+seeder. It runs on every seed: it is idempotent, so a backfill that stopped half way (a failed deploy) completes on the
+next one (revisit the cost at about 10,000 players). It also runs in Development and tests through the same call. For
+each player that is not deleting or deleted (checked again after the row lock), in its own transaction with the player
+row lock:
 
 - `runs`, `runs:{gameId}`, `best:{gameId}`, `games_played`: from the player's verified `game_sessions`, with the
   same eligibility rule (`Rewards.Ineligibility` with the ruleset config) and the same leaderboard rule for `best`.

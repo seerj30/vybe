@@ -50,7 +50,8 @@ public static class OutfitEndpoints
     /// player; <c>UNIQUE(player_id, slot)</c> and the slot CHECK are the database guard of the limit.
     /// </summary>
     private static async Task<IResult> SaveAsync(
-        OutfitNameRequest request, VybeDbContext db, CurrentPlayer current, TimeProvider clock, CancellationToken cancellationToken)
+        OutfitNameRequest request, VybeDbContext db, CurrentPlayer current, TimeProvider clock, AchievementCatalog achievements,
+        CancellationToken cancellationToken)
     {
         var name = ValidName(request);
         var playerId = await current.GetIdAsync(cancellationToken);
@@ -84,6 +85,7 @@ public static class OutfitEndpoints
             throw Problem.Of(409, "outfit_limit_reached");
         }
 
+        await AchievementProgress.SyncCountsAsync(db, achievements, playerId, now, cancellationToken); // P1: outfits_saved, player row held
         await transaction.CommitAsync(cancellationToken);
         return TypedResults.Created($"/api/v1/me/outfits/{outfit.Id}", new OutfitCreated(outfit.Id));
     }

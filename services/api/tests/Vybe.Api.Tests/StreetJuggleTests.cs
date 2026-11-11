@@ -39,7 +39,8 @@ public sealed class StreetJuggleTests(ApiFactory api)
 
         var session = await Contract.AssertAsync(await player.Http.GetAsync($"/api/v1/games/sessions/{run.SessionId}"), HttpStatusCode.OK, "GameSession");
         Assert.Equal("street-juggle", session.GetProperty("gameId").GetString());
-        Assert.Equal(150, (await player.MeAsync()).GetProperty("walletBalance").GetInt64());
+        // 150 run coins + 100 level reward: "First Touch" (+25 XP) lifts the first run's 80 XP to level 2 (P1 achievements).
+        Assert.Equal(150 + 100, (await player.MeAsync()).GetProperty("walletBalance").GetInt64());
 
         // Daily quests count reward-eligible runs of every game (design §5).
         var quests = await QuestTests.ListAsync(player);

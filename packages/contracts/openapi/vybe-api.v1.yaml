@@ -45,6 +45,8 @@ tags:
     description: Friend requests and friend lists (P1).
   - name: leaderboards
     description: Weekly leaderboards (P1).
+  - name: achievements
+    description: Achievements and badges (P1). Progress is computed on the server only.
   - name: account
     description: Data export and deletion.
   - name: admin
@@ -1449,6 +1451,32 @@ paths:
         default:
           $ref: "#/components/responses/Problem"
 
+  # ------------------------------------------------------------- achievements
+  /me/achievements:
+    get:
+      tags: [achievements]
+      operationId: listMyAchievements
+      summary: List achievements with the caller's progress
+      description: |
+        Every active achievement (P1, docs/design/p1-achievements.md) in display order, with the
+        caller's server-computed progress. `progress` is the stat value capped at `target`; an
+        unlocked achievement has `progress = target` and `unlockedAt`. Read only.
+        `Cache-Control: private, no-store`.
+      responses:
+        "200":
+          description: Achievements.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlPrivate"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AchievementList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+
   # ------------------------------------------------------------------ account
   /me/data-export:
     post:
@@ -2423,7 +2451,7 @@ components:
               $ref: "#/components/schemas/Equipped"
     PublicProfile:
       type: object
-      required: [handle, displayName, level, avatar]
+      required: [handle, displayName, level, avatar, badges]
       properties:
         handle:
           $ref: "#/components/schemas/Handle"
@@ -2433,6 +2461,11 @@ components:
           $ref: "#/components/schemas/Level"
         avatar:
           $ref: "#/components/schemas/PublicAvatar"
+        badges:
+          description: Unlocked achievements (P1), gold first. No unlock times (data minimization).
+          type: array
+          items:
+            $ref: "#/components/schemas/AchievementBadge"
     PlayerSummary:
       type: object
       required: [handle, displayName, level]
@@ -3230,7 +3263,7 @@ components:
           const: submitted
     SubmitVerified:
       type: object
-      required: [sessionId, status, score, rewards]
+      required: [sessionId, status, score, rewards, achievementsUnlocked]
       properties:
         sessionId:
           $ref: "#/components/schemas/Uuid"
@@ -3242,6 +3275,13 @@ components:
           minimum: 0
         rewards:
           $ref: "#/components/schemas/Rewards"
+        achievementsUnlocked:
+          description: |
+            Achievements this run unlocked (P1), empty when none. A replay of the same session gives the
+            same list. `rewards.levelAfter` includes their XP.
+          type: array
+          items:
+            $ref: "#/components/schemas/AchievementUnlocked"
     SubmitRejected:
       type: object
       required: [sessionId, status, rejectionReason]
@@ -3513,6 +3553,82 @@ components:
           minimum: 0
         level:
           $ref: "#/components/schemas/Level"
+
+    # ----------------------------------------------------------- achievements
+    AchievementTier:
+      type: string
+      enum: [bronze, silver, gold]
+    AchievementCategory:
+      type: string
+      description: Display group. New categories can come with new content.
+      examples: [games, play, competition, social, collection]
+    Achievement:
+      type: object
+      required: [code, name, description, category, tier, rewardXp, target, progress, unlockedAt]
+      properties:
+        code:
+          type: string
+          pattern: "^[a-z0-9_]{1,64}$"
+        name:
+          type: string
+        description:
+          type: string
+        category:
+          $ref: "#/components/schemas/AchievementCategory"
+        tier:
+          $ref: "#/components/schemas/AchievementTier"
+        rewardXp:
+          description: XP granted once at unlock. Achievements pay no V-Coins.
+          type: integer
+          minimum: 0
+        target:
+          type: integer
+          minimum: 1
+        progress:
+          type: integer
+          minimum: 0
+        unlockedAt:
+          $ref: "#/components/schemas/NullableTimestamp"
+    AchievementList:
+      type: object
+      required: [unlockedCount, totalCount, earnedXp, achievements]
+      properties:
+        unlockedCount:
+          type: integer
+          minimum: 0
+        totalCount:
+          type: integer
+          minimum: 0
+        earnedXp:
+          type: integer
+          minimum: 0
+        achievements:
+          type: array
+          items:
+            $ref: "#/components/schemas/Achievement"
+    AchievementBadge:
+      type: object
+      required: [code, name, tier]
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        tier:
+          $ref: "#/components/schemas/AchievementTier"
+    AchievementUnlocked:
+      type: object
+      required: [code, name, tier, rewardXp]
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        tier:
+          $ref: "#/components/schemas/AchievementTier"
+        rewardXp:
+          type: integer
+          minimum: 0
 
     # ---------------------------------------------------------------- account
     ExportStatus:

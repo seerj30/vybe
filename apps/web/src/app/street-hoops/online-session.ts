@@ -13,7 +13,7 @@ export interface OnlineRun<C = StreetHoopsConfig> {
 }
 
 export type RunOutcome =
-  | { status: "verified"; score: number; rewards: Schemas["Rewards"] }
+  | { status: "verified"; score: number; rewards: Schemas["Rewards"]; unlocked: Schemas["AchievementUnlocked"][] }
   | { status: "rejected"; reason: Schemas["RejectionReason"] }
   | { status: "expired" };
 
@@ -97,7 +97,7 @@ export class OnlineSessions<C = StreetHoopsConfig> {
 function outcomeOf(result: Schemas["SubmitResult"]): RunOutcome {
   switch (result.status) {
     case "verified":
-      return { status: "verified", score: result.score, rewards: result.rewards };
+      return { status: "verified", score: result.score, rewards: result.rewards, unlocked: result.achievementsUnlocked };
     case "rejected":
       return { status: "rejected", reason: result.rejectionReason };
     case "expired":
@@ -109,7 +109,8 @@ export function sessionOutcome(session: Schemas["GameSession"]): RunOutcome | nu
   switch (session.status) {
     case "verified":
       return session.score !== null && session.rewards !== null
-        ? { status: "verified", score: session.score, rewards: session.rewards }
+        ? // The session read has no unlock list; the run result toast then shows nothing, /achievements has them.
+          { status: "verified", score: session.score, rewards: session.rewards, unlocked: [] }
         : null;
     case "rejected":
       return session.rejectionReason !== null ? { status: "rejected", reason: session.rejectionReason } : null;

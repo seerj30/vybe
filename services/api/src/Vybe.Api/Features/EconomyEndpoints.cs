@@ -150,6 +150,8 @@ public static class EconomyEndpoints
                 SourceTransactionId = entry.Id,
             });
             await db.SaveChangesAsync(ct);
+            // P1 items_bought: in the outbox, because this transaction holds the wallet lock and must not lock the player row.
+            await AchievementSyncJob.QueueAsync(db, playerId, now, ct);
             return new OperationResult(200, new PurchaseResponse(entry.Id, item.Id, entry.BalanceAfter));
         }, cancellationToken);
     }
