@@ -196,7 +196,11 @@ const PROBLEMS: Record<LayoutProblem, string> = {
     .tray-item { display: grid; grid-template-columns: 48px 1fr auto; gap: 10px; align-items: center; }
     .tray-item vybe-item-thumb { width: 48px; }
     .sr-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-    @media (min-width: 900px) { .layout { grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr); align-items: start; } }
+    @media (min-width: 900px) {
+      .layout { grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr); align-items: start; }
+      /* The room stays in view while the player works in the long list beside it. */
+      .stage { position: sticky; top: 16px; }
+    }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

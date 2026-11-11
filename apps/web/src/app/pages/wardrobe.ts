@@ -43,6 +43,7 @@ const ACCESSORY: readonly Place[] = [
   template: `
     <section class="page">
       <h1>Wardrobe</h1>
+      <p class="muted">Furniture and decor go in <a routerLink="/room">My Room</a>.</p>
       @if (loadError(); as error) {
         <p class="error" role="alert">{{ error }}</p>
         <button type="button" class="button" (click)="load()">Try again</button>

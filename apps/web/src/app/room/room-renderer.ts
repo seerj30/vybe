@@ -42,6 +42,9 @@ const CELL = ROOM.cellMeters;
 const WALL_H = ROOM.wall.rows * CELL;
 const CLICK_SLOP_PX = 6;
 const SELECTED = 0x2ee5ff;
+/** Half the visible width and height (meters) that keep the whole room in the orthographic view. */
+const FIT_W = 3.45;
+const FIT_H = 2.85;
 
 function materialsOf(object: THREE.Object3D): THREE.Material[] {
   const mesh = object as THREE.Mesh;
@@ -372,11 +375,10 @@ export class RoomRenderer {
     const height = this.canvas.clientHeight;
     if (width === 0 || height === 0) return;
     this.renderer.setSize(width, height, false);
-    // The room is about 7 m across in this view; keep it whole at any aspect.
-    const view = 3.9;
+    // In this view the room is about 6 m wide and 5 m high: fit both at any aspect, with a small margin.
     const aspect = width / height;
-    const halfW = aspect >= 1 ? view * aspect : view;
-    const halfH = aspect >= 1 ? view : view / aspect;
+    const halfW = aspect >= FIT_W / FIT_H ? FIT_H * aspect : FIT_W;
+    const halfH = aspect >= FIT_W / FIT_H ? FIT_H : FIT_W / aspect;
     Object.assign(this.camera, { left: -halfW, right: halfW, top: halfH, bottom: -halfH });
     this.camera.updateProjectionMatrix();
     this.request();

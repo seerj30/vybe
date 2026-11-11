@@ -218,8 +218,13 @@ Reached with this release (`python3 assets/tools/check_assets.py`): at most 368 
 - **Shop:** the filter gets a "Room" group (furniture, wall decor, walls, floors) and a `category=room` option
   ("All room items"; `/shop?filter=room` opens it). An owned room item links to `/room` ("Place it"). The page
   size becomes 100 (the catalog has 84 priced items).
-- **Navigation:** a "Room" link in the main navigation.
+- **Entry points:** "My Room" on the wardrobe page, "Place it" in the shop, "Edit your room" on the own profile.
+  The main navigation does not change: on a 375 px phone the bottom bar is full (open question 7).
 - **Wardrobe:** lists avatar items only; room items link to `/room`.
+
+![The /room editor on a desktop: the room with mint walls and an oak floor, the selected armchair, the item list](p1-my-room-editor-desktop.jpg)
+
+![The /room editor on a phone](p1-my-room-editor-phone.jpg)
 
 ## 5. Tests
 
@@ -242,3 +247,5 @@ Reached with this release (`python3 assets/tools/check_assets.py`): at most 368 
 5. **Moderation:** layouts contain only catalog items and grid positions (no text). Is a "report room" action
    needed, or is the profile report enough?
 6. **Friends visibility:** stream O adds friends. Should a room have its own "friends only" setting later?
+7. **Navigation:** the phone bottom bar has no space for an eighth link. Should "Room" replace a link (for example
+   "Wallet", which the hub already shows), or should the bar scroll or get a "More" menu?
