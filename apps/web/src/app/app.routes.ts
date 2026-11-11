@@ -12,6 +12,8 @@ import { Profile } from "./pages/profile";
 import { Shop } from "./pages/shop";
 import { Wallet } from "./pages/wallet";
 import { Wardrobe } from "./pages/wardrobe";
+import { Friends } from "./pages/friends";
+import { Leaderboard } from "./pages/leaderboard";
 import { requirePlayer } from "./player/guards";
 
 /** Shell layout per route: `bare` (no nav), `app` (nav), `fullscreen` (game canvas). */
@@ -72,6 +74,8 @@ export const routes: Routes = [
       { path: "settings", component: Settings, title: "Settings · VYBE" },
       { path: "challenges", component: Challenges, title: "Challenges · VYBE" },
       { path: "profile/:handle", component: Profile, title: "Profile · VYBE" },
+      { path: "friends", component: Friends, title: "Friends · VYBE" },
+      { path: "leaderboard", component: Leaderboard, title: "Leaderboard · VYBE" },
     ],
   },
   { path: "**", redirectTo: "" },

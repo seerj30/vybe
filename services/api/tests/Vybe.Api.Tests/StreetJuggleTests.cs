@@ -53,6 +53,39 @@ public sealed class StreetJuggleTests(ApiFactory api)
         Assert.Equal([ReviewFlags.PerfectRateHigh], stored.ReviewFlags);
     }
 
+    /// <summary>P1 weekly leaderboard: Street Juggle has its own board; a flagged run does not count (design p1-friends-leaderboard).</summary>
+    [Fact]
+    public async Task VerifiedRun_ShowsOnTheJuggleBoard_FlaggedRunDoesNot()
+    {
+        var player = await Player.CreateGuestAsync(api);
+
+        // 25 perfect touches, then the ball drops: verified, reward-eligible, fewer than 30 touches so not flagged.
+        var run = await StartAsync(player);
+        var trace = JuggleBot.PerfectTrace(run.Config, run.Seed).Take(25).ToList();
+        var expected = Replay(run, trace);
+        api.Clock.Advance(TimeSpan.FromMilliseconds(run.Config.DurationMs + 100));
+        var body = await Contract.AssertAsync(await player.SubmitAsync(run.SessionId, run.RulesetId, Events(trace)), HttpStatusCode.OK, "SubmitResult");
+        Assert.Equal("verified", body.GetProperty("status").GetString());
+
+        var board = await JuggleBoardAsync(player);
+        Assert.Equal("street-juggle", board.GetProperty("gameId").GetString());
+        Assert.Equal(expected.Score, board.GetProperty("me").GetProperty("score").GetInt32());
+        var street = await Contract.AssertAsync(
+            await player.Http.GetAsync("/api/v1/leaderboards/street-hoops/weekly?scope=friends"), HttpStatusCode.OK, "WeeklyLeaderboard");
+        Assert.Equal(JsonValueKind.Null, street.GetProperty("me").ValueKind);
+
+        // A perfect full run scores more but is flagged (perfect_rate_high): the board keeps the unflagged score.
+        var perfect = await StartAsync(player);
+        var full = JuggleBot.PerfectTrace(perfect.Config, perfect.Seed);
+        api.Clock.Advance(TimeSpan.FromMilliseconds(perfect.Config.DurationMs + 100));
+        await Contract.AssertAsync(await player.SubmitAsync(perfect.SessionId, perfect.RulesetId, Events(full)), HttpStatusCode.OK, "SubmitResult");
+        Assert.Equal(expected.Score, (await JuggleBoardAsync(player)).GetProperty("me").GetProperty("score").GetInt32());
+    }
+
+    private static async Task<JsonElement> JuggleBoardAsync(Player player) =>
+        await Contract.AssertAsync(
+            await player.Http.GetAsync("/api/v1/leaderboards/street-juggle/weekly?scope=friends"), HttpStatusCode.OK, "WeeklyLeaderboard");
+
     public static TheoryData<string, string> TamperedTraces() => new()
     {
         { "lane_out_of_range", "out_of_range" },

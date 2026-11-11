@@ -760,3 +760,63 @@ VALUES ('20261110062812_ReviewFlagsIndex', '10.0.13');
 
 COMMIT;
 
+START TRANSACTION;
+CREATE TABLE vybe.friend_request_counters (
+    player_id uuid NOT NULL,
+    day date NOT NULL,
+    sent integer NOT NULL,
+    CONSTRAINT pk_friend_request_counters PRIMARY KEY (player_id, day),
+    CONSTRAINT ck_friend_request_counters_sent CHECK (sent >= 0),
+    CONSTRAINT fk_friend_request_counters_players_player_id FOREIGN KEY (player_id) REFERENCES vybe.players (id) ON DELETE RESTRICT
+);
+
+CREATE TABLE vybe.friendships (
+    id uuid NOT NULL,
+    requester_player_id uuid NOT NULL,
+    addressee_player_id uuid NOT NULL,
+    status text NOT NULL,
+    suppressed boolean NOT NULL DEFAULT FALSE,
+    created_at timestamp with time zone NOT NULL DEFAULT (now()),
+    responded_at timestamp with time zone,
+    updated_at timestamp with time zone NOT NULL DEFAULT (now()),
+    CONSTRAINT pk_friendships PRIMARY KEY (id),
+    CONSTRAINT ck_friendships_not_self CHECK (requester_player_id <> addressee_player_id),
+    CONSTRAINT ck_friendships_responded_at CHECK ((status = 'pending') = (responded_at IS NULL)),
+    CONSTRAINT ck_friendships_status CHECK (status IN ('accepted', 'declined', 'pending')),
+    CONSTRAINT ck_friendships_suppressed_pending CHECK (NOT suppressed OR status = 'pending'),
+    CONSTRAINT fk_friendships_players_addressee_player_id FOREIGN KEY (addressee_player_id) REFERENCES vybe.players (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_friendships_players_requester_player_id FOREIGN KEY (requester_player_id) REFERENCES vybe.players (id) ON DELETE RESTRICT
+);
+
+CREATE TABLE vybe.weekly_leaderboard_scores (
+    game_id text NOT NULL,
+    week_start date NOT NULL,
+    player_id uuid NOT NULL,
+    best_score integer NOT NULL,
+    session_id uuid NOT NULL,
+    achieved_at timestamp with time zone NOT NULL,
+    CONSTRAINT pk_weekly_leaderboard_scores PRIMARY KEY (game_id, week_start, player_id),
+    CONSTRAINT ck_weekly_leaderboard_scores_best_score CHECK (best_score >= 0),
+    CONSTRAINT ck_weekly_leaderboard_scores_week_start_monday CHECK (EXTRACT(ISODOW FROM week_start) = 1),
+    CONSTRAINT fk_weekly_leaderboard_scores_game_sessions_session_id FOREIGN KEY (session_id) REFERENCES vybe.game_sessions (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_weekly_leaderboard_scores_players_player_id FOREIGN KEY (player_id) REFERENCES vybe.players (id) ON DELETE RESTRICT
+);
+
+CREATE INDEX ix_friendships_addressee_player_id_status ON vybe.friendships (addressee_player_id, status);
+
+CREATE INDEX ix_friendships_requester_player_id_status ON vybe.friendships (requester_player_id, status);
+
+CREATE INDEX ix_weekly_leaderboard_scores_player_id ON vybe.weekly_leaderboard_scores (player_id);
+
+CREATE INDEX ix_weekly_leaderboard_scores_rank ON vybe.weekly_leaderboard_scores (game_id, week_start, best_score DESC, achieved_at);
+
+CREATE INDEX ix_weekly_leaderboard_scores_session_id ON vybe.weekly_leaderboard_scores (session_id);
+
+CREATE UNIQUE INDEX ux_friendships_pair ON vybe.friendships
+    (LEAST(requester_player_id, addressee_player_id), GREATEST(requester_player_id, addressee_player_id));
+
+INSERT INTO vybe.__ef_migrations_history (migration_id, product_version)
+VALUES ('20261111065922_FriendsAndLeaderboard', '10.0.13');
+
+COMMIT;
+

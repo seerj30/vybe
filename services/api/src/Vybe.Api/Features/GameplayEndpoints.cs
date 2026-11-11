@@ -296,6 +296,11 @@ public static class GameplayEndpoints
         session.RewardXp = rewards.Xp;
         AddTrace(db, session, eventsJson, eventCount, now);
         await db.SaveChangesAsync(cancellationToken);
+        if (LeaderboardEndpoints.Counts(session, runNumber is not null))
+        {
+            await LeaderboardEndpoints.RecordAsync(db, session, verdict.Score, now, cancellationToken);
+        }
+
         if (session.ChallengeId is not null)
         {
             await ChallengeRuns.ResolveAsync(db, session, verdict.Score, now, cancellationToken);

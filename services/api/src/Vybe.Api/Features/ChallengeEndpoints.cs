@@ -67,7 +67,9 @@ public static class ChallengeEndpoints
                 recipientId = await db.Players.AsNoTracking()
                     .Where(p => p.HandleNormalized == normalized && p.Status != PlayerStatus.Deleting && p.Status != PlayerStatus.Deleted)
                     // A private profile cannot receive profile challenges: the same 404 as an unknown handle (spec §17 decision 6).
-                    .Where(p => p.ProfileVisibility != ProfileVisibility.Private || p.Id == playerId)
+                    // Its accepted friends still can (P1 friends, docs/design/p1-friends-leaderboard.md).
+                    .Where(p => p.ProfileVisibility != ProfileVisibility.Private || p.Id == playerId
+                        || FriendEndpoints.FriendIds(db, playerId).Contains(p.Id))
                     .Select(p => (Guid?)p.Id)
                     .SingleOrDefaultAsync(ct)
                     ?? throw Problem.Of(404, "not_found");

@@ -74,10 +74,12 @@ export const WARNINGS = {
       }
     </div>
     <p class="visually-hidden" [id]="descriptionId">{{ wearing() }}</p>
-    @if (mode() === "3d") {
-      <div class="controls">
-        <button type="button" class="turn" (click)="turn(-1)" aria-label="Turn the avatar left">⟲</button>
-        <button type="button" class="turn" (click)="turn(1)" aria-label="Turn the avatar right">⟳</button>
+    @if (mode() !== "fallback") {
+      <!-- Rendered (hidden) while the 3D view loads, so the page under it does not move when it is ready:
+           a tap on a button below (for example "Save avatar") must not land on the wrong place. -->
+      <div class="controls" [class.pending]="mode() === 'loading'" [attr.aria-hidden]="mode() === 'loading' ? 'true' : null">
+        <button type="button" class="turn" [disabled]="mode() === 'loading'" (click)="turn(-1)" aria-label="Turn the avatar left">⟲</button>
+        <button type="button" class="turn" [disabled]="mode() === 'loading'" (click)="turn(1)" aria-label="Turn the avatar right">⟳</button>
         @if (emoteName(); as name) {
           <button type="button" class="button secondary" [disabled]="playing()" (click)="playEmote()">Play {{ name }}</button>
         }
@@ -101,6 +103,7 @@ export const WARNINGS = {
     @keyframes spin { to { transform: rotate(360deg); } }
     @media (prefers-reduced-motion: reduce) { .loading { animation: none; } }
     .controls { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+    .controls.pending { visibility: hidden; }
     .turn { min-width: 44px; min-height: 44px; border-radius: 10px; border: 1px solid #2b3350; background: #1b2135; color: inherit; font-size: 20px; cursor: pointer; }
     .turn:focus-visible { outline: 3px solid #ffc83d; outline-offset: 2px; }
     .notice { margin: 0; font-size: 13px; text-align: center; }

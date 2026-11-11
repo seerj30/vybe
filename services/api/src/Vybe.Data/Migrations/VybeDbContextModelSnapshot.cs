@@ -575,6 +575,92 @@ namespace Vybe.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Vybe.Data.Entities.FriendRequestCounter", b =>
+                {
+                    b.Property<Guid>("PlayerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("player_id");
+
+                    b.Property<DateOnly>("Day")
+                        .HasColumnType("date")
+                        .HasColumnName("day");
+
+                    b.Property<int>("Sent")
+                        .HasColumnType("integer")
+                        .HasColumnName("sent");
+
+                    b.HasKey("PlayerId", "Day")
+                        .HasName("pk_friend_request_counters");
+
+                    b.ToTable("friend_request_counters", "vybe", t =>
+                        {
+                            t.HasCheckConstraint("ck_friend_request_counters_sent", "sent >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("Vybe.Data.Entities.Friendship", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AddresseePlayerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("addressee_player_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid>("RequesterPlayerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("requester_player_id");
+
+                    b.Property<DateTime?>("RespondedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("responded_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.Property<bool>("Suppressed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("suppressed");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.HasKey("Id")
+                        .HasName("pk_friendships");
+
+                    b.HasIndex("AddresseePlayerId", "Status")
+                        .HasDatabaseName("ix_friendships_addressee_player_id_status");
+
+                    b.HasIndex("RequesterPlayerId", "Status")
+                        .HasDatabaseName("ix_friendships_requester_player_id_status");
+
+                    b.ToTable("friendships", "vybe", t =>
+                        {
+                            t.HasCheckConstraint("ck_friendships_not_self", "requester_player_id <> addressee_player_id");
+
+                            t.HasCheckConstraint("ck_friendships_responded_at", "(status = 'pending') = (responded_at IS NULL)");
+
+                            t.HasCheckConstraint("ck_friendships_status", "status IN ('accepted', 'declined', 'pending')");
+
+                            t.HasCheckConstraint("ck_friendships_suppressed_pending", "NOT suppressed OR status = 'pending'");
+                        });
+                });
+
             modelBuilder.Entity("Vybe.Data.Entities.GameInputTrace", b =>
                 {
                     b.Property<Guid>("SessionId")
@@ -1651,6 +1737,53 @@ namespace Vybe.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Vybe.Data.Entities.WeeklyLeaderboardScore", b =>
+                {
+                    b.Property<string>("GameId")
+                        .HasColumnType("text")
+                        .HasColumnName("game_id");
+
+                    b.Property<DateOnly>("WeekStart")
+                        .HasColumnType("date")
+                        .HasColumnName("week_start");
+
+                    b.Property<Guid>("PlayerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("player_id");
+
+                    b.Property<DateTime>("AchievedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("achieved_at");
+
+                    b.Property<int>("BestScore")
+                        .HasColumnType("integer")
+                        .HasColumnName("best_score");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("session_id");
+
+                    b.HasKey("GameId", "WeekStart", "PlayerId")
+                        .HasName("pk_weekly_leaderboard_scores");
+
+                    b.HasIndex("PlayerId")
+                        .HasDatabaseName("ix_weekly_leaderboard_scores_player_id");
+
+                    b.HasIndex("SessionId")
+                        .HasDatabaseName("ix_weekly_leaderboard_scores_session_id");
+
+                    b.HasIndex("GameId", "WeekStart", "BestScore", "AchievedAt")
+                        .IsDescending(false, false, true, false)
+                        .HasDatabaseName("ix_weekly_leaderboard_scores_rank");
+
+                    b.ToTable("weekly_leaderboard_scores", "vybe", t =>
+                        {
+                            t.HasCheckConstraint("ck_weekly_leaderboard_scores_best_score", "best_score >= 0");
+
+                            t.HasCheckConstraint("ck_weekly_leaderboard_scores_week_start_monday", "EXTRACT(ISODOW FROM week_start) = 1");
+                        });
+                });
+
             modelBuilder.Entity("Vybe.Data.Entities.Achievement", b =>
                 {
                     b.HasOne("Vybe.Data.Entities.CatalogItem", null)
@@ -1722,6 +1855,33 @@ namespace Vybe.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_data_export_requests_players_player_id");
+                });
+
+            modelBuilder.Entity("Vybe.Data.Entities.FriendRequestCounter", b =>
+                {
+                    b.HasOne("Vybe.Data.Entities.Player", null)
+                        .WithMany()
+                        .HasForeignKey("PlayerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_friend_request_counters_players_player_id");
+                });
+
+            modelBuilder.Entity("Vybe.Data.Entities.Friendship", b =>
+                {
+                    b.HasOne("Vybe.Data.Entities.Player", null)
+                        .WithMany()
+                        .HasForeignKey("AddresseePlayerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_friendships_players_addressee_player_id");
+
+                    b.HasOne("Vybe.Data.Entities.Player", null)
+                        .WithMany()
+                        .HasForeignKey("RequesterPlayerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_friendships_players_requester_player_id");
                 });
 
             modelBuilder.Entity("Vybe.Data.Entities.GameInputTrace", b =>
@@ -1896,6 +2056,23 @@ namespace Vybe.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_wallet_transactions_players_player_id");
+                });
+
+            modelBuilder.Entity("Vybe.Data.Entities.WeeklyLeaderboardScore", b =>
+                {
+                    b.HasOne("Vybe.Data.Entities.Player", null)
+                        .WithMany()
+                        .HasForeignKey("PlayerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_weekly_leaderboard_scores_players_player_id");
+
+                    b.HasOne("Vybe.Data.Entities.GameSession", null)
+                        .WithMany()
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_weekly_leaderboard_scores_game_sessions_session_id");
                 });
 #pragma warning restore 612, 618
         }

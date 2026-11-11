@@ -54,6 +54,14 @@ import { QuestsCard } from "../quests/quests-card";
               <a class="button secondary" routerLink="/challenges">My challenges</a>
             </div>
           </div>
+          <div class="card social">
+            <h2>Friends and leaderboard</h2>
+            <p class="muted">Add friends, challenge them, and compare your best Street Hoops score this week.</p>
+            <div class="actions">
+              <a class="button secondary" routerLink="/friends">Friends</a>
+              <a class="button secondary" routerLink="/leaderboard">Weekly leaderboard</a>
+            </div>
+          </div>
           <vybe-quests-card class="quests" />
         </div>
       }
@@ -74,7 +82,7 @@ import { QuestsCard } from "../quests/quests-card";
     .small { font-size: 13px; }
     @media (min-width: 768px) { .picker { grid-template-columns: 1fr 1fr; } }
     .balance { font-size: 28px; font-weight: 800; margin: 0; color: #ffc83d; font-variant-numeric: tabular-nums; }
-    @media (min-width: 768px) { .grid { grid-template-columns: 2fr 1fr; } .play, .quests { grid-column: 1 / -1; } }
+    @media (min-width: 768px) { .grid { grid-template-columns: 2fr 1fr; } .play, .social, .quests { grid-column: 1 / -1; } }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

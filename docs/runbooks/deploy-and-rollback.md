@@ -42,6 +42,7 @@ The image sets `ASPNETCORE_ENVIRONMENT=Production`; set `Staging` on staging.
 | `Storage__Exports__ServiceUrl` | for non-AWS stores | no | Supabase: `https://<ref>.storage.supabase.co/storage/v1/s3`. |
 | `Storage__Exports__AccessKeyId`, `Storage__Exports__SecretAccessKey` | yes, unless the host gives a workload role | yes | Supabase: Storage S3 access keys (storage only, not the service role key). |
 | `Content__Root` | set in the image | no | `/app/content`. |
+| `Content__AssetBaseUrl` | yes | no | Public URL of the art: `https://<web origin>/assets`. The API builds the item `previewUrl` from it. |
 | `Cors__AllowedOrigins__0` … | only for a cross-origin web app | no | Absolute `https` origins. Same-origin `/api` needs none. |
 | `ReverseProxy__KnownNetworks__0` … | yes | no | CIDR of the proxy. See "Forwarded headers". `127.0.0.1/32` when there is no proxy. |
 | `ReverseProxy__TrustAnyHop` | no (default `false`) | no | Must be `true` to accept a `/0` network. See "Forwarded headers". |
