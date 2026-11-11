@@ -7,7 +7,7 @@ from typing import Callable, Dict, List
 
 from . import geom as g
 from .geom import Mesh, Vec, blend
-from .rig import ANKLE, BODY_A, ELBOW, HIP, KNEE, WRIST, Dims
+from .rig import BODY_A, Dims
 
 SKIN = "skin"
 HAIR = "hair"
@@ -23,11 +23,7 @@ FLAT = math.pi / 8  # ring phase with a flat face at the front for 8-sided rings
 
 
 def hip_point(d: Dims) -> Vec:
-    return (HIP[0], 0.0, 0.80)
-
-
-def arm_dir() -> Vec:
-    return g.norm(g.sub(WRIST, ELBOW))
+    return d.hip()
 
 
 # ---------------------------------------------------------------- body regions
@@ -78,16 +74,16 @@ def head(d: Dims) -> Mesh:
 
 def _arm_parts(d: Dims, side: int) -> Dict[str, Mesh]:
     """Left arm (side 1) parts; the right arm is the mirror."""
-    s = d.shoulder()
-    ld = g.norm(g.sub(ELBOW, s))
+    s, elbow, wrist = d.shoulder(), d.elbow(), d.wrist()
+    ld = g.norm(g.sub(elbow, s))
     up, lo, hd = Mesh("u"), Mesh("l"), Mesh("h")
     k = d.limb
     g.ellipsoid(up, g.add(s, (0.0, 0, 0.004)), (0.056 * k, 0.054 * k, 0.054 * k), "upper_arm_L", SKIN, lon=8, lat=4)
-    g.tube(up, g.sub(s, g.mul(ld, 0.02)), ELBOW, [(0, 0.051 * k, 0.051 * k), (1, 0.044 * k, 0.044 * k)],
+    g.tube(up, g.sub(s, g.mul(ld, 0.02)), elbow, [(0, 0.051 * k, 0.051 * k), (1, 0.044 * k, 0.044 * k)],
            ["upper_arm_L", blend("upper_arm_L", "lower_arm_L", 0.5)], SKIN, sides=8)
-    g.tube(lo, ELBOW, WRIST, [(0, 0.044 * k, 0.044 * k), (1, 0.035 * k, 0.035 * k)],
+    g.tube(lo, elbow, wrist, [(0, 0.044 * k, 0.044 * k), (1, 0.035 * k, 0.035 * k)],
            [blend("upper_arm_L", "lower_arm_L", 0.5), blend("lower_arm_L", "hand_L", 0.5)], SKIN, sides=8)
-    c = g.add(WRIST, g.mul(arm_dir(), 0.045))
+    c = g.add(wrist, g.mul(d.arm_dir(), 0.045))
     g.ellipsoid(hd, c, (0.026 * k, 0.038 * k, 0.05 * k), "hand_L", SKIN, lon=8, lat=5)
     g.ellipsoid(hd, g.add(c, (-0.004, -0.032 * k, 0.012)), (0.014 * k, 0.016 * k, 0.024 * k), "hand_L", SKIN, lon=6, lat=4)
     return {"upper_arms": up, "lower_arms": lo, "hands": hd}
@@ -96,9 +92,10 @@ def _arm_parts(d: Dims, side: int) -> Dict[str, Mesh]:
 def _leg_parts(d: Dims) -> Dict[str, Mesh]:
     k = d.limb
     up, lo, ft = Mesh("u"), Mesh("l"), Mesh("f")
-    g.tube(up, hip_point(d), KNEE, [(0, 0.074 * k, 0.074 * k), (1, 0.056 * k, 0.056 * k)],
+    knee, ankle = d.knee(), d.ankle()
+    g.tube(up, hip_point(d), knee, [(0, 0.074 * k, 0.074 * k), (1, 0.056 * k, 0.056 * k)],
            ["upper_leg_L", blend("upper_leg_L", "lower_leg_L", 0.5)], SKIN, sides=8, phase=FLAT)
-    g.tube(lo, KNEE, ANKLE, [(0, 0.056 * k, 0.056 * k), (0.3, 0.06 * k, 0.06 * k), (1, 0.041 * k, 0.041 * k)],
+    g.tube(lo, knee, ankle, [(0, 0.056 * k, 0.056 * k), (0.3, 0.06 * k, 0.06 * k), (1, 0.041 * k, 0.041 * k)],
            [blend("upper_leg_L", "lower_leg_L", 0.5), "lower_leg_L", blend("lower_leg_L", "foot_L", 0.5)], SKIN,
            sides=8, phase=FLAT)
     foot(ft, d, 0.0, SKIN, "foot_L")
@@ -113,7 +110,7 @@ FOOT_RINGS = ((0.045, 0.040, 0.040, 0.042), (0.0, 0.046, 0.046, 0.046), (-0.08, 
 def foot(m: Mesh, d: Dims, grow: float, mat: g.MatFn, bone: str, lift: float = 0.0) -> None:
     rings = []
     for (y, hw, hh, cz) in FOOT_RINGS:
-        rings.append(g.ring((ANKLE[0], y, cz + lift), (0, -1, 0), hw * d.limb + grow, hh + grow, 8, FLAT))
+        rings.append(g.ring((d.ankle()[0], y, cz + lift), (0, -1, 0), hw * d.limb + grow, hh + grow, 8, FLAT))
     g.loft(m, rings, [bone] * len(rings), mat, cap_start=True, cap_end=True)
 
 

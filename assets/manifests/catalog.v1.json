@@ -16,7 +16,7 @@
       "rarity": "common",
       "starter": true,
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/starter_tee.dae1479c9d60.glb",
+      "assetUrl": "/assets/3d/items/starter_tee.1cb69d4bf9fe.glb",
       "thumbnailUrl": "/assets/3d/thumbs/top_starter_tee.02fb81610db3.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -30,8 +30,8 @@
       "textureVariants": [],
       "triangles": 448,
       "textureBytes": 0,
-      "downloadBytes": 21924,
-      "contentHash": "sha256:dae1479c9d60a5f50d143ccd47792bd0564ad74f5dccbe3e32fd39e53250804d"
+      "downloadBytes": 21912,
+      "contentHash": "sha256:1cb69d4bf9fe9fba5b505d82bd889ab68873aa67c3f5ff886112b77e92089a95"
     },
     {
       "sku": "bottom_starter_shorts",
@@ -47,7 +47,7 @@
       "rarity": "common",
       "starter": true,
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/starter_shorts.393a2973191a.glb",
+      "assetUrl": "/assets/3d/items/starter_shorts.1ef40e3ebee5.glb",
       "thumbnailUrl": "/assets/3d/thumbs/bottom_starter_shorts.e9ff15422b68.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -62,7 +62,7 @@
       "triangles": 120,
       "textureBytes": 0,
       "downloadBytes": 12428,
-      "contentHash": "sha256:393a2973191aa804cd95c33c9b1e3e239859c51b4f6d0d8c1ceec0ed44240156"
+      "contentHash": "sha256:1ef40e3ebee519a6f3d4e8c3b1f0bbd99a564dd35f1a38dfb325dcd7a0f9be9f"
     },
     {
       "sku": "shoes_starter_kicks",
@@ -78,7 +78,7 @@
       "rarity": "common",
       "starter": true,
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/starter_kicks.e5aa0dc2a09b.glb",
+      "assetUrl": "/assets/3d/items/starter_kicks.8c43fcacfb06.glb",
       "thumbnailUrl": "/assets/3d/thumbs/shoes_starter_kicks.9b424bf10b64.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -91,8 +91,8 @@
       "textureVariants": [],
       "triangles": 224,
       "textureBytes": 0,
-      "downloadBytes": 18460,
-      "contentHash": "sha256:e5aa0dc2a09b444b082b57be0163d16e17376630ea5335082a7bf287395d7ee8"
+      "downloadBytes": 18456,
+      "contentHash": "sha256:8c43fcacfb066bc8415f7a3060be1b9eec8f7a90777d0d9cf87b05723aaf7a08"
     },
     {
       "sku": "top_court_jersey",
@@ -107,7 +107,7 @@
       ],
       "rarity": "common",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/court_jersey.f24650f999f6.glb",
+      "assetUrl": "/assets/3d/items/court_jersey.3968a41c88a9.glb",
       "thumbnailUrl": "/assets/3d/thumbs/top_court_jersey.594bb68c0b54.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -120,8 +120,8 @@
       "textureVariants": [],
       "triangles": 208,
       "textureBytes": 0,
-      "downloadBytes": 16064,
-      "contentHash": "sha256:f24650f999f682231c7e6d7fc0f59e51d5aa1eebafd6269a410367311b9090e2"
+      "downloadBytes": 16068,
+      "contentHash": "sha256:3968a41c88a95cc6af92e08b8e8ff1554b891040fa31d976b25d5041695af7cb"
     },
     {
       "sku": "top_neon_hoodie",
@@ -135,7 +135,7 @@
       ],
       "rarity": "common",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/hoodie.5d564879f997.glb",
+      "assetUrl": "/assets/3d/items/hoodie.b381164e9276.glb",
       "thumbnailUrl": "/assets/3d/thumbs/top_neon_hoodie.26528a6e9fce.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -149,8 +149,8 @@
       "textureVariants": [],
       "triangles": 620,
       "textureBytes": 0,
-      "downloadBytes": 27084,
-      "contentHash": "sha256:5d564879f997cb2096c19e843e6bfc5c23749a54345acb39ea8d35205fc889f5"
+      "downloadBytes": 27076,
+      "contentHash": "sha256:b381164e9276a2e31c2ea6888adceff403c967c8818ea0671e6811552ceeec50"
     },
     {
       "sku": "hair_high_top",
@@ -192,7 +192,7 @@
       ],
       "rarity": "rare",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/high_tops.17749b630f55.glb",
+      "assetUrl": "/assets/3d/items/high_tops.f10e20c997c2.glb",
       "thumbnailUrl": "/assets/3d/thumbs/shoes_gold_high.e1f89275d8de.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -205,8 +205,8 @@
       "textureVariants": [],
       "triangles": 408,
       "textureBytes": 0,
-      "downloadBytes": 22420,
-      "contentHash": "sha256:17749b630f5527236490ca0f14ef4bda942f6756b109831a56a0ef89dbfc5fe0"
+      "downloadBytes": 22416,
+      "contentHash": "sha256:f10e20c997c268e5416171cde9cfe3f3a9204fd7d010af9ef837512c0d3d59c6"
     },
     {
       "sku": "acc_sweatband",
@@ -221,7 +221,7 @@
       ],
       "rarity": "common",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/sweatband.def1776011ca.glb",
+      "assetUrl": "/assets/3d/items/sweatband.f5826984a334.glb",
       "thumbnailUrl": "/assets/3d/thumbs/acc_sweatband.2f635c222935.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -233,8 +233,8 @@
       "textureVariants": [],
       "triangles": 128,
       "textureBytes": 0,
-      "downloadBytes": 15184,
-      "contentHash": "sha256:def1776011ca3a3c4fa28154172bef3783f40d9f1106adb9aa899b5f0d5434ab"
+      "downloadBytes": 15160,
+      "contentHash": "sha256:f5826984a3345a186ae6084523bf4a416a2f570cd7b6421532006f67a77b7b52"
     },
     {
       "sku": "acc_chain",
@@ -249,7 +249,7 @@
       ],
       "rarity": "rare",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/chain.b8f9c0cfe592.glb",
+      "assetUrl": "/assets/3d/items/chain.6066425965d0.glb",
       "thumbnailUrl": "/assets/3d/thumbs/acc_chain.9eb14b30d4e8.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -262,7 +262,7 @@
       "triangles": 160,
       "textureBytes": 0,
       "downloadBytes": 12604,
-      "contentHash": "sha256:b8f9c0cfe5928ba2c3cc28acc1f1623ea98fc0bba781ae54767da7cc5e7aa672"
+      "contentHash": "sha256:6066425965d098152d3d4f3076551f8a38a3b1876e7fc0e0bb4c68d73500e6f0"
     },
     {
       "sku": "emote_swish",
@@ -304,7 +304,7 @@
       ],
       "rarity": "common",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/court_jersey.f24650f999f6.glb",
+      "assetUrl": "/assets/3d/items/court_jersey.3968a41c88a9.glb",
       "thumbnailUrl": "/assets/3d/thumbs/top_away_jersey.16e6c5241545.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -330,8 +330,8 @@
       ],
       "triangles": 208,
       "textureBytes": 0,
-      "downloadBytes": 16064,
-      "contentHash": "sha256:f24650f999f682231c7e6d7fc0f59e51d5aa1eebafd6269a410367311b9090e2"
+      "downloadBytes": 16068,
+      "contentHash": "sha256:3968a41c88a95cc6af92e08b8e8ff1554b891040fa31d976b25d5041695af7cb"
     },
     {
       "sku": "top_striped_tank",
@@ -346,7 +346,7 @@
       ],
       "rarity": "common",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/striped_tank.47865b73958e.glb",
+      "assetUrl": "/assets/3d/items/striped_tank.bdf6bf4c4359.glb",
       "thumbnailUrl": "/assets/3d/thumbs/top_striped_tank.84c162c248e3.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -360,7 +360,7 @@
       "triangles": 272,
       "textureBytes": 0,
       "downloadBytes": 19372,
-      "contentHash": "sha256:47865b73958ef683dd6cf400d11d71171c3237f650eebddca61a7c6a694fa7ac"
+      "contentHash": "sha256:bdf6bf4c4359496b300e3a914990a669db09557646f1eebba03d896815e90dd4"
     },
     {
       "sku": "top_long_sleeve",
@@ -375,7 +375,7 @@
       ],
       "rarity": "common",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/long_sleeve.60087bee1402.glb",
+      "assetUrl": "/assets/3d/items/long_sleeve.d10b1df89f99.glb",
       "thumbnailUrl": "/assets/3d/thumbs/top_long_sleeve.4e7969231790.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -390,8 +390,8 @@
       "textureVariants": [],
       "triangles": 512,
       "textureBytes": 0,
-      "downloadBytes": 23692,
-      "contentHash": "sha256:60087bee14029228824ff94e8c73e6537f57f56ead168ed8261d29891cf12de7"
+      "downloadBytes": 23680,
+      "contentHash": "sha256:d10b1df89f999e493451d393662c49929315786993922c586bf6781038f4a1e3"
     },
     {
       "sku": "top_sunset_hoodie",
@@ -406,7 +406,7 @@
       ],
       "rarity": "common",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/hoodie.5d564879f997.glb",
+      "assetUrl": "/assets/3d/items/hoodie.b381164e9276.glb",
       "thumbnailUrl": "/assets/3d/thumbs/top_sunset_hoodie.c74df6d37fd8.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -430,8 +430,8 @@
       ],
       "triangles": 620,
       "textureBytes": 0,
-      "downloadBytes": 27084,
-      "contentHash": "sha256:5d564879f997cb2096c19e843e6bfc5c23749a54345acb39ea8d35205fc889f5"
+      "downloadBytes": 27076,
+      "contentHash": "sha256:b381164e9276a2e31c2ea6888adceff403c967c8818ea0671e6811552ceeec50"
     },
     {
       "sku": "top_varsity_jacket",
@@ -446,7 +446,7 @@
       ],
       "rarity": "rare",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/varsity_jacket.abd4db189d15.glb",
+      "assetUrl": "/assets/3d/items/varsity_jacket.326abbc4e1c2.glb",
       "thumbnailUrl": "/assets/3d/thumbs/top_varsity_jacket.b7c70c629a9a.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -461,8 +461,8 @@
       "textureVariants": [],
       "triangles": 544,
       "textureBytes": 0,
-      "downloadBytes": 26208,
-      "contentHash": "sha256:abd4db189d151a8f7ba8ba35991f480f92830f455fe5d6917c9356c61ea805b0"
+      "downloadBytes": 26192,
+      "contentHash": "sha256:326abbc4e1c2935c1bd7e2825faf51a7cb374fdc4e1ef4dcb2bea0862e09d93e"
     },
     {
       "sku": "top_windbreaker",
@@ -477,7 +477,7 @@
       ],
       "rarity": "rare",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/windbreaker.41fdf8b7d120.glb",
+      "assetUrl": "/assets/3d/items/windbreaker.65a1c91487ea.glb",
       "thumbnailUrl": "/assets/3d/thumbs/top_windbreaker.a69cf2d3d29d.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -492,8 +492,8 @@
       "textureVariants": [],
       "triangles": 544,
       "textureBytes": 0,
-      "downloadBytes": 27988,
-      "contentHash": "sha256:41fdf8b7d12026482bbf110e4ccb844e302d3afa63ccd2331375841c75234ec8"
+      "downloadBytes": 27972,
+      "contentHash": "sha256:65a1c91487eaa3c94ef4e469e1bd66dd42e2429c130284345c80b56c0a692973"
     },
     {
       "sku": "top_puffer_jacket",
@@ -508,7 +508,7 @@
       ],
       "rarity": "rare",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/puffer_jacket.a5fa9d74d3af.glb",
+      "assetUrl": "/assets/3d/items/puffer_jacket.efba11a43d58.glb",
       "thumbnailUrl": "/assets/3d/thumbs/top_puffer_jacket.8a79ebc45bda.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -523,8 +523,8 @@
       "textureVariants": [],
       "triangles": 592,
       "textureBytes": 0,
-      "downloadBytes": 26392,
-      "contentHash": "sha256:a5fa9d74d3afd7cfcfbc767ae59253859e851bdf1353387edbe9535c044df146"
+      "downloadBytes": 26380,
+      "contentHash": "sha256:efba11a43d5888b30befc5078c40fdacc36f985319db58c88efb46c3f77d8f58"
     },
     {
       "sku": "top_galaxy_jacket",
@@ -539,7 +539,7 @@
       ],
       "rarity": "epic",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/galaxy_jacket.d467d2064134.glb",
+      "assetUrl": "/assets/3d/items/galaxy_jacket.56d5e6f07961.glb",
       "thumbnailUrl": "/assets/3d/thumbs/top_galaxy_jacket.de6e983c2c80.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -554,8 +554,8 @@
       "textureVariants": [],
       "triangles": 644,
       "textureBytes": 0,
-      "downloadBytes": 30692,
-      "contentHash": "sha256:d467d2064134831f6ae411213abecbb246dfa523c839e1650f5fc7fda72ba365"
+      "downloadBytes": 30676,
+      "contentHash": "sha256:56d5e6f07961e6a8be11e682d21e423961209ea7785b44ca03d631cfde2176c9"
     },
     {
       "sku": "bottom_court_shorts",
@@ -570,7 +570,7 @@
       ],
       "rarity": "common",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/court_shorts.71ca8ff30ab7.glb",
+      "assetUrl": "/assets/3d/items/court_shorts.bd10ac910681.glb",
       "thumbnailUrl": "/assets/3d/thumbs/bottom_court_shorts.53a173dc9e1f.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -585,7 +585,7 @@
       "triangles": 120,
       "textureBytes": 0,
       "downloadBytes": 14108,
-      "contentHash": "sha256:71ca8ff30ab7013b5bcd80bd28db4ae5fda23797f7f89e785a624c5d2175b0b6"
+      "contentHash": "sha256:bd10ac910681360b6b37bba2022bf6fd2d902da8577c95f1024bb13873eb987b"
     },
     {
       "sku": "bottom_joggers",
@@ -600,7 +600,7 @@
       ],
       "rarity": "common",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/joggers.d990f7ee8c48.glb",
+      "assetUrl": "/assets/3d/items/joggers.bea0f110caa9.glb",
       "thumbnailUrl": "/assets/3d/thumbs/bottom_joggers.56cc659e0904.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -615,8 +615,8 @@
       "textureVariants": [],
       "triangles": 184,
       "textureBytes": 0,
-      "downloadBytes": 14916,
-      "contentHash": "sha256:d990f7ee8c482ba75abde826499844b7064f6cc791e9b56fd460c27a0b0dda67"
+      "downloadBytes": 14920,
+      "contentHash": "sha256:bea0f110caa9ea092a9687ea32a13e020a36892b9ab8fec91f211ac2f1b5c451"
     },
     {
       "sku": "bottom_cargo_pants",
@@ -631,7 +631,7 @@
       ],
       "rarity": "common",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/cargo_pants.8fdfefa92ecc.glb",
+      "assetUrl": "/assets/3d/items/cargo_pants.7c3cdddb27de.glb",
       "thumbnailUrl": "/assets/3d/thumbs/bottom_cargo_pants.59e396506ac8.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -646,8 +646,8 @@
       "textureVariants": [],
       "triangles": 208,
       "textureBytes": 0,
-      "downloadBytes": 16192,
-      "contentHash": "sha256:8fdfefa92eccacec65789926e078cf625d5179341c99703dd90b6710dff5c0df"
+      "downloadBytes": 16188,
+      "contentHash": "sha256:7c3cdddb27de425a8af65e873d59c10aa0fb7a32c82d613e97951dad00c81e6d"
     },
     {
       "sku": "bottom_track_pants",
@@ -662,7 +662,7 @@
       ],
       "rarity": "rare",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/track_pants.902be547b3f7.glb",
+      "assetUrl": "/assets/3d/items/track_pants.70457e31ac77.glb",
       "thumbnailUrl": "/assets/3d/thumbs/bottom_track_pants.ab48fa2f37bb.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -678,7 +678,7 @@
       "triangles": 184,
       "textureBytes": 0,
       "downloadBytes": 16084,
-      "contentHash": "sha256:902be547b3f7fa65612a8a6683292b206d85aa4261c2795ba6e2fdf700c3d740"
+      "contentHash": "sha256:70457e31ac7778ba9048ec7ca52a5e364bc41b8d0c44aa3c6808a058f970ebce"
     },
     {
       "sku": "bottom_gold_track",
@@ -693,7 +693,7 @@
       ],
       "rarity": "epic",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/track_pants.902be547b3f7.glb",
+      "assetUrl": "/assets/3d/items/track_pants.70457e31ac77.glb",
       "thumbnailUrl": "/assets/3d/thumbs/bottom_gold_track.a11f041e8016.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -722,7 +722,7 @@
       "triangles": 184,
       "textureBytes": 0,
       "downloadBytes": 16084,
-      "contentHash": "sha256:902be547b3f7fa65612a8a6683292b206d85aa4261c2795ba6e2fdf700c3d740"
+      "contentHash": "sha256:70457e31ac7778ba9048ec7ca52a5e364bc41b8d0c44aa3c6808a058f970ebce"
     },
     {
       "sku": "shoes_runners",
@@ -737,7 +737,7 @@
       ],
       "rarity": "common",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/runners.358474a5c5b3.glb",
+      "assetUrl": "/assets/3d/items/runners.18112545dc22.glb",
       "thumbnailUrl": "/assets/3d/thumbs/shoes_runners.82e4ceb34c59.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -750,8 +750,8 @@
       "textureVariants": [],
       "triangles": 224,
       "textureBytes": 0,
-      "downloadBytes": 17388,
-      "contentHash": "sha256:358474a5c5b3050c3bc19c7c33e2976ea297bf42354289db0a5f97e4fab76f03"
+      "downloadBytes": 17384,
+      "contentHash": "sha256:18112545dc22e9feac42abdd31b350f48c7e7f447996cb7a771616000cfed9c8"
     },
     {
       "sku": "shoes_slides",
@@ -766,7 +766,7 @@
       ],
       "rarity": "common",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/slides.2aa559efebe1.glb",
+      "assetUrl": "/assets/3d/items/slides.ffed85159ee7.glb",
       "thumbnailUrl": "/assets/3d/thumbs/shoes_slides.eba74cea76b6.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -779,8 +779,8 @@
       "textureVariants": [],
       "triangles": 176,
       "textureBytes": 0,
-      "downloadBytes": 13928,
-      "contentHash": "sha256:2aa559efebe1973af934ffcc07604e8cc449d70517b2f3b91cce949daa610c0d"
+      "downloadBytes": 13924,
+      "contentHash": "sha256:ffed85159ee7f58cad2bccb1d562ec3b25216a3137084c9da9f3833191837535"
     },
     {
       "sku": "shoes_red_highs",
@@ -795,7 +795,7 @@
       ],
       "rarity": "common",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/high_tops.17749b630f55.glb",
+      "assetUrl": "/assets/3d/items/high_tops.f10e20c997c2.glb",
       "thumbnailUrl": "/assets/3d/thumbs/shoes_red_highs.9f04382793e1.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -813,8 +813,8 @@
       ],
       "triangles": 408,
       "textureBytes": 0,
-      "downloadBytes": 22420,
-      "contentHash": "sha256:17749b630f5527236490ca0f14ef4bda942f6756b109831a56a0ef89dbfc5fe0"
+      "downloadBytes": 22416,
+      "contentHash": "sha256:f10e20c997c268e5416171cde9cfe3f3a9204fd7d010af9ef837512c0d3d59c6"
     },
     {
       "sku": "shoes_trail_boots",
@@ -829,7 +829,7 @@
       ],
       "rarity": "rare",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/trail_boots.e4ddba12a7a3.glb",
+      "assetUrl": "/assets/3d/items/trail_boots.d5b2893884fc.glb",
       "thumbnailUrl": "/assets/3d/thumbs/shoes_trail_boots.024b02b50ef3.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -842,8 +842,8 @@
       "textureVariants": [],
       "triangles": 408,
       "textureBytes": 0,
-      "downloadBytes": 23552,
-      "contentHash": "sha256:e4ddba12a7a325ac370dcd9fdc79146c53b6bcd0407b880b1c0377bbfd20a982"
+      "downloadBytes": 23548,
+      "contentHash": "sha256:d5b2893884fccc8cdd91665971474aab2031b5b7aa727c1d126c04736e1f906e"
     },
     {
       "sku": "shoes_glow_kicks",
@@ -858,7 +858,7 @@
       ],
       "rarity": "epic",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/glow_kicks.8d2c225ccb80.glb",
+      "assetUrl": "/assets/3d/items/glow_kicks.2894efb2c2c2.glb",
       "thumbnailUrl": "/assets/3d/thumbs/shoes_glow_kicks.f2f65346bb13.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -871,8 +871,8 @@
       "textureVariants": [],
       "triangles": 224,
       "textureBytes": 0,
-      "downloadBytes": 17656,
-      "contentHash": "sha256:8d2c225ccb806ab48421e4a34743017813092d5e66d1cc57231c8b752007cd99"
+      "downloadBytes": 17652,
+      "contentHash": "sha256:2894efb2c2c2f9f2d5f4f93990df3fbc963dcc9ff28de3b7e32b6d9e7658adaa"
     },
     {
       "sku": "hair_mohawk",
@@ -1138,7 +1138,7 @@
       ],
       "rarity": "rare",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/backpack.c28e27d8bfb7.glb",
+      "assetUrl": "/assets/3d/items/backpack.7b93c6026c25.glb",
       "thumbnailUrl": "/assets/3d/thumbs/acc_backpack.a853ff9bb00e.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -1151,7 +1151,7 @@
       "triangles": 100,
       "textureBytes": 0,
       "downloadBytes": 11064,
-      "contentHash": "sha256:c28e27d8bfb77dbeec116c537192177763184d1e67b2b9bfa73b64b7d7343c60"
+      "contentHash": "sha256:7b93c6026c25785d313f88011937fdb961110c1d48a3bee33c74b0df92a3fca8"
     },
     {
       "sku": "acc_court_crown",
@@ -1302,7 +1302,7 @@
       ],
       "rarity": "common",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/striped_tank.47865b73958e.glb",
+      "assetUrl": "/assets/3d/items/striped_tank.bdf6bf4c4359.glb",
       "thumbnailUrl": "/assets/3d/thumbs/top_mint_tank.e2f1b876387c.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -1329,7 +1329,7 @@
       "triangles": 272,
       "textureBytes": 0,
       "downloadBytes": 19372,
-      "contentHash": "sha256:47865b73958ef683dd6cf400d11d71171c3237f650eebddca61a7c6a694fa7ac"
+      "contentHash": "sha256:bdf6bf4c4359496b300e3a914990a669db09557646f1eebba03d896815e90dd4"
     },
     {
       "sku": "top_gold_hoodie",
@@ -1344,7 +1344,7 @@
       ],
       "rarity": "common",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/hoodie.5d564879f997.glb",
+      "assetUrl": "/assets/3d/items/hoodie.b381164e9276.glb",
       "thumbnailUrl": "/assets/3d/thumbs/top_gold_hoodie.94d398f1e844.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -1368,8 +1368,8 @@
       ],
       "triangles": 620,
       "textureBytes": 0,
-      "downloadBytes": 27084,
-      "contentHash": "sha256:5d564879f997cb2096c19e843e6bfc5c23749a54345acb39ea8d35205fc889f5"
+      "downloadBytes": 27076,
+      "contentHash": "sha256:b381164e9276a2e31c2ea6888adceff403c967c8818ea0671e6811552ceeec50"
     },
     {
       "sku": "top_forest_windbreaker",
@@ -1384,7 +1384,7 @@
       ],
       "rarity": "rare",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/windbreaker.41fdf8b7d120.glb",
+      "assetUrl": "/assets/3d/items/windbreaker.65a1c91487ea.glb",
       "thumbnailUrl": "/assets/3d/thumbs/top_forest_windbreaker.9e2b12149e2a.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -1412,8 +1412,8 @@
       ],
       "triangles": 544,
       "textureBytes": 0,
-      "downloadBytes": 27988,
-      "contentHash": "sha256:41fdf8b7d12026482bbf110e4ccb844e302d3afa63ccd2331375841c75234ec8"
+      "downloadBytes": 27972,
+      "contentHash": "sha256:65a1c91487eaa3c94ef4e469e1bd66dd42e2429c130284345c80b56c0a692973"
     },
     {
       "sku": "top_aurora_puffer",
@@ -1428,7 +1428,7 @@
       ],
       "rarity": "epic",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/aurora_puffer.12eabfd66846.glb",
+      "assetUrl": "/assets/3d/items/aurora_puffer.7f5903be60d6.glb",
       "thumbnailUrl": "/assets/3d/thumbs/top_aurora_puffer.8b3cd4394f0b.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -1443,8 +1443,8 @@
       "textureVariants": [],
       "triangles": 592,
       "textureBytes": 0,
-      "downloadBytes": 26436,
-      "contentHash": "sha256:12eabfd668468af03264f4283d04b592130e6e68aa282ea460089c8a5994b6dd"
+      "downloadBytes": 26420,
+      "contentHash": "sha256:7f5903be60d6e50d73deed70cfd962b2135792540272ffcd1edbce19c5d509bb"
     },
     {
       "sku": "bottom_denim_shorts",
@@ -1459,7 +1459,7 @@
       ],
       "rarity": "common",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/court_shorts.71ca8ff30ab7.glb",
+      "assetUrl": "/assets/3d/items/court_shorts.bd10ac910681.glb",
       "thumbnailUrl": "/assets/3d/thumbs/bottom_denim_shorts.8e802ef9be35.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -1487,7 +1487,7 @@
       "triangles": 120,
       "textureBytes": 0,
       "downloadBytes": 14108,
-      "contentHash": "sha256:71ca8ff30ab7013b5bcd80bd28db4ae5fda23797f7f89e785a624c5d2175b0b6"
+      "contentHash": "sha256:bd10ac910681360b6b37bba2022bf6fd2d902da8577c95f1024bb13873eb987b"
     },
     {
       "sku": "bottom_neon_joggers",
@@ -1502,7 +1502,7 @@
       ],
       "rarity": "epic",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/neon_joggers.8c018262e98b.glb",
+      "assetUrl": "/assets/3d/items/neon_joggers.d906c9cda099.glb",
       "thumbnailUrl": "/assets/3d/thumbs/bottom_neon_joggers.f4d519b57f06.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -1517,8 +1517,8 @@
       "textureVariants": [],
       "triangles": 184,
       "textureBytes": 0,
-      "downloadBytes": 16840,
-      "contentHash": "sha256:8c018262e98b7fe07c1f574e620516025e77b9a6cfedf7201b87a65bd3ee0531"
+      "downloadBytes": 16844,
+      "contentHash": "sha256:d906c9cda09960241bada7a122cbec0e8fe607d5068ed0b80a53c35981ef7f1a"
     },
     {
       "sku": "shoes_classic_highs",
@@ -1533,7 +1533,7 @@
       ],
       "rarity": "common",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/high_tops.17749b630f55.glb",
+      "assetUrl": "/assets/3d/items/high_tops.f10e20c997c2.glb",
       "thumbnailUrl": "/assets/3d/thumbs/shoes_classic_highs.fa05cc1098e6.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -1555,8 +1555,8 @@
       ],
       "triangles": 408,
       "textureBytes": 0,
-      "downloadBytes": 22420,
-      "contentHash": "sha256:17749b630f5527236490ca0f14ef4bda942f6756b109831a56a0ef89dbfc5fe0"
+      "downloadBytes": 22416,
+      "contentHash": "sha256:f10e20c997c268e5416171cde9cfe3f3a9204fd7d010af9ef837512c0d3d59c6"
     },
     {
       "sku": "shoes_lava_boots",
@@ -1571,7 +1571,7 @@
       ],
       "rarity": "rare",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/trail_boots.e4ddba12a7a3.glb",
+      "assetUrl": "/assets/3d/items/trail_boots.d5b2893884fc.glb",
       "thumbnailUrl": "/assets/3d/thumbs/shoes_lava_boots.16448c577caa.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -1597,8 +1597,8 @@
       ],
       "triangles": 408,
       "textureBytes": 0,
-      "downloadBytes": 23552,
-      "contentHash": "sha256:e4ddba12a7a325ac370dcd9fdc79146c53b6bcd0407b880b1c0377bbfd20a982"
+      "downloadBytes": 23548,
+      "contentHash": "sha256:d5b2893884fccc8cdd91665971474aab2031b5b7aa727c1d126c04736e1f906e"
     },
     {
       "sku": "acc_bucket_hat",
@@ -1671,7 +1671,7 @@
       ],
       "rarity": "rare",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/sweatband.def1776011ca.glb",
+      "assetUrl": "/assets/3d/items/sweatband.f5826984a334.glb",
       "thumbnailUrl": "/assets/3d/thumbs/acc_gold_wristband.a3f58fb0baec.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
@@ -1692,8 +1692,8 @@
       ],
       "triangles": 128,
       "textureBytes": 0,
-      "downloadBytes": 15184,
-      "contentHash": "sha256:def1776011ca3a3c4fa28154172bef3783f40d9f1106adb9aa899b5f0d5434ab"
+      "downloadBytes": 15160,
+      "contentHash": "sha256:f5826984a3345a186ae6084523bf4a416a2f570cd7b6421532006f67a77b7b52"
     },
     {
       "sku": "acc_laser_shades",

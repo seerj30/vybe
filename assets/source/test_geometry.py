@@ -56,6 +56,59 @@ class GeometryTests(unittest.TestCase):
         for item in catalog.ITEMS:
             self.assertIn(item.asset, catalog.ASSET_BY_ID, item.sku)
 
+    def test_body_b_reads_clearly_wider_than_body_a(self) -> None:
+        def half_width(d: rig.Dims, region: str) -> float:
+            m = next(m for m in body.region_meshes(d) if m.name == f"region_{region}")
+            return max(p[0] for p in m.verts)
+
+        for region, ratio in (("torso", 1.3), ("hips", 1.25), ("upper_arms", 1.08), ("upper_legs", 1.25)):
+            a, b = half_width(rig.BODY_A, region), half_width(rig.BODY_B, region)
+            self.assertGreater(b, a * ratio, region)
+
+    def test_body_b_arms_turn_around_the_shoulder_joint(self) -> None:
+        d = rig.BODY_B
+        self.assertLess(math.dist(d.shoulder(), rig.SHOULDER), 0.02)
+        self.assertAlmostEqual(math.dist(d.elbow(), d.shoulder()), math.dist(rig.ELBOW, rig.SHOULDER), places=6)
+        self.assertAlmostEqual(math.dist(d.wrist(), d.elbow()), math.dist(rig.WRIST, rig.ELBOW), places=6)
+        self.assertEqual(rig.BODY_A.elbow(), rig.ELBOW)
+        self.assertEqual(rig.BODY_A.ankle(), rig.ANKLE)
+
+    def test_visible_arms_stay_outside_the_torso_and_tops(self) -> None:
+        """No arm skin inside the torso or inside a top that leaves the arm visible (both bodies)."""
+        for d in rig.BODY_PRESETS.values():
+            regions = {m.name: m for m in body.region_meshes(d)}
+            # The keyword arguments of catalog._top (scale, fit, puffy) give the size of the torso part of a top.
+            tops = [(a.hide, a.build.__closure__[0].cell_contents) for a in catalog.ASSETS if a.slot == "top"]
+            for hide, kw in [((), {"scale": 1.0, "fit": 0.0})] + tops:
+                scale = float(kw.get("scale", 1.05))
+                fit = float(kw.get("fit", 0.016)) + float(kw.get("puffy", 0.0))
+                for region in ("upper_arms", "lower_arms", "hands"):
+                    if region in hide:
+                        continue
+                    for x, y, z in regions[f"region_{region}"].verts:
+                        if not 0.6 < z < 0.98:
+                            continue
+                        rx, ry = d.torso_at(z)
+                        inside = (x / (rx * scale + fit)) ** 2 + (y / (ry * scale + fit)) ** 2
+                        self.assertGreater(inside, 1.0, (region, kw, (x, y, z)))
+
+    def test_items_sit_as_close_to_body_b_as_to_body_a(self) -> None:
+        """No floating items: the item-to-skin gap on body B is at most 1.5 cm more than on body A."""
+
+        def gap(d: rig.Dims, m: geom.Mesh) -> float:
+            lo = [min(p[i] for p in m.verts) - 0.05 for i in range(3)]
+            hi = [max(p[i] for p in m.verts) + 0.05 for i in range(3)]
+            skin = [q for r in body.region_meshes(d) for q in r.verts
+                    if all(lo[i] <= q[i] <= hi[i] for i in range(3))]
+            return min((math.dist(p, q) for p in m.verts for q in skin), default=1.0)
+
+        for asset in catalog.ASSETS:
+            if asset.emote or not asset.fits_bodies:
+                continue
+            a, b = gap(rig.BODY_A, asset.build(rig.BODY_A)), gap(rig.BODY_B, asset.build(rig.BODY_B))
+            self.assertLess(b, a + 0.015, asset.id)  # body B vertices are further apart (up to 1.42x)
+            self.assertLess(b, 0.05, asset.id)
+
     def test_rig_bones_have_known_parents(self) -> None:
         names = set()
         for b in rig.BONES:

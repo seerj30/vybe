@@ -78,7 +78,10 @@ The Docker image stays the reference for the committed bytes.
   small mobile sizes.
 - No realistic skin. Skin is one flat color from the preset (`skin_01`–`skin_06`).
 - No gendered clothing. Every item fits both bodies, except where `compatibleBodyPresets` says otherwise.
-  Body B has broader shoulders and thicker limbs; it is not a gender.
+  Body B is a sturdy build; it is not a gender. Compared with body A: shoulders and chest 1.42 times as
+  wide, waist 1.30–1.34 times, hips 1.34 times, arms and legs 1.32 times as thick, arms turned 15° out
+  around the shoulder joint, legs 2.8 cm further out. The head, the height and the bones do not change, so
+  the head is smaller in proportion to the body. The values are `BODY_B` in `rig.py`.
 - Saturated colors with a clear light-dark contrast inside each item. Do not use color alone to tell items
   apart: change the shape too (stripes, trims, pockets, collars).
 - Epic items have emissive (glowing) parts. Common items do not.
@@ -117,8 +120,11 @@ fails CI when a budget is exceeded.
 
 1. Pick or make an asset in `assets/source/vybe_art/catalog.py` (`ASSETS`).
    - For a color variant, reuse an asset and add `colors={...}` to the item.
-   - For a new shape, add a builder in `wardrobe.py`. Take `Dims` as the first argument and use
-     `d.torso_at(z)`, `d.limb` and the joints of `rig.py`, so the body B shape key works.
+   - For a new shape, add a builder in `wardrobe.py`. Take `Dims` as the first argument. Use
+     `d.torso_at(z)`, `d.limb` and the joints of the body (`d.shoulder()`, `d.elbow()`, `d.wrist()`,
+     `d.arm_dir()`, `d.hip()`, `d.knee()`, `d.ankle()`), not the constants of `rig.py`. Then the body B
+     shape key fits the item. `test_geometry.py` checks that arms stay clear of the tops and that no item
+     floats on body B.
 2. Add the item to `ITEMS`: sku (`<slot>_<name>`), display name, price inside the band of its rarity
    (common 300–800, rare 1,500–3,000, epic 6,000–10,000), rarity, minimum level, asset id, `assetKey`.
 3. Increase `CATALOG_VERSION` when the release adds or changes items.
