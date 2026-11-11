@@ -87,6 +87,7 @@ The Docker image stays the reference for the committed bytes.
 | Color variants | One asset, several skus: `textureVariants` lists `{material, color}` overrides per sku |
 | Emotes | A file with the rig and one animation `emote_<name>`, at most 6 s |
 | File names | `/assets/3d/<folder>/<name>.<first 12 hex of sha256>.<ext>`: immutable, cached for one year |
+| Item pictures in the API | `previewUrl` (catalog, inventory) is the item's `thumbnailUrl` on the web origin (`Challenges:ShareBaseUrl`), or on `Content:AssetOrigin` when it is set |
 
 ## Budgets (spec §9)
 

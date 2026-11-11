@@ -16,7 +16,11 @@ public sealed class ContentOptions
 
     public bool SeedOnStartup { get; init; }
 
-    public string AssetBaseUrl { get; init; } = "https://cdn.vybe.invalid/assets";
+    /// <summary>
+    /// Origin that serves the art (<c>/assets/3d/...</c>, the web app on the same origin). Optional: the default is the
+    /// web origin <c>Challenges:ShareBaseUrl</c>.
+    /// </summary>
+    public string? AssetOrigin { get; init; }
 }
 
 public sealed record AvatarDefaults(string BodyPresetId, string SkinToneId, string FacePresetId, string HairPresetId, string HairColorId);
@@ -40,7 +44,8 @@ public sealed record CatalogEntry(
     string AssetKey,
     string[] CompatibleBodyPresets,
     Rarity Rarity,
-    bool Starter = false);
+    bool Starter = false,
+    string? ThumbnailUrl = null);
 
 public sealed record CatalogFile(int CatalogVersion, string? Description, CatalogEntry[] Items);
 
@@ -54,12 +59,27 @@ public sealed class ContentCatalog
         Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower) },
     };
 
-    public ContentCatalog(ContentOptions options)
+    private const string DevelopmentOrigin = "https://vybe.invalid";
+
+    private readonly Uri _assetOrigin;
+    private readonly Dictionary<string, string> _thumbnails;
+
+    /// <param name="options">Content settings.</param>
+    /// <param name="webOrigin">The web origin (<c>Challenges:ShareBaseUrl</c>), used when <c>Content:AssetOrigin</c> is not set.</param>
+    public ContentCatalog(ContentOptions options, string? webOrigin = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         Options = options;
         Avatar = Read<AvatarManifest>(Path.Combine(options.Root, "assets", "manifests", "avatar.v1.json"));
         Catalog = Read<CatalogFile>(Path.Combine(options.Root, "assets", "manifests", "catalog.v1.json"));
+        var origin = options.AssetOrigin ?? webOrigin ?? DevelopmentOrigin;
+        _assetOrigin = Uri.TryCreate(origin.TrimEnd('/') + "/", UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp)
+                ? uri
+                : throw new InvalidOperationException("Content:AssetOrigin must be an absolute http(s) URL");
+        _thumbnails = Catalog.Items
+            .Where(i => !string.IsNullOrEmpty(i.ThumbnailUrl))
+            .ToDictionary(i => i.Sku, i => i.ThumbnailUrl!, StringComparer.Ordinal);
         Rulesets = Directory
             .EnumerateFiles(Path.Combine(options.Root, "packages", "game-rules", "fixtures", "rulesets"), "*.json")
             .Select(LoadRuleset)
@@ -76,7 +96,15 @@ public sealed class ContentCatalog
 
     public IEnumerable<string> StarterSkus => Catalog.Items.Where(i => i.Starter).Select(i => i.Sku);
 
-    public string PreviewUrl(string assetKey) => $"{Options.AssetBaseUrl.TrimEnd('/')}/{assetKey}/preview.png";
+    /// <summary>
+    /// Absolute picture URL of an item (spec §5 <c>previewUrl</c>): the pipeline thumbnail of the catalog manifest
+    /// (<c>/assets/3d/thumbs/...</c>, immutable) on the asset origin. An item that is no longer in the file keeps a
+    /// stable URL under its asset key; it answers 404, and the client shows its placeholder.
+    /// </summary>
+    public string PreviewUrl(string sku, string assetKey) =>
+        new Uri(_assetOrigin, _thumbnails.TryGetValue(sku, out var thumbnail)
+            ? thumbnail.TrimStart('/')
+            : $"assets/{assetKey}/preview.png").AbsoluteUri;
 
     public bool IsValidPresetSet(string body, string skin, string face, string hair, string hairColor) =>
         Avatar.BodyPresets.Contains(body) && Avatar.SkinTones.Contains(skin) && Avatar.Faces.Contains(face)

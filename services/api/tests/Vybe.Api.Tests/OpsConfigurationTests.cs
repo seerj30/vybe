@@ -65,6 +65,7 @@ public sealed class OpsConfigurationTests
     [InlineData("Challenges:InviteSecret", "c2hvcnQ=")] // 5 bytes
     [InlineData("Challenges:InviteSecret", "not base64!")]
     [InlineData("Challenges:ShareBaseUrl", "http://vybe.example")]
+    [InlineData("Content:AssetOrigin", "http://assets.vybe.example")]
     [InlineData("Storage:Exports:ServiceUrl", "ftp://storage.example")]
     [InlineData("Storage:Exports:ServiceUrl", "http://storage.example")]
     [InlineData("Storage:Exports:SecretAccessKey", "")]

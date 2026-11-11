@@ -70,6 +70,12 @@ public static class ProductionConfiguration
             problems.Add("Challenges:ShareBaseUrl must be an absolute https URL");
         }
 
+        // Item picture URLs (previewUrl) are built on it; optional, the default is Challenges:ShareBaseUrl.
+        if (!string.IsNullOrWhiteSpace(configuration["Content:AssetOrigin"]) && !IsHttpsUrl(configuration["Content:AssetOrigin"]))
+        {
+            problems.Add("Content:AssetOrigin must be an absolute https URL");
+        }
+
         var storage = configuration.GetSection(S3ExportStorageOptions.Section).Get<S3ExportStorageOptions>() ?? new S3ExportStorageOptions();
         problems.AddRange(storage.Problems());
         if (Uri.TryCreate(storage.ServiceUrl, UriKind.Absolute, out var storageUrl) && storageUrl.Scheme == Uri.UriSchemeHttp)
