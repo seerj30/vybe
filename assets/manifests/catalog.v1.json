@@ -1221,8 +1221,8 @@
       ],
       "rarity": "common",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/cheer.d13791e70395.glb",
-      "thumbnailUrl": "/assets/3d/thumbs/emote_cheer.4bdc9e52893b.png",
+      "assetUrl": "/assets/3d/items/cheer.74d3b3b3cdc4.glb",
+      "thumbnailUrl": "/assets/3d/thumbs/emote_cheer.2a773d3ab02b.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
         "body_a",
@@ -1233,7 +1233,7 @@
       "triangles": 0,
       "textureBytes": 0,
       "downloadBytes": 26660,
-      "contentHash": "sha256:d13791e70395df3683e9c7043a8d4ec60d02db35fd5cbb20d3e3545d4b52532c"
+      "contentHash": "sha256:74d3b3b3cdc40dd71816d3312c3b66538d1fe8995f232b33f6d91c4a753fcd25"
     },
     {
       "sku": "emote_bow",
@@ -1736,8 +1736,8 @@
       ],
       "rarity": "common",
       "assetVersion": 1,
-      "assetUrl": "/assets/3d/items/jump.26c15e94d364.glb",
-      "thumbnailUrl": "/assets/3d/thumbs/emote_jump.77726b09a7b8.png",
+      "assetUrl": "/assets/3d/items/jump.7bd31f432442.glb",
+      "thumbnailUrl": "/assets/3d/thumbs/emote_jump.2fce6da9794e.png",
       "rigVersion": "vybe-rig-1",
       "bodyCompatibility": [
         "body_a",
@@ -1748,7 +1748,7 @@
       "triangles": 0,
       "textureBytes": 0,
       "downloadBytes": 26660,
-      "contentHash": "sha256:26c15e94d364f064b5f82b11394546dd4aa7f15a68946253b649ba575a9894af"
+      "contentHash": "sha256:7bd31f432442f33a46757607ce28f68ba3e2cbe4b499b3df7fc0c099c4ebe1a9"
     }
   ]
 }
