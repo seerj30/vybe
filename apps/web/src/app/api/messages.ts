@@ -20,6 +20,10 @@ const MESSAGES: Partial<Record<ErrorCode, string>> = {
   item_inactive: "This item cannot be worn any more.",
   item_already_equipped: "You already wear this item on the other attachment point.",
   incompatible_equipment: "Some equipped items do not fit this body. Unequip them in the wardrobe first.",
+  // My Room (stream Q).
+  room_item_limit: "A room holds at most 40 items. Remove an item first.",
+  placement_out_of_bounds: "An item does not fit inside the room there.",
+  placement_overlap: "Two items are on the same place. Move one of them.",
   // Accounts, privacy and admin (stream H).
   forbidden: "You do not have access to this.",
   not_found: "VYBE did not find this.",

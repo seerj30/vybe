@@ -4,7 +4,10 @@ import type { Schemas } from "@vybe/contracts";
 import { isApiError } from "../api/api-client";
 import { errorMessage } from "../api/messages";
 import { SOCIAL_API } from "../api/social-api";
+import { API } from "../api/api";
 import { AvatarPortrait } from "../avatar/avatar-portrait";
+import { EMPTY_ROOM, fromApi, type RoomState } from "../room/room-layout";
+import { RoomViewport } from "../room/room-viewport";
 import { pickPresets } from "../avatar/presets";
 import { PlayerStore } from "../player/player-store";
 import { playerName } from "../profiles/player-name";
@@ -27,7 +30,7 @@ interface Message {
  */
 @Component({
   selector: "vybe-profile",
-  imports: [AvatarPortrait, RouterLink],
+  imports: [AvatarPortrait, RoomViewport, RouterLink],
   template: `
     <section class="page">
       @let l = state();
@@ -55,6 +58,24 @@ interface Message {
               <p class="muted">{{ p.handle }} · Level {{ p.level }}</p>
             </div>
           </div>
+
+          <section class="card room" aria-labelledby="room-title">
+            <h2 id="room-title">Room</h2>
+            @switch (room().kind) {
+              @case ("loading") {
+                <p class="muted" role="status">Loading the room…</p>
+              }
+              @case ("failed") {
+                <p class="muted">The room could not load. <button type="button" class="link" (click)="loadRoom(p.handle)">Try again</button></p>
+              }
+              @case ("ready") {
+                <vybe-room-viewport [room]="roomState()" [owner]="isMe() ? null : name(p)" />
+              }
+            }
+            @if (isMe()) {
+              <a class="button secondary" routerLink="/room">Edit your room</a>
+            }
+          </section>
 
           @if (isMe()) {
             @if (player.me()?.profileVisibility === "private") {
@@ -134,7 +155,10 @@ interface Message {
     .head vybe-avatar-portrait { width: 96px; flex: none; }
     .head h1 { margin: 0; }
     .head p { margin: 0; }
-    .card + .card { margin-top: 16px; }
+    .card + .card, .room { margin-top: 16px; }
+    .room vybe-room-viewport { max-width: 560px; }
+    .room .button { margin-top: 8px; }
+    .link { min-height: 44px; padding: 0; border: 0; background: none; color: #8fb3ff; font: inherit; text-decoration: underline; cursor: pointer; }
     h2:focus { outline: none; }
     h2 { margin: 0 0 8px; font-size: 18px; }
     fieldset { border: 0; padding: 0; margin: 0 0 12px; }
@@ -152,6 +176,13 @@ export class Profile {
   readonly handle = input.required<string>();
 
   private readonly social = inject(SOCIAL_API);
+  private readonly api = inject(API);
+  /** The room on the profile (docs/design/p1-my-room.md): the same visibility as the profile. */
+  protected readonly room = signal<{ kind: "loading" | "failed" } | { kind: "ready"; room: RoomState }>({ kind: "loading" });
+  protected readonly roomState = computed(() => {
+    const room = this.room();
+    return room.kind === "ready" ? room.room : EMPTY_ROOM;
+  });
   protected readonly name = playerName;
   protected readonly player = inject(PlayerStore);
   protected readonly reasons = REPORT_REASONS;
@@ -208,6 +239,17 @@ export class Profile {
     this.blocked.set(isBlockedResult === true);
     this.blockCheckFailed.set(isBlockedResult === null);
     this.state.set(state);
+    if (state.kind === "ready") void this.loadRoom(state.profile.handle);
+  }
+
+  protected async loadRoom(handle: string): Promise<void> {
+    this.room.set({ kind: "loading" });
+    try {
+      const room = fromApi(await this.api.getProfileRoom(handle));
+      if (this.handle().toLowerCase() === handle) this.room.set({ kind: "ready", room });
+    } catch {
+      if (this.handle().toLowerCase() === handle) this.room.set({ kind: "failed" });
+    }
   }
 
   protected openReport(): void {

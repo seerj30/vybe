@@ -17,6 +17,7 @@ const NAV: readonly NavItem[] = [
   { path: "/challenges", label: "Challenges" },
   { path: "/shop", label: "Shop" },
   { path: "/wardrobe", label: "Wardrobe" },
+  { path: "/room", label: "Room" },
   { path: "/wallet", label: "Wallet" },
   { path: "/settings", label: "Settings" },
 ];

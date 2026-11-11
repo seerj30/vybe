@@ -197,8 +197,10 @@ Reached with this release (`python3 assets/tools/check_assets.py`): at most 368 
 ## 4. Web
 
 - **`/room` (editor).** Lazy Three.js `RoomViewport` (the same lazy import, flat toon look and context-loss
-  handling as `AvatarViewport`). Fixed three-quarter camera that shows both walls; turn buttons in 90° steps.
-- **Place:** pick an owned item in the tray, then "Place" puts it at the first free cell. **Move:** tap or click
+  handling as `AvatarViewport`). A fixed orthographic three-quarter camera from the open front-right corner
+  shows both walls; the scene renders only on a change (no animation loop).
+- **Place:** pick an owned item in the tray, then "Place" puts it at the first free cell (walls: from eye
+  height). Focus then goes to the item's controls, and the room scrolls into view on a phone. **Move:** tap or click
   a floor cell (or wall cell) to move the selected item there, or use the arrow buttons or arrow keys.
   **Rotate:** button or `R`. **Remove:** button or `Delete`. **Wall:** a switch moves a wall item between
   the back and the left wall. **Finishes:** two selects (walls, floor). **Save:** sends the full layout.
@@ -214,7 +216,9 @@ Reached with this release (`python3 assets/tools/check_assets.py`): at most 368 
   camera animation.
 - **Profile:** a "Room" section on a visible profile with a view-only `RoomViewport`.
 - **Shop:** the filter gets a "Room" group (furniture, wall decor, walls, floors) and a `category=room` option
-  ("All room items"). The page size becomes 100 (the catalog has 84 priced items).
+  ("All room items"; `/shop?filter=room` opens it). An owned room item links to `/room` ("Place it"). The page
+  size becomes 100 (the catalog has 84 priced items).
+- **Navigation:** a "Room" link in the main navigation.
 - **Wardrobe:** lists avatar items only; room items link to `/room`.
 
 ## 5. Tests
@@ -224,7 +228,7 @@ Reached with this release (`python3 assets/tools/check_assets.py`): at most 368 
 | Asset checker (unit) | Room manifest fields, footprint bounds, item budgets, worst-case room budgets, price bands, rig-free files |
 | Layout rules (TS unit, C# unit) | Rotation swap, bounds, overlap per layer, rug under object, wall rows, max items |
 | API (real PostgreSQL) | Save and read; idempotent replay; revision conflict; unowned item 403; out of bounds; overlap; wrong surface; too many items; inactive item; wall item with rotation; equip a room item refused; profile room for a signed-in player; private profile 404; anonymous 404; blocked in either direction → empty room; owner sees own private room; export contains the room; deletion removes it |
-| Playwright E2E | Buy a furniture item, place it, save, reload shows it; the 3D shell fails to load → 2D grid and notice; keyboard place and move; view-only room on another player's profile |
+| Playwright E2E (`room.spec.ts`, `touch.spec.ts`) | Buy a furniture item in the shop, place it, move and turn it with the keyboard, a refused move, save, reload shows it, the own profile shows it; the 3D shell fails to load → 2D plan, notice, the editor still saves; an item file fails → box and notice, the saved room is correct; a tap in the 3D room moves the selected item (phone) |
 
 ## 6. Open product questions
 
