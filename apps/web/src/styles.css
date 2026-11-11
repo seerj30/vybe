@@ -268,6 +268,11 @@ h3 {
   border-color: var(--color-danger);
 }
 
+/* Radio buttons and check boxes: the accent color, not the dim OS default of a dark page. */
+:where(input[type="radio"], input[type="checkbox"]) {
+  accent-color: var(--color-accent);
+}
+
 ::placeholder {
   color: var(--color-text-faint);
   opacity: 1;
@@ -316,6 +321,10 @@ h3 {
   border: 1px dashed var(--color-border-strong);
   border-radius: var(--radius-lg);
   color: var(--color-text-muted);
+}
+
+.empty:last-child {
+  margin-bottom: 0;
 }
 
 .muted {
