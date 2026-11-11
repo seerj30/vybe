@@ -169,7 +169,16 @@ per player and day, not per game).
 streak and locks touches for 450 ms, so the right touch is usually lost too.
 
 **Review flags.** `perfect_rate_high` (perfect share of touches above 90 % in a run of 30+ touches;
-a skilled human is near 75 %, §2.6) and `daily_cap_streak` apply. The Street Hoops variance flags do not apply: the seeded flights make
+a skilled human is near 75 %, §2.6), `timing_spread_low` and `daily_cap_streak` apply.
+
+`timing_spread_low` (added 2026-11-11): over the touches that kicked the ball (30 or more), the population
+standard deviation of the signed error `(ballY − kickY) / goodDy` is under 0.08. A bot that replays the seed
+and aims at a fixed "good, not perfect" offset avoids `perfect_rate_high` but has an almost constant error.
+Simulation over 120 seeds (`autoplay` with per-touch offsets): human-like timing with σ 15–60 ms and any
+bias stays at 0.10 or more (5th percentile); bots with a fixed offset (0, +30, +50, −40 ms) stay at
+0.024–0.043, and a fixed offset with ±10 ms jitter at 0.075 or less. A bot that alternates or randomizes its
+offset widely still passes: the flag raises the cost of a bot, it does not stop one. Flagged runs stay
+verified and rewarded, and the weekly leaderboard leaves them out. The Street Hoops variance flags do not apply: the seeded flights make
 the gaps vary for bots too. Flags only, no automatic action (decision 4).
 
 **Limit.** As for Street Hoops, a replay proves that a trace is legal, not that a human played it.

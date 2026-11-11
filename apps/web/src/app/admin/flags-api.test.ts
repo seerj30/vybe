@@ -48,6 +48,7 @@ describe("FLAG_LABELS", () => {
       gap_variance_low: true,
       aim_variance_low: true,
       daily_cap_streak: true,
+      timing_spread_low: true,
     };
     expect(Object.keys(FLAG_LABELS).sort()).toEqual(Object.keys(all).sort());
   });

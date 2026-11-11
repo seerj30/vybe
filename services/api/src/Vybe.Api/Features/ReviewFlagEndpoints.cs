@@ -15,7 +15,7 @@ public sealed record FlaggedRun(
 public static class ReviewFlagEndpoints
 {
     public static readonly IReadOnlyList<string> Known =
-        [ReviewFlags.PerfectRateHigh, ReviewFlags.GapVarianceLow, ReviewFlags.AimVarianceLow, ReviewFlags.DailyCapStreak];
+        [ReviewFlags.PerfectRateHigh, ReviewFlags.GapVarianceLow, ReviewFlags.AimVarianceLow, ReviewFlags.DailyCapStreak, ReviewFlags.TimingSpreadLow];
 
     public static void Map(RouteGroupBuilder api)
     {
