@@ -169,6 +169,9 @@ public sealed partial class PrivacyProcessor(
         await db.SavedOutfits.Where(o => o.PlayerId == playerId).ExecuteDeleteAsync(cancellationToken);
         await db.PlayerRooms.Where(r => r.PlayerId == playerId).ExecuteDeleteAsync(cancellationToken);
         await db.PlayerBlocks.Where(b => b.BlockerPlayerId == playerId || b.BlockedPlayerId == playerId).ExecuteDeleteAsync(cancellationToken);
+        await db.Friendships.Where(f => f.RequesterPlayerId == playerId || f.AddresseePlayerId == playerId).ExecuteDeleteAsync(cancellationToken);
+        await db.FriendRequestCounters.Where(c => c.PlayerId == playerId).ExecuteDeleteAsync(cancellationToken);
+        await db.WeeklyLeaderboardScores.Where(s => s.PlayerId == playerId).ExecuteDeleteAsync(cancellationToken);
         await db.PlayerReports.Where(r => r.ReporterPlayerId == playerId || r.TargetPlayerId == playerId)
             .ExecuteUpdateAsync(u => u.SetProperty(r => r.Details, (string?)null), cancellationToken);
         await db.Challenges
