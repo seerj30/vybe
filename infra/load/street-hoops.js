@@ -13,6 +13,12 @@ const BASE_URL = (__ENV.BASE_URL || 'http://localhost:8080').replace(/\/$/, '');
 // scheme://host[:port][/path] only: no user info ("localhost@evil.example"), query or fragment.
 const BASE_URL_PATTERN = /^https?:\/\/(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9.-]+)(?::\d{1,5})?(?:\/[^?#@]*)?$/;
 const DURATION = __ENV.DURATION || '5m';
+// Part of the target rate (0 < RATE_SCALE <= 1), for a short check on a shared target. 1 = about 20 requests/s.
+const RATE_SCALE = Number(__ENV.RATE_SCALE || '1');
+if (!(RATE_SCALE > 0 && RATE_SCALE <= 1)) {
+  throw new Error('RATE_SCALE must be a number greater than 0 and not more than 1');
+}
+const per = (ms) => `${Math.round(ms / RATE_SCALE)}ms`;
 const LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]', 'host.docker.internal', 'api'];
 const COOKIE = '__Host-vybe_guest';
 const CSRF = { 'X-Requested-With': 'vybe-web' };
@@ -22,15 +28,15 @@ const WRITES_PER_GUEST = 40;
 export const options = {
   scenarios: {
     // ~3 requests per iteration: create a guest, read the catalog, read the profile → ~6 rps.
-    guests: { executor: 'constant-arrival-rate', exec: 'guestJourney', rate: 2, timeUnit: '1s', duration: DURATION, preAllocatedVUs: 10, maxVUs: 40 },
+    guests: { executor: 'constant-arrival-rate', exec: 'guestJourney', rate: 2, timeUnit: per(1000), duration: DURATION, preAllocatedVUs: 10, maxVUs: 40 },
     // 3 writes per iteration, spread over a 60 s run like a real player → ~3 rps, ~65 concurrent runs.
-    runs: { executor: 'constant-arrival-rate', exec: 'playRun', rate: 1, timeUnit: '1s', duration: DURATION, preAllocatedVUs: 80, maxVUs: 150 },
+    runs: { executor: 'constant-arrival-rate', exec: 'playRun', rate: 1, timeUnit: per(1000), duration: DURATION, preAllocatedVUs: 80, maxVUs: 150 },
     // 2 requests per iteration: purchase (200 or 409 insufficient_funds) and a wallet read → ~8 rps.
-    purchases: { executor: 'constant-arrival-rate', exec: 'purchase', rate: 4, timeUnit: '1s', duration: DURATION, preAllocatedVUs: 20, maxVUs: 60 },
+    purchases: { executor: 'constant-arrival-rate', exec: 'purchase', rate: 4, timeUnit: per(1000), duration: DURATION, preAllocatedVUs: 20, maxVUs: 60 },
     // Two players, two full-length runs (2 × 58.5 s): 12 requests in ~2 minutes per iteration. One iteration every
     // 4 s → ~3 rps, ~30 iterations open at the same time. gracefulStop lets the last iterations finish their runs.
     challenges: {
-      executor: 'constant-arrival-rate', exec: 'challengeAcceptance', rate: 1, timeUnit: '4s', duration: DURATION,
+      executor: 'constant-arrival-rate', exec: 'challengeAcceptance', rate: 1, timeUnit: per(4000), duration: DURATION,
       preAllocatedVUs: 40, maxVUs: 80, gracefulStop: '150s',
     },
   },
@@ -74,9 +80,12 @@ function headers(extra) {
 
 function createGuest() {
   // An adult age-gate answer (spec §17 decision 1); the API keeps only the result.
+  // An empty cookie jar: over HTTPS the VU jar keeps the previous guest's __Host- cookie and would send it,
+  // so the API would not create a new guest (a local HTTP target never stores a Secure cookie).
   const res = http.post(`${BASE_URL}/api/v1/guests`, JSON.stringify({ birthYear: 1990, birthMonth: 6 }), {
     headers: Object.assign({ 'Content-Type': 'application/json' }, CSRF),
     tags: { kind: 'write', name: 'createGuest' },
+    jar: new http.CookieJar(),
   });
   check(res, { 'guest 201': (r) => r.status === 201 });
   const cookie = res.cookies[COOKIE];
