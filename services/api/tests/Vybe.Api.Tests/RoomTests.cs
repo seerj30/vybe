@@ -288,6 +288,15 @@ public sealed class RoomTests(ApiFactory api)
     }
 
     [Fact]
+    public void RoomItem_PreviewUrl_IsItsPipelineThumbnail()
+    {
+        var content = new ContentCatalog(new ContentOptions { Root = ApiFactory.RepoRoot, AssetBaseUrl = "https://vybe.example/assets" });
+        var sofa = content.RoomItems["furn_sofa"];
+        Assert.StartsWith("/assets/3d/thumbs/furn_sofa.", sofa.ThumbnailUrl, StringComparison.Ordinal);
+        Assert.Equal("https://vybe.example" + sofa.ThumbnailUrl, content.PreviewUrl(sofa.Sku, sofa.AssetKey));
+    }
+
+    [Fact]
     public async Task Export_ContainsTheRoom_AndDeletionRemovesIt()
     {
         var player = await Player.CreateGuestAsync(api);

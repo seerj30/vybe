@@ -91,7 +91,7 @@ public static class EconomyEndpoints
         context.Response.Headers.CacheControl = "private, no-store"; // `owned` depends on the caller
         var page = items.Take(take)
             .Select(i => new CatalogItemResponse(i.Id, i.Sku, i.Name, i.Price, i.Slot, i.Rarity, i.MinLevel,
-                content.PreviewUrl(i.AssetKey), owned.Contains(i.Id)))
+                content.PreviewUrl(i.Sku, i.AssetKey), owned.Contains(i.Id)))
             .ToList();
         return new Page<CatalogItemResponse>(page, items.Count > take ? Cursor.Encode(page[^1].Id.ToString()) : null);
     }
@@ -107,7 +107,7 @@ public static class EconomyEndpoints
             .ToListAsync(cancellationToken);
         return new InventoryResponse(rows
             .Select(x => new InventoryItemResponse(x.i.Id, x.i.Sku, x.i.Name, x.i.Slot, x.i.Rarity, x.p.Source, x.p.AcquiredAt,
-                content.PreviewUrl(x.i.AssetKey), x.i.CompatibleBodyPresets))
+                content.PreviewUrl(x.i.Sku, x.i.AssetKey), x.i.CompatibleBodyPresets))
             .ToList());
     }
 

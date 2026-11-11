@@ -16,6 +16,10 @@ public sealed class ContentOptions
 
     public bool SeedOnStartup { get; init; }
 
+    /// <summary>
+    /// Public URL of the published art (<c>assets/published</c>, served by the web container at <c>/assets</c>), for example
+    /// <c>https://vybe.example/assets</c>. Production requires an https URL (ProductionConfiguration).
+    /// </summary>
     public string AssetBaseUrl { get; init; } = "https://cdn.vybe.invalid/assets";
 }
 
@@ -40,7 +44,8 @@ public sealed record CatalogEntry(
     string AssetKey,
     string[] CompatibleBodyPresets,
     Rarity Rarity,
-    bool Starter = false);
+    bool Starter = false,
+    string? ThumbnailUrl = null);
 
 public sealed record CatalogFile(int CatalogVersion, string? Description, CatalogEntry[] Items);
 
@@ -57,7 +62,8 @@ public sealed record RoomEntry(
     string AssetKey,
     string[] Surfaces,
     RoomFootprint? Footprint = null,
-    string? Layer = null);
+    string? Layer = null,
+    string? ThumbnailUrl = null);
 
 public sealed record RoomGrid(int Columns, int Rows);
 
@@ -68,6 +74,10 @@ public sealed record RulesetContent(string Id, string GameId, int Version, Stree
 /// <summary>Versioned static content (ADR 0001: avatar manifest; spec §8 catalog; spec §7 rulesets), loaded once.</summary>
 public sealed class ContentCatalog
 {
+    private const string AssetsPrefix = "/assets";
+
+    private readonly Dictionary<string, string> thumbnails;
+
     private static readonly JsonSerializerOptions FileJson = new(JsonSerializerDefaults.Web)
     {
         Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower) },
@@ -81,6 +91,11 @@ public sealed class ContentCatalog
         Catalog = Read<CatalogFile>(Path.Combine(options.Root, "assets", "manifests", "catalog.v1.json"));
         Room = Read<RoomFile>(Path.Combine(options.Root, "assets", "manifests", "room.v1.json"));
         RoomItems = Room.Items.ToDictionary(i => i.Sku, StringComparer.Ordinal);
+        // Room skus never repeat avatar skus (check_assets.py), so one map holds both.
+        thumbnails = Catalog.Items.Select(i => (i.Sku, i.ThumbnailUrl))
+            .Concat(Room.Items.Select(i => (i.Sku, i.ThumbnailUrl)))
+            .Where(i => !string.IsNullOrEmpty(i.ThumbnailUrl))
+            .ToDictionary(i => i.Sku, i => i.ThumbnailUrl!, StringComparer.Ordinal);
         Rulesets = Directory
             .EnumerateFiles(Path.Combine(options.Root, "packages", "game-rules", "fixtures", "rulesets"), "*.json")
             .Select(LoadRuleset)
@@ -102,7 +117,20 @@ public sealed class ContentCatalog
 
     public IEnumerable<string> StarterSkus => Catalog.Items.Where(i => i.Starter).Select(i => i.Sku);
 
-    public string PreviewUrl(string assetKey) => $"{Options.AssetBaseUrl.TrimEnd('/')}/{assetKey}/preview.png";
+    /// <summary>
+    /// The item picture: the pipeline thumbnail (manifest <c>thumbnailUrl</c>, a <c>/assets/...</c> path) under
+    /// <see cref="ContentOptions.AssetBaseUrl"/>; the old <c>{assetKey}/preview.png</c> path for an item without one.
+    /// </summary>
+    public string PreviewUrl(string sku, string assetKey)
+    {
+        var baseUrl = Options.AssetBaseUrl.TrimEnd('/');
+        if (thumbnails.TryGetValue(sku, out var thumbnail))
+        {
+            return baseUrl + (thumbnail.StartsWith(AssetsPrefix, StringComparison.Ordinal) ? thumbnail[AssetsPrefix.Length..] : thumbnail);
+        }
+
+        return $"{baseUrl}/{assetKey}/preview.png";
+    }
 
     public bool IsValidPresetSet(string body, string skin, string face, string hair, string hairColor) =>
         Avatar.BodyPresets.Contains(body) && Avatar.SkinTones.Contains(skin) && Avatar.Faces.Contains(face)
