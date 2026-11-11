@@ -44,6 +44,21 @@ The script imports nothing from the network (only k6 built-in modules). `BASE_UR
 `http(s)://host[:port][/path]`; a URL with user info (`http://localhost@other.example`), a query or a fragment
 is refused.
 
+## Run it on production (owner approval only)
+
+The product owner approved one small production run on 2026-11-11 (before real players). For a new run, get the
+same approval first. Steps:
+
+1. On the VM, add `RateLimits__GuestsPerIpPerMinute=1000` to `/etc/vybe/api.env` (keep a copy of the file first)
+   and recreate the API: `cd /opt/vybe && sudo docker compose -p vybe -f compose.yml --env-file release.env up -d api`.
+2. Note the start time (UTC). Run k6 with `BASE_URL=https://<origin>`, `VYBE_LOAD_TARGET_CONFIRMED=<host>`,
+   `RATE_SCALE` (0.5 = about 10 requests/s) and `DURATION`. If your DNS rewrites sslip.io, add
+   `--add-host <host>:<ip>` to `docker run`.
+3. Restore the copy of `/etc/vybe/api.env` and recreate the API again.
+4. Queue the deletion of the test guests: the `GuestCleanup` SQL (`services/api/src/Vybe.Api/Jobs/GuestCleanup.cs`)
+   with `p.created_at` limited to the test window instead of the 30-day rule. The privacy processor deletes them.
+   First count the guests in the window and in the hour before it, to be sure that no real guest is in the window.
+
 ## Run it locally
 
 1. Start the stack with a high guest limit (the load test creates many guests from one address):
@@ -75,3 +90,5 @@ beta gate, in an isolated environment, with production-like compute.
 | 2026-11-06 | Local compose on a developer laptop (Apple silicon, Docker Desktop) | 90 s trial | 14.9 (ramp-up included) | 5 ms | 16 ms | 0 % | Pass (script check, not a capacity result) |
 | 2026-11-07 | Local compose on a developer laptop (Apple silicon, Docker Desktop), master 4cfd254 (streams A–H) | 5 min | 17.6 (ramp-up included) | 4.2 ms | 16.3 ms | 0 % (0 of 5,798) | Pass: all thresholds, 5,796 of 5,796 checks (not a capacity result) |
 | 2026-11-10 | Local compose on a developer laptop (Apple silicon, Docker Desktop), master 878cf5a + challenge scenario (stream L) | 5 min of arrivals + 2 min drain (6 min 57 s) | 14.6 (ramp-up and drain included) | 5.0 ms | 16.2 ms | 0 % (0 of 6,107) | Pass: all thresholds, 6,105 of 6,105 checks; 76 challenges created, accepted and completed (not a capacity result) |
+| 2026-11-11 | Production, Oracle VM (2 OCPU A1, 12 GB) + Supabase Free (Nano, transaction pooler), release 963ac1f; k6 on the owner's Mac (Romania → Frankfurt); `RATE_SCALE=0.5`, `DURATION=3m` | 3 min of arrivals + drain (3 min 56 s) | 7.5 | 120 ms | 146 ms | 0 % (0 of 1,761) | Fail on checks only (98.7 %): 23 challenge recipients not created (k6 cookie jar bug over HTTPS, fixed in the script). Latency thresholds pass |
+| 2026-11-11 | Same, with the cookie fix; `RATE_SCALE=0.5`, `DURATION=2m` | 2 min of arrivals + drain (3 min 51 s) | 5.5 | 126 ms | 146 ms | 0 % (0 of 1,275) | Pass: all thresholds, 1,273 of 1,273 checks, challenges created, accepted and completed. VM load average after the run 0.35, API 102 MiB. Half the target rate: repeat at `RATE_SCALE=1` before more than a few hundred players |
