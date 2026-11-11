@@ -46,21 +46,9 @@ namespace Vybe.Data.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("criteria");
 
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean")
-                        .HasColumnName("is_active");
-
                     b.Property<Guid?>("RewardItemId")
                         .HasColumnType("uuid")
                         .HasColumnName("reward_item_id");
-
-                    b.Property<int>("RewardXp")
-                        .HasColumnType("integer")
-                        .HasColumnName("reward_xp");
-
-                    b.Property<int>("Version")
-                        .HasColumnType("integer")
-                        .HasColumnName("version");
 
                     b.HasKey("Id")
                         .HasName("pk_achievements");
@@ -75,8 +63,6 @@ namespace Vybe.Data.Migrations
                     b.ToTable("achievements", "vybe", t =>
                         {
                             t.HasCheckConstraint("ck_achievements_criteria_object", "jsonb_typeof(criteria) = 'object'");
-
-                            t.HasCheckConstraint("ck_achievements_reward_xp", "reward_xp >= 0");
                         });
                 });
 
@@ -1572,37 +1558,6 @@ namespace Vybe.Data.Migrations
                         });
                 });
 
-            modelBuilder.Entity("Vybe.Data.Entities.PlayerStat", b =>
-                {
-                    b.Property<Guid>("PlayerId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("player_id");
-
-                    b.Property<string>("Stat")
-                        .HasColumnType("text")
-                        .HasColumnName("stat");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<long>("Value")
-                        .HasColumnType("bigint")
-                        .HasColumnName("value");
-
-                    b.HasKey("PlayerId", "Stat")
-                        .HasName("pk_player_stats");
-
-                    b.ToTable("player_stats", "vybe", t =>
-                        {
-                            t.HasCheckConstraint("ck_player_stats_stat", "stat ~ '^[a-z0-9_:-]{1,64}$'");
-
-                            t.HasCheckConstraint("ck_player_stats_value", "value >= 0");
-                        });
-                });
-
             modelBuilder.Entity("Vybe.Data.Entities.QuestDefinition", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2150,16 +2105,6 @@ namespace Vybe.Data.Migrations
                         .HasForeignKey("WallItemId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_player_rooms_catalog_items_wall_item_id");
-                });
-
-            modelBuilder.Entity("Vybe.Data.Entities.PlayerStat", b =>
-                {
-                    b.HasOne("Vybe.Data.Entities.Player", null)
-                        .WithMany()
-                        .HasForeignKey("PlayerId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_player_stats_players_player_id");
                 });
 
             modelBuilder.Entity("Vybe.Data.Entities.SavedOutfit", b =>
