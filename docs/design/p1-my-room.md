@@ -112,7 +112,9 @@ The save replaces the whole room, all or nothing. In one transaction, under a ro
 | Item is inactive | 422 `item_inactive` |
 | Footprint outside the grid | 422 `placement_out_of_bounds` |
 | Two items on the same layer or wall share a cell | 422 `placement_overlap` |
+| `x` or `y` below 0 or above 63 (checked before any arithmetic) | 422 `placement_out_of_bounds` |
 | Suspended account | 403 `account_suspended` |
+| Account in deletion (the save waits for a running deletion with `FOR SHARE` on the player row) | 401 `unauthenticated` |
 | `expectedRevision` is not the stored revision | 409 `revision_conflict` |
 
 A refusal for one item adds `itemId` to the problem (`placement_*`, `incompatible_item`, `item_inactive`,
@@ -140,7 +142,10 @@ and compares the revision. Two first saves with `expectedRevision: 0` cannot bot
 
 The block case does not give 404, because the profile itself stays visible (ADR 0005: a 404 for a blocked
 caller only would tell that caller about the block). The empty room is the same answer as for a player who
-never decorated, so the blocked player cannot see the room and does not learn about the block.
+never decorated, so the blocked player cannot see the room and does not learn about the block. For the same
+reason, other players always get `revision` 0 and `updatedAt` null (only the owner's `GET /me/room` has them),
+the endpoint runs the same queries for a blocked and a not-blocked caller, and an empty first save stores no
+row.
 
 Every answer carries `Cache-Control: private, no-store` and `X-Robots-Tag: noindex`, as the profile.
 

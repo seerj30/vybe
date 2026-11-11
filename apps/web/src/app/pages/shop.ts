@@ -10,7 +10,7 @@ import { type AvatarPresets, DEFAULT_PRESETS, pickPresets } from "../avatar/pres
 import { AvatarViewport } from "../avatar-viewport/avatar-viewport";
 import { PlayerStore } from "../player/player-store";
 import { ItemThumb } from "../ui/item-thumb";
-import { SLOT_LABELS, SLOTS } from "../ui/labels";
+import { SLOT_LABELS, SLOTS, isRoomSlot } from "../ui/labels";
 
 type CatalogItem = Schemas["CatalogItem"];
 type ItemSlot = Schemas["ItemSlot"];
@@ -81,10 +81,16 @@ const PAGE_SIZE = 100;
             <h2>{{ item.name }}</h2>
             <p class="muted meta">{{ slotLabels[item.slot] }} · {{ item.rarity }} · level {{ item.minLevel }}+</p>
             <p class="price">{{ item.price }} V-Coins</p>
-            <button type="button" class="link" (click)="preview(item)">Preview<span class="visually-hidden"> {{ item.name }}</span></button>
+            @if (!isRoomItem(item)) {
+              <button type="button" class="link" (click)="preview(item)">Preview<span class="visually-hidden"> {{ item.name }}</span></button>
+            }
             @let state = purchases()[item.id];
             @if (item.owned) {
-              <p class="owned">Owned · <a routerLink="/wardrobe">Wear it</a></p>
+              @if (isRoomItem(item)) {
+                <p class="owned">Owned</p>
+              } @else {
+                <p class="owned">Owned · <a routerLink="/wardrobe">Wear it</a></p>
+              }
             } @else {
               @switch (state?.kind) {
                 @case ("confirming") {
@@ -185,6 +191,10 @@ export class Shop {
     if (this.level() < item.minLevel) return `Needs level ${item.minLevel}`;
     if (this.balance() < item.price) return "Not enough V-Coins";
     return null;
+  }
+
+  protected isRoomItem(item: CatalogItem): boolean {
+    return isRoomSlot(item.slot);
   }
 
   protected picture(item: CatalogItem): string {

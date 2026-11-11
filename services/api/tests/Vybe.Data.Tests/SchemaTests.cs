@@ -14,7 +14,7 @@ public sealed class SchemaTests(PostgresFixture db)
         await using var context = db.CreateContext();
 
         Assert.Empty(await context.Database.GetPendingMigrationsAsync());
-        Assert.Equal(4, (await context.Database.GetAppliedMigrationsAsync()).Count());
+        Assert.Equal(5, (await context.Database.GetAppliedMigrationsAsync()).Count());
         Assert.False(context.Database.HasPendingModelChanges(), "the model changed without a migration");
     }
 
@@ -30,7 +30,7 @@ public sealed class SchemaTests(PostgresFixture db)
             db.DataSource, "SELECT count(*) FROM pg_trigger WHERE tgrelid::regclass::text LIKE 'vybe.%' AND NOT tgisinternal"));
 
         await migrator.MigrateAsync();
-        Assert.Equal(11L, await Sql.ScalarAsync<long>(
+        Assert.Equal(12L, await Sql.ScalarAsync<long>(
             db.DataSource, "SELECT count(*) FROM pg_trigger WHERE tgrelid::regclass::text LIKE 'vybe.%' AND NOT tgisinternal"));
     }
 

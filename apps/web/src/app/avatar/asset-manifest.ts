@@ -1,5 +1,6 @@
 import avatar3d from "../../../../../assets/manifests/avatar-3d.v1.json";
 import catalog from "../../../../../assets/manifests/catalog.v1.json";
+import room from "../../../../../assets/manifests/room.v1.json";
 
 /**
  * The generated art manifests (assets/source/build.sh, spec §9), read at build time: asset URLs are
@@ -49,7 +50,9 @@ const BY_SKU: ReadonlyMap<string, ItemAsset> = new Map(catalog.items.map((item) 
 
 export const itemAsset: AssetLookup = (sku) => BY_SKU.get(sku);
 
-/** The pipeline thumbnail of an item; the API preview URL when the web build does not know the sku. */
+const ROOM_THUMBS: ReadonlyMap<string, string> = new Map(room.items.map((item) => [item.sku, item.thumbnailUrl]));
+
+/** The pipeline thumbnail of an item (avatar or room); the API preview URL when the web build does not know the sku. */
 export function itemPicture(sku: string, previewUrl: string): string {
-  return BY_SKU.get(sku)?.thumbnailUrl ?? previewUrl;
+  return BY_SKU.get(sku)?.thumbnailUrl ?? ROOM_THUMBS.get(sku) ?? previewUrl;
 }

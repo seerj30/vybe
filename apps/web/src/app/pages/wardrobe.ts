@@ -10,7 +10,7 @@ import { AvatarViewport } from "../avatar-viewport/avatar-viewport";
 import { pickPresets, presetLabel } from "../avatar/presets";
 import { OutfitsPanel } from "../outfits/outfits-panel";
 import { ItemThumb } from "../ui/item-thumb";
-import { SLOT_LABELS, SLOTS } from "../ui/labels";
+import { AVATAR_SLOTS, SLOT_LABELS, isRoomSlot } from "../ui/labels";
 
 type Avatar = Schemas["Avatar"];
 type InventoryItem = Schemas["InventoryItem"];
@@ -142,7 +142,7 @@ export class Wardrobe {
   protected readonly bodyLabel = computed(() => presetLabel("bodyPresetId", this.avatar()?.bodyPresetId ?? ""));
   protected readonly itemNames = computed(() => new Map(this.inventory().map((item) => [item.itemId, item.name])));
   protected readonly groups = computed((): SlotGroup[] =>
-    SLOTS.map((slot) => ({ slot, items: this.inventory().filter((item) => item.slot === slot) })).filter((g) => g.items.length > 0),
+    AVATAR_SLOTS.map((slot) => ({ slot, items: this.inventory().filter((item) => item.slot === slot) })).filter((g) => g.items.length > 0),
   );
 
   constructor() {
@@ -182,7 +182,8 @@ export class Wardrobe {
     const equipped = this.avatar()?.equipped;
     if (equipped === undefined) return false;
     if (item.slot === "accessory") return equipped.accessories[place.attachIndex ?? 0] === item.itemId;
-    return equipped[item.slot] === item.itemId;
+    if (isRoomSlot(item.slot)) return false; // room items are placed, never worn
+    return equipped[item.slot as keyof Omit<typeof equipped, "accessories">] === item.itemId;
   }
 
   protected wornAnywhere(item: InventoryItem): boolean {
