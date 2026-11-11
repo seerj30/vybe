@@ -73,10 +73,16 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         });
     }
 
-    /// <summary>The export storage of the API: local files, with a switch that makes deletes fail.</summary>
-    public TestExportStorage ExportStorage { get; } = new(ExportDirectory);
+    /// <summary>
+    /// One folder per test host (declared before <see cref="ExportStorage"/>, which uses it). A shared folder let the
+    /// orphan sweep of a host running in parallel, with its own database, delete the export files of another host.
+    /// </summary>
+    public string ExportDirectory { get; } = Path.Combine(Path.GetTempPath(), "vybe-test-exports", Guid.NewGuid().ToString());
 
-    public static string ExportDirectory { get; } = Path.Combine(Path.GetTempPath(), "vybe-test-exports", Guid.NewGuid().ToString());
+    /// <summary>The export storage of the API: local files, with a switch that makes deletes fail.</summary>
+    public TestExportStorage ExportStorage => exportStorage ??= new(ExportDirectory);
+
+    private TestExportStorage? exportStorage;
 
     /// <summary>A Supabase access token as Supabase issues it for a signed-in user (claims used by linking and reauthentication).</summary>
     public static string RegisteredToken(
