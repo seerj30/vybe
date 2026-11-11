@@ -1,9 +1,9 @@
 import { assertValidConfig, rulesetChecksum, type StreetHoopsConfig } from "@vybe/game-rules";
 import fixture from "../../../../../packages/game-rules/fixtures/rulesets/street-hoops-v1.json";
 
-export interface RulesetFile {
+export interface RulesetFile<C = StreetHoopsConfig> {
   id: string;
-  config: StreetHoopsConfig;
+  config: C;
   checksum: string;
 }
 

@@ -34,14 +34,14 @@ public static class Rewards
     public static int BaseXp(int score) => Math.Min(80, 10 + (score / 400 * 5));
 
     /// <summary>
-    /// Minimum play (spec §7): a verified run is reward-eligible only with at least <c>minShotsForRewards</c> shots
+    /// Minimum play (spec §7): a verified run is reward-eligible only with at least the ruleset's minimum number of events (<c>minShotsForRewards</c> in Street Hoops)
     /// and <c>submittedAt − startedAt ≥ minRunMsForRewards</c> on the server clock. Null means eligible.
     /// The same rule decides quest progress, <c>runs_rewarded</c> and challenge creation.
     /// </summary>
-    public static NoCoinsReason? Ineligibility(StreetHoopsConfig config, int eventCount, DateTime startedAt, DateTime submittedAt)
+    public static NoCoinsReason? Ineligibility(IRewardConfig config, int eventCount, DateTime startedAt, DateTime submittedAt)
     {
         ArgumentNullException.ThrowIfNull(config);
-        if (eventCount < config.MinShotsForRewards)
+        if (eventCount < config.MinEventsForRewards)
         {
             return NoCoinsReason.TooFewShots;
         }
@@ -51,7 +51,7 @@ public static class Rewards
 
     /// <summary>Why a verified run earned no coins, derived from the stored session; null when it earned coins.</summary>
     public static NoCoinsReason? NoCoins(
-        StreetHoopsConfig config, long coins, int score, int eventCount, DateTime startedAt, DateTime submittedAt)
+        IRewardConfig config, long coins, int score, int eventCount, DateTime startedAt, DateTime submittedAt)
     {
         ArgumentNullException.ThrowIfNull(config);
         if (coins > 0)

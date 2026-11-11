@@ -115,6 +115,10 @@ export class ApiClient {
     return this.data("POST", "/games/street-hoops/sessions", { body });
   }
 
+  createStreetJuggleSession(body: Schemas["SessionCreateRequest"] = {}): Promise<Schemas["SessionCreated"]> {
+    return this.data("POST", "/games/street-juggle/sessions", { body });
+  }
+
   startSession(sessionId: string): Promise<Schemas["SessionStarted"]> {
     return this.data("POST", `/games/sessions/${segment(sessionId)}/start`);
   }

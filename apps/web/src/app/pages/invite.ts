@@ -1,4 +1,4 @@
-import { afterNextRender, ChangeDetectionStrategy, Component, effect, type ElementRef, inject, Injector, input, signal, untracked, viewChild } from "@angular/core";
+import { afterNextRender, ChangeDetectionStrategy, Component, computed, effect, type ElementRef, inject, Injector, input, signal, untracked, viewChild } from "@angular/core";
 import { RouterLink } from "@angular/router";
 import type { Schemas } from "@vybe/contracts";
 import { isApiError, newIdempotencyKey } from "../api/api-client";
@@ -6,6 +6,7 @@ import { API } from "../api/api";
 import { errorMessage } from "../api/messages";
 import { SOCIAL_API } from "../api/social-api";
 import { type Challenge, OUTCOME_LABELS, outcomeFor, shortTime, sideOf } from "../challenges/challenge-view";
+import { gameInfo } from "../games/games";
 import { AgeGate } from "../player/age-gate";
 import { PlayerStore } from "../player/player-store";
 import { playerName } from "../profiles/player-name";
@@ -34,7 +35,7 @@ type View =
   imports: [RouterLink],
   template: `
     <section class="page invite">
-      <h1>Street Hoops challenge</h1>
+      <h1>{{ title() }}</h1>
       @let v = view();
       <div class="state" #state tabindex="-1">
       @switch (v.kind) {
@@ -56,7 +57,7 @@ type View =
               <strong>{{ name(p.creator) }}</strong> <span class="muted">(level {{ p.creator.level }})</span> scored
             </p>
             <p class="score" data-testid="creator-score">{{ p.creatorScore }}</p>
-            <p class="muted">Play the same 60-second court. The higher verified score wins.</p>
+            <p class="muted">Play the same 60-second run. The higher verified score wins.</p>
           </div>
 
           <div class="detail">
@@ -92,7 +93,7 @@ type View =
               @let c = v.challenge;
               @if (c.status === "accepted" && v.recipient && c.recipientScore === null) {
                 <p class="notice" role="status">You accepted. Play your run before {{ time(c.completeDeadline ?? p.acceptDeadline) }}.</p>
-                <a class="button" routerLink="/arcade/street-hoops" [queryParams]="{ challenge: c.challengeId }">Play your challenge run</a>
+                <a class="button" [routerLink]="gameRoute(c.gameId)" [queryParams]="{ challenge: c.challengeId }">Play your challenge run</a>
               } @else if (c.status === "completed") {
                 <h2>Result: {{ outcomeLabel(v.challenge) }}</h2>
                 <dl class="scores">
@@ -100,7 +101,7 @@ type View =
                   <div><dt>{{ c.recipient ? name(c.recipient) : "" }}</dt><dd>{{ c.recipientScore ?? "—" }}</dd></div>
                 </dl>
                 <div class="actions">
-                  <a class="button" routerLink="/arcade/street-hoops" [queryParams]="{ rematchOf: c.challengeId }">Rematch</a>
+                  <a class="button" [routerLink]="gameRoute(c.gameId)" [queryParams]="{ rematchOf: c.challengeId }">Rematch</a>
                   <a class="button secondary" routerLink="/challenges">My challenges</a>
                 </div>
               } @else if (c.status === "expired") {
@@ -147,6 +148,12 @@ export class Invite {
   protected readonly time = shortTime;
 
   protected readonly view = signal<View>({ kind: "loading" });
+  /** "Street Hoops challenge" or "Street Juggle challenge" once the preview names the game. */
+  protected readonly title = computed(() => {
+    const v = this.view();
+    return "preview" in v ? `${gameInfo(v.preview.gameId).name} challenge` : "Challenge";
+  });
+  protected readonly gameRoute = (gameId: string): string => gameInfo(gameId).route;
   protected readonly busy = signal(false);
   protected readonly actionError = signal<string | null>(null);
   /** One key per accept, reused while the outcome is unknown (spec §2 J1). */
