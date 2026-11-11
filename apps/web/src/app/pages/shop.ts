@@ -20,8 +20,8 @@ type Purchase = { kind: "confirming" } | { kind: "buying" } | { kind: "unknown";
 
 const LOST = "The connection was lost.";
 
-// The whole beta catalog (about 40 items) fits on the first page; "Show more items" stays for a larger catalog.
-const PAGE_SIZE = 48;
+// The whole beta catalog (84 priced items with the room items) fits on the first page; "Show more items" stays for a larger catalog.
+const PAGE_SIZE = 100;
 
 /**
  * `/shop` (spec §3, §8): catalog with slot filter and purchases. The server decides; the buttons only

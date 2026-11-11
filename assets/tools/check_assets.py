@@ -6,7 +6,9 @@ It reads only the committed files (manifests, assets/published), so it needs no 
 manifest fields and types, price bands (decision 5), file hashes and sizes, triangle and texture counts,
 the rig (bone names and bind pose equal to the base avatar), body compatibility (shape key), attachment
 bones, coverage masks (a hidden body region must be covered by the item), emotes, thumbnails and the
-avatar budgets (triangles, initial download, draw calls, texture size).
+avatar budgets (triangles, initial download, draw calls, texture size). My Room (room.v1.json): grid, shell,
+room item fields, slots and surfaces, footprints (the mesh stays inside its cells), static meshes (no skin),
+per-item budgets and the worst-case room scene (docs/design/p1-my-room.md).
 """
 
 from __future__ import annotations
@@ -33,13 +35,23 @@ ITEM_FIELDS = {
     "rigVersion": str, "bodyCompatibility": list, "hideBodyRegions": list, "textureVariants": list,
     "triangles": int, "textureBytes": int, "downloadBytes": int, "contentHash": str,
 }
-URL_RE = re.compile(r"^/assets/3d/(avatar|items|thumbs)/([a-z0-9_]+)\.([0-9a-f]{12})\.(glb|png)$")
+URL_RE = re.compile(r"^/assets/3d/(avatar|items|thumbs|room)/([a-z0-9_]+)\.([0-9a-f]{12})\.(glb|png)$")
 HEX_RE = re.compile(r"^#[0-9a-f]{6}$")
 HIDE_HAIR = "hair"
 COVER_TOLERANCE = 0.012  # meters
 REST_TOLERANCE = 1e-4
 THUMB_PX = 256
 MAX_EMOTE_SECONDS = 6.0
+
+
+ROOM_SLOTS = {"furniture": ["floor"], "wall_decor": ["wall_back", "wall_left"], "room_wall": [], "room_floor": []}
+ROOM_FIELDS = {
+    "sku": str, "slot": str, "name": str, "price": int, "minLevel": int, "rarity": str, "assetKey": str,
+    "assetVersion": int, "assetUrl": str, "thumbnailUrl": str, "surfaces": list, "textureVariants": list,
+    "triangles": int, "drawCalls": int, "textureBytes": int, "downloadBytes": int, "contentHash": str,
+}
+FINISH_NODES = {"room_wall": "walls", "room_floor": "floor"}
+MAX_FOOTPRINT = {"furniture": (4, 4), "wall_decor": (4, 3)}
 
 
 class Checker:
@@ -96,7 +108,158 @@ class Checker:
         if base is None:
             return self.errors
         self.check_catalog(catalog, avatar, base)
+        self.check_room(_read_json(os.path.join(manifests, "room.v1.json")), {i.get("sku") for i in catalog.get("items", [])})
         return self.errors
+
+    # ------------------------------------------------------------ My Room
+
+    def check_room(self, room: Dict[str, Any], avatar_skus: Set[str]) -> None:
+        w = "room.v1.json"
+        for key in ("version", "cellMeters", "floor", "wall", "maxItems", "surfaces", "rotations", "shell", "items",
+                    "budgets"):
+            if key not in room:
+                self.error(w, f"missing field {key}")
+        if self.errors:
+            return
+        b = room["budgets"]
+        cell = room["cellMeters"]
+        if room["surfaces"] != ["floor", "wall_back", "wall_left"] or room["rotations"] != [0, 90, 180, 270]:
+            self.error(w, "surfaces or rotations differ from the design (docs/design/p1-my-room.md)")
+        shell = room["shell"]
+        data = self.load(w, shell["assetUrl"], shell.get("contentHash"), shell.get("downloadBytes"))
+        shell_glb = self.parse(w, shell["assetUrl"], data) if data is not None else None
+        if shell_glb is not None:
+            names = {n.get("name") for n in shell_glb.mesh_nodes()}
+            for node in shell["nodes"].values():
+                if node not in names:
+                    self.error(w, f"shell has no mesh node {node}")
+            self.check_static(w, shell_glb)
+            if shell["downloadBytes"] > b["shellDownloadBytes"]:
+                self.error(w, f"shell download {shell['downloadBytes']} bytes; the budget is {b['shellDownloadBytes']}")
+        skus: Set[str] = set()
+        placeable: List[Tuple[int, int, int]] = []  # (triangles, draw calls, bytes)
+        finishes: Dict[str, List[Tuple[int, int, int]]] = {"room_wall": [], "room_floor": []}
+        for item in room["items"]:
+            sku = item.get("sku", "?")
+            where = f"{w} {sku}"
+            missing = [k for k, t in ROOM_FIELDS.items()
+                       if not isinstance(item.get(k), t) or (t is int and isinstance(item.get(k), bool))]
+            if missing:
+                self.error(where, f"missing or wrong-type fields: {', '.join(missing)}")
+                continue
+            if sku in skus or sku in avatar_skus:
+                self.error(where, "duplicate sku (room and avatar skus share one catalog)")
+            skus.add(sku)
+            slot = item["slot"]
+            if slot not in ROOM_SLOTS:
+                self.error(where, f"unknown room slot {slot}")
+                continue
+            if item["surfaces"] != ROOM_SLOTS[slot]:
+                self.error(where, f"surfaces {item['surfaces']} must be {ROOM_SLOTS[slot]} for slot {slot}")
+            if item["rarity"] not in BANDS:
+                self.error(where, f"unknown rarity {item['rarity']}")
+            else:
+                lo, hi = BANDS[item["rarity"]]
+                if not lo <= item["price"] <= hi:
+                    self.error(where, f"{item['rarity']} price {item['price']} is outside {lo}–{hi} (decision 5)")
+            for v in item["textureVariants"]:
+                if not (isinstance(v, dict) and isinstance(v.get("material"), str) and HEX_RE.match(str(v.get("color")))):
+                    self.error(where, f"textureVariants entry {v!r} must be {{material, color: #rrggbb}}")
+            fp = item.get("footprint")
+            if slot in MAX_FOOTPRINT:
+                second = "d" if slot == "furniture" else "h"
+                mw, md = MAX_FOOTPRINT[slot]
+                if not (isinstance(fp, dict) and set(fp) == {"w", second} and all(isinstance(fp[k], int) for k in fp)
+                        and 1 <= fp["w"] <= mw and 1 <= fp[second] <= md):
+                    self.error(where, f"footprint {fp!r} must be {{w: 1–{mw}, {second}: 1–{md}}} cells")
+                    fp = None
+                if slot == "furniture" and item.get("layer") not in ("rug", "object"):
+                    self.error(where, "a furniture item needs layer rug or object")
+            else:
+                if fp is not None or item.get("layer") is not None:
+                    self.error(where, "a finish has no footprint and no layer")
+                if item.get("replaces") != FINISH_NODES[slot]:
+                    self.error(where, f"a {slot} finish must replace the shell node {FINISH_NODES[slot]}")
+            data = self.load(where, item["assetUrl"], item["contentHash"], item["downloadBytes"])
+            self.check_thumbnail(where, item["thumbnailUrl"])
+            if data is None:
+                continue
+            g = self._glb.get(item["assetUrl"]) or self.parse(where, item["assetUrl"], data)
+            if g is None:
+                continue
+            tris, calls = g.triangles(), g.draw_calls()
+            if tris != item["triangles"] or calls != item["drawCalls"] or g.texture_bytes() != item["textureBytes"]:
+                self.error(where, "triangles, drawCalls or textureBytes do not match the file")
+            if g.texture_bytes() > 0:
+                self.error(where, "room items have no textures (flat colors)")
+            self.check_static(where, g)
+            mats = {m.get("name") for m in g.json.get("materials", [])}
+            for v in item["textureVariants"]:
+                if isinstance(v, dict) and v.get("material") not in mats:
+                    self.error(where, f"textureVariants material {v.get('material')!r} is not in the file")
+            if slot in FINISH_NODES:
+                if tris > b["finishTriangles"]:
+                    self.error(where, f"{tris} triangles; a finish may have {b['finishTriangles']}")
+                finishes[slot].append((tris, calls, item["downloadBytes"]))
+                continue
+            if tris > b["itemTriangles"]:
+                self.error(where, f"{tris} triangles; a room item may have {b['itemTriangles']}")
+            if calls > b["itemDrawCalls"]:
+                self.error(where, f"{calls} draw calls; a room item may have {b['itemDrawCalls']}")
+            if item["downloadBytes"] > b["itemDownloadBytes"]:
+                self.error(where, f"{item['downloadBytes']} bytes; a room item may have {b['itemDownloadBytes']}")
+            placeable.append((tris, calls, item["downloadBytes"]))
+            if fp is not None:
+                self.check_footprint(where, g, slot, fp, cell, b)
+        self.check_room_budgets(room, placeable, finishes)
+
+    def check_static(self, where: str, g: glb.Glb) -> None:
+        if g.json.get("skins") or g.json.get("animations"):
+            self.error(where, "room files are static: no skin and no animation")
+        if not g.mesh_nodes():
+            self.error(where, "the file has no mesh")
+
+    def check_footprint(self, where: str, g: glb.Glb, slot: str, fp: Dict[str, int], cell: float,
+                        b: Dict[str, Any]) -> None:
+        """The mesh must stay inside its cells (glTF: Y up, front +Z; floor origin at the footprint center,
+        wall origin at the bottom center of the back face)."""
+        lo, hi = _bounds(g, g.mesh_nodes())
+        tol = b["footprintToleranceMeters"]
+        half_w = fp["w"] * cell / 2
+        if lo[0] < -half_w - tol or hi[0] > half_w + tol:
+            self.error(where, f"mesh x {lo[0]:.3f}–{hi[0]:.3f} m is wider than {fp['w']} cells")
+        if slot == "furniture":
+            half_d = fp["d"] * cell / 2
+            if lo[2] < -half_d - tol or hi[2] > half_d + tol:
+                self.error(where, f"mesh z {lo[2]:.3f}–{hi[2]:.3f} m is deeper than {fp['d']} cells")
+            if lo[1] < -tol or hi[1] > b["floorItemMaxHeightMeters"]:
+                self.error(where, f"mesh y {lo[1]:.3f}–{hi[1]:.3f} m: it must stand on the floor and be at most "
+                                  f"{b['floorItemMaxHeightMeters']} m high")
+        else:
+            if lo[1] < -tol or hi[1] > fp["h"] * cell + tol:
+                self.error(where, f"mesh y {lo[1]:.3f}–{hi[1]:.3f} m is higher than {fp['h']} cells")
+            if lo[2] < -tol or hi[2] > b["wallItemMaxDepthMeters"]:
+                self.error(where, f"mesh z {lo[2]:.3f}–{hi[2]:.3f} m: a wall item is 0–{b['wallItemMaxDepthMeters']} m deep")
+
+    def check_room_budgets(self, room: Dict[str, Any], placeable: List[Tuple[int, int, int]],
+                           finishes: Dict[str, List[Tuple[int, int, int]]]) -> None:
+        """Worst case: the shell, the heaviest wall and floor finishes and the maxItems heaviest placeable items."""
+        b = room["budgets"]
+        shell = room["shell"]
+        top = sorted(placeable, reverse=True)[:room["maxItems"]]
+        fin = [max(f) for f in finishes.values() if f]
+        tris = shell["triangles"] + sum(t for t, _c, _b in top) + sum(t for t, _c, _b in fin)
+        calls = shell["drawCalls"] + sum(c for _t, c, _b in top) + sum(c for _t, c, _b in fin)
+        heavy = shell["downloadBytes"] + sum(x for _t, _c, x in sorted(placeable, key=lambda p: -p[2])[:room["maxItems"]])
+        heavy += sum(max(x for _t, _c, x in f) for f in finishes.values() if f)
+        if tris > b["roomTriangles"]:
+            self.error("room budgets", f"worst-case room has {tris} triangles; the budget is {b['roomTriangles']}")
+        if calls > b["roomDrawCalls"]:
+            self.error("room budgets", f"worst-case room needs {calls} draw calls; the budget is {b['roomDrawCalls']}")
+        if heavy > b["roomDownloadBytes"]:
+            self.error("room budgets", f"worst-case room download is {heavy} bytes; the budget is {b['roomDownloadBytes']}")
+        self.room_summary = {"roomTriangles": tris, "roomDrawCalls": calls, "roomBytes": heavy,
+                             "shellBytes": shell["downloadBytes"], "roomItems": len(room["items"])}
 
     # ------------------------------------------------------------ base avatar
 
@@ -427,6 +590,12 @@ def main(argv: List[str]) -> int:
         "assets ok: worst-case avatar {worstTriangles} triangles, {worstDrawCalls} draw calls; initial download "
         "{initialBytes} bytes, heaviest outfit {heaviestBytes} bytes\n".format(**s)
     )
+    r = getattr(checker, "room_summary", None)
+    if r:
+        sys.stdout.write(
+            "room ok: {roomItems} room items; worst-case room {roomTriangles} triangles, {roomDrawCalls} draw calls, "
+            "{roomBytes} bytes; shell {shellBytes} bytes\n".format(**r)
+        )
     return 0
 
 

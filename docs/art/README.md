@@ -9,6 +9,16 @@ items on the same rig and manifests.
 
 ![Thumbnails of the 43 catalog items](preview-items.jpg)
 
+Catalog version 3 adds 13 avatar items (3 epic):
+
+![The 13 avatar items of catalog version 3](preview-items-v3.jpg)
+
+My Room ([design](../design/p1-my-room.md)): a room shell, 8 finishes and 23 furniture and wall-decor items.
+
+![A furnished room: brick walls, oak floor, bed, sofa, arcade machine and wall decor](preview-room.jpg)
+
+![Thumbnails of the 31 room items](preview-room-items.jpg)
+
 ## Files
 
 | Path | Content |
@@ -19,13 +29,14 @@ items on the same rig and manifests.
 | `assets/source/vybe_art/wardrobe.py` | Garment and accessory builders |
 | `assets/source/vybe_art/catalog.py` | Assets (one `.glb` each) and items (one sku each), `CATALOG_VERSION` |
 | `assets/source/vybe_art/emotes.py` | Emote keyframes and the idle loop |
+| `assets/source/vybe_art/room.py` | My Room: the shell, wall and floor finishes, furniture, wall decor, `ROOM_VERSION`, grid placement |
 | `assets/source/vybe_art/palette.py` | Skin tones, hair colors, material helper |
 | `assets/source/vybe_art/blender.py` | The only module that uses Blender (`bpy`): objects, export, thumbnails |
 | `assets/source/build.py`, `build.sh`, `Dockerfile` | Pipeline entry point and the pinned Blender image |
 | `assets/tools/publish.py` | Content-addressed file names and the manifests |
 | `assets/tools/check_assets.py` | Budget and compatibility check (CI) |
 | `assets/published/3d/` | Generated files, served at `/assets/3d/` (do not edit) |
-| `assets/manifests/catalog.v1.json`, `avatar-3d.v1.json` | Generated manifests (do not edit) |
+| `assets/manifests/catalog.v1.json`, `avatar-3d.v1.json`, `room.v1.json` | Generated manifests (do not edit) |
 | `assets/LICENSES.md` | License record for every asset |
 
 ## Build
@@ -115,6 +126,37 @@ fails CI when a budget is exceeded.
 
 Never remove or rename a sku that players can own. To change the art of an asset, increase its `version`
 (`assetVersion` in the manifest); the file name changes with the content.
+
+## My Room
+
+The room items are static meshes (no rig) in `assets/source/vybe_art/room.py`. Rules: [design](../design/p1-my-room.md).
+
+| Topic | Rule |
+|---|---|
+| Grid | Floor 8 × 8 cells of 0.5 m (4 m × 4 m), centered on the origin. Two walls, 8 columns × 5 rows, 2.5 m high: the back wall (glTF z = -2 m) and the left wall (x = -2 m) |
+| Shell | `/assets/3d/room/shell.<hash>.glb` with the nodes `shell_floor`, `shell_walls`, `shell_trim` |
+| Finishes | Slots `room_wall` and `room_floor`. A finish file holds one mesh (`walls` or `floor`) that replaces the shell node (`replaces` in the manifest) |
+| Furniture | Slot `furniture`, layer `object` or `rug`. Origin at the center of the footprint on the floor, front to +Z (glTF). The mesh stays inside its footprint (± 2 cm) and is at most 2.4 m high |
+| Wall decor | Slot `wall_decor`. Origin at the bottom center of the back face, front to +Z, at most 0.3 m deep |
+| Rotation | Floor items turn in 90° steps around the vertical axis: 90° turns the front from +Z to +X. A left-wall item turns 90° |
+| Manifest | `assets/manifests/room.v1.json`: grid, shell, one entry per sku with `footprint` (`{w, d}` floor, `{w, h}` wall), `layer`, `surfaces`, `drawCalls`. The API validates layouts with these footprints |
+| Thumbnails | Furniture alone; a finish on the room shell. The same 256 px size and toon look as the avatar items |
+
+To add a room item: add a builder and a `RoomAsset` (footprint, layer, materials) to `room.py`, add a `RoomItem`
+(sku `furn_`, `decor_`, `walls_` or `floor_`, price in its band), build, check, and look at the thumbnail. A
+preview of a furnished room (`ROOM_PREVIEW` in `build.py`) renders to `assets/build/previews/room.png` with
+`--previews`.
+
+### Room budgets
+
+| Budget | Limit | Now |
+|---|---|---|
+| Triangles per room item | 1,500 | at most 368 |
+| Draw calls per room item | 6 | at most 6 |
+| Download per room item | 120 KB | at most about 8 KB |
+| Triangles per finish | 2,500 | at most 1,524 (brick walls) |
+| Shell download | 150 KB | about 3 KB |
+| Worst-case room (shell, heaviest finishes, the 40 heaviest items) | 50,000 triangles, 150 draw calls, 3 MB | 6,960 triangles, 95 draw calls, about 150 KB |
 
 ## Add an emote
 

@@ -102,6 +102,21 @@ def bow() -> List[Key]:
     return [REST, (14, down, {}), (32, down, {}), (46, {}, {})]
 
 
-EMOTES = {"swish": swish, "wave": wave, "cheer": cheer, "groove": groove, "bow": bow}
+def jump() -> List[Key]:
+    crouch = _merge(_both("upper_leg", -40), _both("lower_leg", 70), _both("foot", -28),
+                    _both("upper_arm", 30, -6), {"chest": (10, 0, 0)})
+    air = _merge(_both("upper_arm", 0, -160, 0), _both("lower_arm", 0, -10, 0), _both("upper_leg", -10),
+                 _both("lower_leg", 25), {"head": (-10, 0, 0)})
+    return [
+        REST,
+        (9, crouch, {"hips": (0, 0, -0.08)}),
+        (17, air, {"root": (0, 0, 0.22)}),
+        (23, air, {"root": (0, 0, 0.18)}),
+        (30, crouch, {"hips": (0, 0, -0.06)}),
+        (42, {}, {}),
+    ]
+
+
+EMOTES = {"swish": swish, "wave": wave, "cheer": cheer, "groove": groove, "bow": bow, "jump": jump}
 # The frame shown in the thumbnail of each emote.
-PEAK = {"swish": 20, "wave": 15, "cheer": 13, "groove": 20, "bow": 20}
+PEAK = {"swish": 20, "wave": 15, "cheer": 13, "groove": 20, "bow": 20, "jump": 17}

@@ -22,7 +22,7 @@ import bpy  # noqa: E402
 
 import publish  # noqa: E402
 from vybe_art import blender as B  # noqa: E402
-from vybe_art import body, catalog, emotes, palette, rig  # noqa: E402
+from vybe_art import body, catalog, emotes, palette, rig, room  # noqa: E402
 from vybe_art.catalog import ASSET_BY_ID, Asset, Item  # noqa: E402
 
 STAGING = os.path.join(REPO, "assets", "build")
@@ -161,6 +161,132 @@ def previews(folder: str) -> None:
             B.render_thumbnail(os.path.join(folder, f"{name}-{body_id}.png"), objs, size=512)
 
 
+# ---------------------------------------------------------------- My Room (docs/design/p1-my-room.md)
+
+ROOM_YAW = 35.0  # the camera looks from the front right toward the back-left corner (both walls in view)
+ROOM_PITCH = -30.0
+
+
+def shell_objects() -> dict:
+    sm = room.SHELL_MATS
+    return {o.name: o for o in (B.static_object(room.shell_floor(), sm), B.static_object(room.shell_walls(), sm),
+                                B.static_object(room.shell_trim(), sm))}
+
+
+def room_item_object(item_or_asset, colors: dict | None = None):
+    asset = item_or_asset if isinstance(item_or_asset, room.RoomAsset) else room.ROOM_ASSET_BY_ID[item_or_asset.asset]
+    obj = B.static_object(asset.build(), asset.mats, name=asset.id)
+    if colors:
+        B.recolor(obj, colors)
+    return obj
+
+
+def build_room_shell(out: str) -> None:
+    B.reset()
+    shell_objects()
+    B.export_glb(out)
+
+
+def build_room_asset(asset: room.RoomAsset, out: str) -> None:
+    B.reset()
+    room_item_object(asset)
+    B.export_glb(out)
+
+
+def room_with_finish(item: room.RoomItem) -> list:
+    """The shell with one finish in place of the shell walls or floor."""
+    asset = room.ROOM_ASSET_BY_ID[item.asset]
+    shell = shell_objects()
+    finish = room_item_object(item, item.colors)
+    replaced = "shell_walls" if asset.slot == "room_wall" else "shell_floor"
+    B.hide([shell[replaced]])
+    return [o for name, o in shell.items() if name != replaced] + [finish]
+
+
+def room_thumbnail(item: room.RoomItem, out: str) -> None:
+    B.reset()
+    asset = room.ROOM_ASSET_BY_ID[item.asset]
+    if asset.footprint is None:
+        B.render_thumbnail(out, room_with_finish(item), yaw=ROOM_YAW, pitch=ROOM_PITCH)
+    else:
+        B.render_thumbnail(out, [room_item_object(item, item.colors)], yaw=30.0, pitch=-22.0)
+
+
+# A furnished room for the PR and the docs (not published): (sku, surface, x, y, rotation).
+ROOM_PREVIEW = {
+    "finishes": ["walls_brick", "floor_oak"],
+    "items": [
+        ("furn_bed", "floor", 0, 0, 0), ("furn_round_rug", "floor", 3, 3, 0), ("furn_sofa", "floor", 4, 6, 180),
+        ("furn_coffee_table", "floor", 4, 4, 0), ("furn_hoops_arcade", "floor", 6, 0, 0),
+        ("furn_bookshelf", "floor", 0, 4, 90), ("furn_potted_plant", "floor", 3, 0, 0),
+        ("furn_floor_lamp", "floor", 0, 6, 0), ("furn_beanbag", "floor", 1, 6, 0),
+        ("furn_trophy_stand", "floor", 5, 0, 0), ("decor_hoops_poster", "wall_back", 3, 2, 0),
+        ("decor_neon_bolt", "wall_left", 5, 2, 0), ("decor_wall_clock", "wall_back", 1, 3, 0),
+        ("decor_wall_shelf", "wall_left", 2, 2, 0),
+    ],
+}
+
+
+def room_preview(folder: str) -> None:
+    os.makedirs(folder, exist_ok=True)
+    by_sku = {i.sku: i for i in room.ROOM_ITEMS}
+    B.reset()
+    shell = shell_objects()
+    objs = [shell["shell_trim"]]
+    for sku in ROOM_PREVIEW["finishes"]:
+        objs.append(room_item_object(by_sku[sku], by_sku[sku].colors))
+    B.hide([shell["shell_walls"], shell["shell_floor"]])
+    for sku, surface, x, y, rotation in ROOM_PREVIEW["items"]:
+        item = by_sku[sku]
+        asset = room.ROOM_ASSET_BY_ID[item.asset]
+        obj = room_item_object(item, item.colors)
+        if surface == "floor":
+            B.place(obj, *room.place_floor(x, y, asset.footprint, rotation))
+        else:
+            B.place(obj, *room.place_wall(surface, x, y, asset.footprint))
+        objs.append(obj)
+    B.render_thumbnail(os.path.join(folder, "room.png"), objs, size=768, yaw=ROOM_YAW, pitch=ROOM_PITCH, line=1.6)
+
+
+def room_info() -> dict:
+    return {
+        "version": room.ROOM_VERSION,
+        "cellMeters": room.CELL,
+        "floor": {"columns": room.FLOOR_CELLS[0], "rows": room.FLOOR_CELLS[1]},
+        "wall": {"columns": room.WALL_CELLS[0], "rows": room.WALL_CELLS[1], "heightMeters": room.WALL_HEIGHT},
+        "maxItems": room.MAX_ITEMS,
+        "surfaces": list(room.SURFACES),
+        "rotations": list(room.ROTATIONS),
+        "shell": {"file": "room/shell.glb", "nodes": {"floor": "shell_floor", "walls": "shell_walls", "trim": "shell_trim"}},
+        "assets": {
+            a.id: {"file": f"room/{a.id}.glb", "slot": a.slot, "version": a.version,
+                   "footprint": list(a.footprint) if a.footprint else None, "layer": a.layer}
+            for a in room.ROOM_ASSETS
+        },
+        "items": [
+            {"sku": i.sku, "name": i.name, "price": i.price, "minLevel": i.min_level, "rarity": i.rarity,
+             "asset": i.asset, "assetKey": i.asset_key, "colors": i.colors, "thumb": f"room-thumbs/{i.sku}.png",
+             "surfaces": room.surfaces(room.ROOM_ASSET_BY_ID[i.asset].slot)}
+            for i in room.ROOM_ITEMS
+        ],
+    }
+
+
+def build_room(staging: str, argv: list) -> None:
+    os.makedirs(os.path.join(staging, "room"), exist_ok=True)
+    os.makedirs(os.path.join(staging, "room-thumbs"), exist_ok=True)
+    build_room_shell(os.path.join(staging, "room", "shell.glb"))
+    for asset in room.ROOM_ASSETS:
+        build_room_asset(asset, os.path.join(staging, "room", f"{asset.id}.glb"))
+    log(f"room shell and {len(room.ROOM_ASSETS)} room assets")
+    for item in room.ROOM_ITEMS:
+        room_thumbnail(item, os.path.join(staging, "room-thumbs", f"{item.sku}.png"))
+    log(f"{len(room.ROOM_ITEMS)} room thumbnails")
+    if "--previews" in argv:
+        room_preview(os.path.join(staging, "previews"))
+        log("room preview")
+
+
 def main(argv: list) -> None:
     t0 = time.time()
     os.makedirs(os.path.join(STAGING, "items"), exist_ok=True)
@@ -176,6 +302,7 @@ def main(argv: list) -> None:
     if "--previews" in argv:
         previews(os.path.join(STAGING, "previews"))
         log("previews")
+    build_room(STAGING, argv)
 
     info = {
         "catalogVersion": catalog.CATALOG_VERSION,
@@ -220,6 +347,7 @@ def main(argv: list) -> None:
             }
             for i in catalog.ITEMS
         ],
+        "room": room_info(),
     }
     with open(os.path.join(STAGING, "build-info.json"), "w", encoding="utf-8") as f:
         json.dump(info, f, indent=2)
