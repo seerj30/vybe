@@ -84,11 +84,11 @@
     ]
   },
   "base": {
-    "assetUrl": "/assets/3d/avatar/base.aea655f5583b.glb",
+    "assetUrl": "/assets/3d/avatar/base.5cff8d6c6267.glb",
     "triangles": 2538,
     "textureBytes": 0,
-    "downloadBytes": 110704,
-    "contentHash": "sha256:aea655f5583b993cc19d8a6f28d5fe262ecb0a9a889331fac6b0069edb242d55"
+    "downloadBytes": 110684,
+    "contentHash": "sha256:5cff8d6c6267f8588718e23e47bf219196c29ea549ab596b34b2c7acf80b3747"
   },
   "bodyMorph": "body_b",
   "bodyPresets": {

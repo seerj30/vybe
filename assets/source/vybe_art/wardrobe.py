@@ -10,10 +10,10 @@ import math
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from . import geom as g
-from .body import FLAT, FOOT_RINGS, HEAD_CENTER, HEAD_RADII, arm_dir, foot, hair_cap, hairline, hip_point, on_head
+from .body import FLAT, FOOT_RINGS, HEAD_CENTER, HEAD_RADII, foot, hair_cap, hairline, hip_point, on_head
 from .body import _surface_y as head_surface_y
 from .geom import Mesh, Vec, blend
-from .rig import ANKLE, ELBOW, KNEE, WRIST, Dims, mirror_name
+from .rig import Dims, mirror_name
 
 # ---------------------------------------------------------------- helpers
 
@@ -133,21 +133,21 @@ def _sleeve(d: Dims, kind: str, fit: float, mat: str, cuff: Optional[str], puffy
     """Left sleeve: covers the shoulder, ends past the elbow (short) or at the wrist (long)."""
     m = Mesh("sleeve")
     k = d.limb
-    s = d.shoulder()
-    ud = g.norm(g.sub(ELBOW, s))
-    ad = arm_dir()
+    s, elbow, wrist = d.shoulder(), d.elbow(), d.wrist()
+    ud = g.norm(g.sub(elbow, s))
+    ad = d.arm_dir()
     pts: List[Tuple[Vec, Vec, float, g.WeightSpec]] = [
         (g.sub(s, g.mul(ud, 0.045)), ud, 0.058 * k + fit, "upper_arm_L"),
         (s, ud, 0.066 * k + fit, "upper_arm_L"),
-        (g.lerp(s, ELBOW, 0.55), ud, 0.054 * k + fit + puffy, "upper_arm_L"),
+        (g.lerp(s, elbow, 0.55), ud, 0.054 * k + fit + puffy, "upper_arm_L"),
     ]
     if kind == "short":
-        pts.append((g.add(ELBOW, g.mul(ad, 0.012)), g.norm(g.add(ud, ad)), 0.05 * k + fit + 0.008, blend("upper_arm_L", "lower_arm_L", 0.5)))
+        pts.append((g.add(elbow, g.mul(ad, 0.012)), g.norm(g.add(ud, ad)), 0.05 * k + fit + 0.008, blend("upper_arm_L", "lower_arm_L", 0.5)))
     else:
         pts += [
-            (ELBOW, g.norm(g.add(ud, ad)), 0.048 * k + fit, blend("upper_arm_L", "lower_arm_L", 0.5)),
-            (g.lerp(ELBOW, WRIST, 0.5), ad, 0.044 * k + fit + puffy, "lower_arm_L"),
-            (g.add(WRIST, g.mul(ad, 0.006)), ad, 0.04 * k + fit, blend("lower_arm_L", "hand_L", 0.5)),
+            (elbow, g.norm(g.add(ud, ad)), 0.048 * k + fit, blend("upper_arm_L", "lower_arm_L", 0.5)),
+            (g.lerp(elbow, wrist, 0.5), ad, 0.044 * k + fit + puffy, "lower_arm_L"),
+            (g.add(wrist, g.mul(ad, 0.006)), ad, 0.04 * k + fit, blend("lower_arm_L", "hand_L", 0.5)),
         ]
     rings = [g.ring(c, dd, r, r, 8, FLAT) for (c, dd, r, _w) in pts]
     g.loft(m, rings, [w for (_c, _d, _r, w) in pts], mat, cap_start=True, cap_mat=mat)
@@ -201,18 +201,18 @@ def _leg(d: Dims, length: str, fit: float, flare: float, main: str, stripe: Opti
          pockets: Optional[str]) -> Mesh:
     m = Mesh("leg")
     k = d.limb
-    hip = hip_point(d)
+    hip, knee, ankle = hip_point(d), d.knee(), d.ankle()
     pts: List[Tuple[Vec, float, g.WeightSpec]] = [
         (g.add(hip, (0, 0, 0.03)), 0.08 * k + fit, "upper_leg_L"),
-        (g.lerp(hip, KNEE, 0.5), 0.07 * k + fit, "upper_leg_L"),
+        (g.lerp(hip, knee, 0.5), 0.07 * k + fit, "upper_leg_L"),
     ]
     if length == "shorts":
-        pts.append((g.add(KNEE, (0, 0, -0.025)), 0.058 * k + fit + flare, blend("upper_leg_L", "lower_leg_L", 0.5)))
+        pts.append((g.add(knee, (0, 0, -0.025)), 0.058 * k + fit + flare, blend("upper_leg_L", "lower_leg_L", 0.5)))
     else:
         pts += [
-            (KNEE, 0.058 * k + fit, blend("upper_leg_L", "lower_leg_L", 0.5)),
-            (g.lerp(KNEE, ANKLE, 0.35), 0.062 * k + fit, "lower_leg_L"),
-            (g.add(ANKLE, (0, 0, 0.005)), 0.046 * k + fit + flare, blend("lower_leg_L", "foot_L", 0.5)),
+            (knee, 0.058 * k + fit, blend("upper_leg_L", "lower_leg_L", 0.5)),
+            (g.lerp(knee, ankle, 0.35), 0.062 * k + fit, "lower_leg_L"),
+            (g.add(ankle, (0, 0, 0.005)), 0.046 * k + fit + flare, blend("lower_leg_L", "foot_L", 0.5)),
         ]
     rings = [g.ring(c, (0, 0, -1), r, r, 8, FLAT) for (c, r, _w) in pts]
 
@@ -247,12 +247,13 @@ def shoe(
 ) -> Mesh:
     left = Mesh("shoe")
     k = d.limb
+    ax = d.ankle()[0]
     grow = 0.018 if kind == "boot" else 0.012
     sole_h = 0.04 if kind == "boot" else 0.028
-    g.box(left, (ANKLE[0], -0.04, sole_h / 2), (0.1 * k + 2 * grow, 0.215, sole_h), "foot_L", sole, top_scale=(1.0, 0.98))
+    g.box(left, (ax, -0.04, sole_h / 2), (0.1 * k + 2 * grow, 0.215, sole_h), "foot_L", sole, top_scale=(1.0, 0.98))
     if kind == "slide":
         foot(left, d, 0.0, "skin", "foot_L", lift=sole_h - 0.004)
-        g.box(left, (ANKLE[0], -0.045, sole_h + 0.03), (0.1 * k + 0.03, 0.06, 0.024), "foot_L", main, top_scale=(0.8, 0.9))
+        g.box(left, (ax, -0.045, sole_h + 0.03), (0.1 * k + 0.03, 0.06, 0.024), "foot_L", main, top_scale=(0.8, 0.9))
         return both_sides(left, name)
 
     def mat(band: int, side: int) -> str:
@@ -266,7 +267,7 @@ def shoe(
     if kind in ("high", "boot"):
         top_z = 0.23 if kind == "boot" else 0.2
         r0, r1 = 0.05 * k + grow, 0.047 * k + grow
-        c0, c1 = (ANKLE[0], 0.012, 0.05), (ANKLE[0], 0.0, top_z)
+        c0, c1 = (ax, 0.012, 0.05), (ax, 0.0, top_z)
         g.loft(left, [g.ring(c0, (0, 0, 1), r0, r0 * 1.15, 8, FLAT), g.ring(c1, (0, 0, 1), r1, r1, 8, FLAT)],
                [blend("lower_leg_L", "foot_L", 0.5), "lower_leg_L"], main)
         if collar:
@@ -276,7 +277,7 @@ def shoe(
         for i in range(3 if kind == "low" else 4):
             y = -0.035 - 0.025 * i if kind == "low" else 0.0 - 0.028 * i
             z = 0.095 - 0.011 * i if kind == "low" else 0.12 - 0.016 * i
-            g.box(left, (ANKLE[0], y - 0.012 - (0.012 if kind != "low" else 0), z), (0.05 * k, 0.01, 0.008), "foot_L", laces)
+            g.box(left, (ax, y - 0.012 - (0.012 if kind != "low" else 0), z), (0.05 * k, 0.01, 0.008), "foot_L", laces)
     return both_sides(left, name)
 
 
@@ -331,9 +332,10 @@ def hair_item(kind: str, name: str) -> Mesh:
 
 def sweatband(d: Dims, name: str) -> Mesh:
     m = Mesh(name)
-    ad = arm_dir()
+    ad = d.arm_dir()
     k = d.limb
-    a, b = g.sub(WRIST, g.mul(ad, 0.075)), g.sub(WRIST, g.mul(ad, 0.015))
+    wrist = d.wrist()
+    a, b = g.sub(wrist, g.mul(ad, 0.075)), g.sub(wrist, g.mul(ad, 0.015))
     r0, r1 = 0.039 * k + 0.012, 0.036 * k + 0.012
     rings = [g.ring(g.lerp(a, b, t), ad, r0 + (r1 - r0) * t, r0 + (r1 - r0) * t, 8, FLAT) for t in (0, 0.38, 0.62, 1)]
     g.loft(m, rings, ["lower_arm_L"] * 4, lambda band, _s: "accent" if band == 1 else "primary", True, True)

@@ -6,10 +6,11 @@ made for, and the checker refuses a mismatch.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, replace
 from typing import Dict, List, Optional, Tuple
 
-from .geom import Vec
+from .geom import Vec, norm, sub
 
 RIG_VERSION = "vybe-rig-1"
 
@@ -89,13 +90,20 @@ def mirror_name(name: str) -> str:
 
 @dataclass(frozen=True)
 class Dims:
-    """Sizes of a body preset. The joints never move (one rig); only widths change."""
+    """Sizes of a body preset. The bones never move (one rig); the body shape changes around them.
+
+    Body B places its limbs further out. Arms turn around the shoulder joint (arm_spread), so an arm stays on
+    its bone pivot in every emote. Legs move out along X (leg_out): the emotes bend legs around the X axis,
+    which keeps that offset.
+    """
 
     torso_x: float = 1.0
     torso_y: float = 1.0
     hips_x: float = 1.0
     limb: float = 1.0
     arm_out: float = 0.0
+    arm_spread: float = 0.0  # degrees, away from the body around SHOULDER
+    leg_out: float = 0.0
     # Torso rings: (z, half width, half depth).
     torso: Tuple[Tuple[float, float, float], ...] = (
         (0.86, 0.122, 0.082),
@@ -130,13 +138,61 @@ class Dims:
                 return x0 + (x1 - x0) * t, y0 + (y1 - y0) * t
         return rings[-1][1], rings[-1][2]
 
+    def _arm(self, p: Vec) -> Vec:
+        """A point of the left arm in this body: turned out around SHOULDER, then moved out by arm_out."""
+        a = math.radians(self.arm_spread)
+        vx, vz = p[0] - SHOULDER[0], p[2] - SHOULDER[2]
+        x = vx * math.cos(a) - vz * math.sin(a)
+        z = vx * math.sin(a) + vz * math.cos(a)
+        return (SHOULDER[0] + x + self.arm_out, p[1], SHOULDER[2] + z)
+
     def shoulder(self) -> Vec:
-        return (SHOULDER[0] + self.arm_out, SHOULDER[1], SHOULDER[2])
+        return self._arm(SHOULDER)
+
+    def elbow(self) -> Vec:
+        return self._arm(ELBOW)
+
+    def wrist(self) -> Vec:
+        return self._arm(WRIST)
+
+    def arm_dir(self) -> Vec:
+        """Direction of the left forearm (elbow to wrist)."""
+        return norm(sub(self.wrist(), self.elbow()))
+
+    def hip(self) -> Vec:
+        """Top of the left thigh."""
+        return (HIP[0] + self.leg_out, 0.0, 0.80)
+
+    def knee(self) -> Vec:
+        return (KNEE[0] + self.leg_out, KNEE[1], KNEE[2])
+
+    def ankle(self) -> Vec:
+        return (ANKLE[0] + self.leg_out, ANKLE[1], ANKLE[2])
 
 
 BODY_A = Dims()
-# Body B: broader shoulders and chest, thicker limbs. Not a gender: both bodies wear every item.
-BODY_B = replace(BODY_A, torso_x=1.3, torso_y=1.16, hips_x=1.14, limb=1.22, arm_out=0.032)
+# Body B: a sturdy build. Broad shoulders and chest, a wide waist and hips, thick arms and legs, limbs set
+# further out. The head and the height stay the same, so the head is smaller in proportion to the body.
+# Not a gender: both bodies wear every item.
+# The waist rings are a little narrower before the scale (1.30x and 1.34x of body A instead of 1.42x), so
+# the arms keep a gap to the torso; arm_spread and arm_out keep the sleeves clear of a jacket body.
+BODY_B = replace(
+    BODY_A,
+    torso_x=1.42,
+    torso_y=1.3,
+    hips_x=1.34,
+    limb=1.32,
+    arm_out=0.015,
+    arm_spread=15.0,
+    leg_out=0.028,
+    torso=(
+        (0.86, 0.112, 0.082),
+        (0.96, 0.125, 0.088),
+        (1.05, 0.158, 0.094),
+        (1.10, 0.138, 0.084),
+        (1.135, 0.072, 0.056),
+    ),
+)
 
 BODY_PRESETS: Dict[str, Dims] = {"body_a": BODY_A, "body_b": BODY_B}
 MORPH_BODY_B = "body_b"
