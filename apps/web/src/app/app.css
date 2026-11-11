@@ -73,7 +73,15 @@ main:focus {
 
   .nav ul {
     flex: 1;
+    min-width: 0;
     justify-content: space-around;
+    /* A phone narrower than 375 px scrolls the row instead of cutting the last item off. */
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .nav li.desktop-only {
+    display: none;
   }
 
   .nav a {
@@ -81,7 +89,8 @@ main:focus {
     font-size: 13px;
   }
 
-  /* Six items fill a 375 px phone width; the hub and the wallet show the balance. */
+  /* Five items fill a 375 px phone width (Wardrobe, My Room and Wallet are desktop only; the hub wallet card
+     links to all three); the hub and the wallet show the balance. */
   .coins {
     display: none;
   }
