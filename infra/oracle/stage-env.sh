@@ -87,6 +87,7 @@ echo "Writing $ENV_DIR/api.env ..." >&2
   printf "Auth__Supabase__ServiceRoleKey='%s'\n" "$service_key"
   printf "Challenges__InviteSecret='%s'\n" "$invite_secret"
   printf "Challenges__ShareBaseUrl='%s'\n" "$origin"
+  printf "Content__AssetBaseUrl='%s/assets'\n" "$origin"
   printf "Storage__Exports__Bucket='%s'\n" "$BUCKET"
   printf "Storage__Exports__Region='eu-central-1'\n"
   printf "Storage__Exports__ServiceUrl='https://%s.storage.supabase.co/storage/v1/s3'\n" "$REF"
