@@ -10,6 +10,8 @@ import { PlayerStore } from "../player/player-store";
 import { playerName } from "../profiles/player-name";
 import { Generations } from "../challenges/generations";
 import { isBlocked, REPORT_REASONS } from "../profiles/safety";
+import { FRIENDS_API } from "../api/friends-api";
+import { friendErrorMessage, requestSentText } from "../friends/friend-view";
 
 type PublicProfile = Schemas["PublicProfile"];
 type ReportReason = Schemas["ReportReason"];
@@ -82,6 +84,33 @@ interface Message {
                 <p class="muted">Play a run, then send it to {{ name(p) }}. Only they can accept it.</p>
                 <a class="button" routerLink="/arcade/street-hoops" [queryParams]="{ to: p.handle }">Challenge {{ name(p) }}</a>
               </div>
+
+              <div class="card" data-testid="friend-card">
+                <h2>Friends</h2>
+                @switch (friendRelation()) {
+                  @case ("friends") {
+                    <p class="muted">You and {{ name(p) }} are friends.</p>
+                    <button type="button" class="button secondary" [disabled]="busy()" (click)="removeFriend(p)">Remove friend</button>
+                  }
+                  @case ("outgoing") {
+                    <p class="muted">You sent {{ name(p) }} a friend request. It waits for an answer.</p>
+                    <button type="button" class="button secondary" [disabled]="busy()" (click)="cancelFriendRequest(p)">Cancel request</button>
+                  }
+                  @case ("incoming") {
+                    <p>{{ name(p) }} sent you a friend request.</p>
+                    <div class="row">
+                      <button type="button" class="button" [disabled]="busy()" (click)="acceptFriend(p)">Accept</button>
+                      <button type="button" class="button secondary" [disabled]="busy()" (click)="declineFriend(p)">Decline</button>
+                    </div>
+                  }
+                  @case ("none") {
+                    <button type="button" class="button secondary" [disabled]="busy()" (click)="addFriend(p)">Add {{ name(p) }} as a friend</button>
+                  }
+                  @default {
+                    <p class="muted">VYBE could not load your friendship with {{ name(p) }}. <a routerLink="/friends">Open your friends</a></p>
+                  }
+                }
+              </div>
             }
 
             <div class="card">
@@ -152,6 +181,9 @@ export class Profile {
   readonly handle = input.required<string>();
 
   private readonly social = inject(SOCIAL_API);
+  private readonly friendsApi = inject(FRIENDS_API);
+  /** P1 friends (stream O): the caller's relation to this player; null when it could not load. */
+  protected readonly friendRelation = signal<Schemas["FriendshipState"]["relation"] | null>(null);
   protected readonly name = playerName;
   protected readonly player = inject(PlayerStore);
   protected readonly reasons = REPORT_REASONS;
@@ -197,6 +229,7 @@ export class Profile {
     this.confirmBlock.set(false);
     // A failed block list is not a failed profile: the block button still works (it is idempotent).
     const blocked = isBlocked(this.social, handle.toLowerCase()).catch(() => null);
+    const relation = this.friendsApi.relation(handle).then((r) => r.relation, () => null);
     let state: Load;
     try {
       state = { kind: "ready", profile: await this.social.getProfile(handle) };
@@ -204,7 +237,9 @@ export class Profile {
       state = isApiError(error, "not_found") ? { kind: "unavailable" } : { kind: "failed", message: errorMessage(error) };
     }
     const isBlockedResult = await blocked;
+    const relationResult = await relation;
     if (!isCurrent()) return;
+    this.friendRelation.set(relationResult);
     this.blocked.set(isBlockedResult === true);
     this.blockCheckFailed.set(isBlockedResult === null);
     this.state.set(state);
@@ -247,6 +282,7 @@ export class Profile {
       () => {
         this.blocked.set(true);
         this.confirmBlock.set(false);
+        this.friendRelation.set("none"); // a block ends the friendship and any request
         return `You blocked ${playerName(profile)}.`;
       },
     );
@@ -262,6 +298,43 @@ export class Profile {
     );
   }
 
+  protected async addFriend(profile: PublicProfile): Promise<void> {
+    let text = "";
+    await this.act(async () => {
+      const result = await this.friendsApi.sendRequest(profile.handle);
+      text = requestSentText({ ...result, handle: playerName(profile) });
+      this.friendRelation.set(result.status === "accepted" ? "friends" : "outgoing");
+    }, () => text, friendErrorMessage);
+  }
+
+  protected async acceptFriend(profile: PublicProfile): Promise<void> {
+    await this.act(() => this.friendsApi.accept(profile.handle), () => {
+      this.friendRelation.set("friends");
+      return `You and ${playerName(profile)} are now friends.`;
+    }, friendErrorMessage);
+  }
+
+  protected async declineFriend(profile: PublicProfile): Promise<void> {
+    await this.act(() => this.friendsApi.decline(profile.handle), () => {
+      this.friendRelation.set("none");
+      return `You declined the request from ${playerName(profile)}.`;
+    }, friendErrorMessage);
+  }
+
+  protected async cancelFriendRequest(profile: PublicProfile): Promise<void> {
+    await this.act(() => this.friendsApi.cancel(profile.handle), () => {
+      this.friendRelation.set("none");
+      return `You cancelled your friend request to ${playerName(profile)}.`;
+    }, friendErrorMessage);
+  }
+
+  protected async removeFriend(profile: PublicProfile): Promise<void> {
+    await this.act(() => this.friendsApi.remove(profile.handle), () => {
+      this.friendRelation.set("none");
+      return `${playerName(profile)} is no longer your friend.`;
+    }, friendErrorMessage);
+  }
+
   protected textValue(event: Event): string {
     return (event.target as HTMLTextAreaElement).value;
   }
@@ -270,7 +343,7 @@ export class Profile {
    * Sends one safety request, then changes the page with `applied`. When the handle changed while the
    * request ran, the answer is for another profile: the new page stays as it is.
    */
-  private async act(request: () => Promise<unknown>, applied: () => string): Promise<void> {
+  private async act(request: () => Promise<unknown>, applied: () => string, describe: (error: unknown) => string = errorMessage): Promise<void> {
     const isCurrent = this.loads.snapshot();
     this.busy.set(true);
     this.message.set(null);
@@ -281,7 +354,7 @@ export class Profile {
       message = { text: applied(), error: false };
     } catch (error: unknown) {
       if (!isCurrent()) return;
-      message = { text: errorMessage(error), error: true };
+      message = { text: describe(error), error: true };
     }
     this.message.set(message);
     this.busy.set(false);

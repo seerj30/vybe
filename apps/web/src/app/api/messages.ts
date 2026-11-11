@@ -51,6 +51,12 @@ const MESSAGES: Partial<Record<ErrorCode, string>> = {
   self_report: "You cannot report yourself.",
   outfit_limit_reached: "You can save 3 outfits. Delete one to save a new one.",
   outfit_items_invalid: "Some items in this outfit are not yours any more or do not fit. Nothing changed.",
+  // Friends (stream O).
+  self_friend_request: "You cannot send a friend request to yourself.",
+  already_friends: "You are already friends.",
+  friend_request_declined: "This player declined your last request. You can ask again 30 days after that.",
+  friend_request_limit: "You have 50 open friend requests. Cancel some before you send more.",
+  friend_limit_reached: "One of you has 200 friends, the limit. Remove a friend first.",
 };
 
 export function errorMessage(error: unknown): string {
