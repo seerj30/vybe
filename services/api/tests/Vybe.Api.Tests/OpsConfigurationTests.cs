@@ -22,6 +22,7 @@ public sealed class OpsConfigurationTests
         ["Storage:Exports:AccessKeyId"] = "key-id",
         ["Storage:Exports:SecretAccessKey"] = "key-secret",
         ["Content:Root"] = "/app/content",
+        ["Content:AssetBaseUrl"] = "https://vybe.example/assets",
         ["ReverseProxy:KnownNetworks:0"] = "10.0.0.0/8",
     };
 
@@ -53,7 +54,7 @@ public sealed class OpsConfigurationTests
         foreach (var name in new[]
         {
             "ConnectionStrings:Vybe", "Auth:Supabase:Authority", "Auth:Supabase:ApiKey", "Challenges:InviteSecret",
-            "Challenges:ShareBaseUrl", "Storage:Exports:Bucket", "Storage:Exports:Region", "Content:Root",
+            "Challenges:ShareBaseUrl", "Storage:Exports:Bucket", "Storage:Exports:Region", "Content:Root", "Content:AssetBaseUrl",
             "ReverseProxy:KnownNetworks", "Auth:Supabase:ServiceRoleKey",
         })
         {
@@ -65,6 +66,8 @@ public sealed class OpsConfigurationTests
     [InlineData("Challenges:InviteSecret", "c2hvcnQ=")] // 5 bytes
     [InlineData("Challenges:InviteSecret", "not base64!")]
     [InlineData("Challenges:ShareBaseUrl", "http://vybe.example")]
+    [InlineData("Content:AssetBaseUrl", "http://vybe.example/assets")]
+    [InlineData("Content:AssetBaseUrl", "https://cdn.vybe.invalid/assets")]
     [InlineData("Storage:Exports:ServiceUrl", "ftp://storage.example")]
     [InlineData("Storage:Exports:ServiceUrl", "http://storage.example")]
     [InlineData("Storage:Exports:SecretAccessKey", "")]
