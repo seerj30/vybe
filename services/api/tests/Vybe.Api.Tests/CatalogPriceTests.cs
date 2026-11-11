@@ -41,4 +41,17 @@ public sealed class CatalogPriceTests
         ];
         Assert.All(version1, sku => Assert.Contains(catalog.Items, i => i.Sku == sku));
     }
+
+    /// <summary>Spec §9: the item picture is the pipeline thumbnail under Content:AssetBaseUrl, not a placeholder path.</summary>
+    [Fact]
+    public void PreviewUrl_UsesThePipelineThumbnail()
+    {
+        var content = new ContentCatalog(new ContentOptions { Root = ApiFactory.RepoRoot, AssetBaseUrl = "https://vybe.example/assets/" });
+        var item = content.Catalog.Items.First(i => i.Sku == "hair_high_top");
+
+        Assert.NotNull(item.ThumbnailUrl);
+        Assert.StartsWith("/assets/3d/thumbs/", item.ThumbnailUrl, StringComparison.Ordinal);
+        Assert.Equal("https://vybe.example" + item.ThumbnailUrl, content.PreviewUrl(item.Sku, item.AssetKey));
+        Assert.Equal("https://vybe.example/assets/unknown/preview.png", content.PreviewUrl("no_such_sku", "unknown"));
+    }
 }

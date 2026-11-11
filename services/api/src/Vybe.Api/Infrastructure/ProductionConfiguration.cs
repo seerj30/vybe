@@ -70,10 +70,11 @@ public static class ProductionConfiguration
             problems.Add("Challenges:ShareBaseUrl must be an absolute https URL");
         }
 
-        // Item picture URLs (previewUrl) are built on it; optional, the default is Challenges:ShareBaseUrl.
-        if (!string.IsNullOrWhiteSpace(configuration["Content:AssetOrigin"]) && !IsHttpsUrl(configuration["Content:AssetOrigin"]))
+        // Item pictures in the catalog and inventory responses (spec §9); the default is a placeholder host.
+        if (!IsHttpsUrl(configuration["Content:AssetBaseUrl"])
+            || new Uri(configuration["Content:AssetBaseUrl"]!).Host.EndsWith(".invalid", StringComparison.OrdinalIgnoreCase))
         {
-            problems.Add("Content:AssetOrigin must be an absolute https URL");
+            problems.Add("Content:AssetBaseUrl must be the absolute https URL of the published art (https://<web origin>/assets)");
         }
 
         var storage = configuration.GetSection(S3ExportStorageOptions.Section).Get<S3ExportStorageOptions>() ?? new S3ExportStorageOptions();

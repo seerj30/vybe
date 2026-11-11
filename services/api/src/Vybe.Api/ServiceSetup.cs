@@ -33,8 +33,7 @@ public static class ServiceSetup
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton(sp => new ContentCatalog(
             configuration.GetSection(ContentOptions.Section).Get<ContentOptions>()
-            ?? throw new InvalidOperationException("Content:Root is not configured"),
-            configuration[$"{ChallengeOptions.Section}:{nameof(ChallengeOptions.ShareBaseUrl)}"]));
+            ?? throw new InvalidOperationException("Content:Root is not configured")));
         services.AddHttpContextAccessor();
         services.AddScoped<CurrentPlayer>();
         services.AddScoped<Idempotency>();
