@@ -78,14 +78,14 @@ type Status = { kind: "loading" } | { kind: "load_failed"; message: string } | {
     </section>
   `,
   styles: `
-    .creator { display: grid; gap: 16px; }
+    .creator { display: grid; gap: var(--space-4); }
     .preview { display: flex; flex-direction: column; align-items: center; }
     .preview vybe-avatar-viewport { max-width: 240px; }
-    .groups { display: grid; gap: 12px; }
-    fieldset { border: 1px solid #2b3350; border-radius: 12px; padding: 8px 12px 12px; margin: 0; }
+    .groups { display: grid; gap: var(--space-3); }
+    fieldset { border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 8px 12px 12px; margin: 0; }
     legend { font-weight: 700; padding: 0 4px; }
-    .option { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin-right: 14px; cursor: pointer; }
-    .option input { width: 20px; height: 20px; accent-color: #ffc83d; }
+    .option { display: inline-flex; align-items: center; gap: 6px; min-height: var(--control-height); margin-right: 14px; cursor: pointer; }
+    .option input { width: 20px; height: 20px; accent-color: var(--color-accent); }
     .footer p:empty { display: none; }
     @media (min-width: 768px) {
       .creator { grid-template-columns: 240px 1fr; align-items: start; }

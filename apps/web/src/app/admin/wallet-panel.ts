@@ -3,6 +3,7 @@ import type { Schemas } from "@vybe/contracts";
 import { AccountApi } from "../api/account-api";
 import { ActionKeys, isApiError } from "../api/api-client";
 import { errorMessage } from "../api/messages";
+import { CoinChange } from "../ui/coin-change";
 import { ADMIN_FORM_STYLES, inputText, validReason } from "./admin-form";
 
 const MAX_DELTA = 1_000_000;
@@ -13,6 +14,7 @@ const MAX_DELTA = 1_000_000;
  */
 @Component({
   selector: "vybe-admin-wallet",
+  imports: [CoinChange],
   template: `
     <form (submit)="$event.preventDefault(); adjust()" aria-label="Wallet adjustment">
       <label>
@@ -36,7 +38,7 @@ const MAX_DELTA = 1_000_000;
     }
     @if (result(); as result) {
       <p class="notice" role="status">
-        Wallet of {{ result.playerId }} changed by {{ result.delta > 0 ? "+" : "" }}{{ result.delta }}. New balance:
+        Wallet of {{ result.playerId }} changed by <vybe-coin-change [delta]="result.delta" />. New balance:
         {{ result.balanceAfter }} V-Coins.
       </p>
     }

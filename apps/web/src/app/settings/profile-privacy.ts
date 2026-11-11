@@ -40,9 +40,9 @@ const OPTIONS: readonly { value: ProfileVisibility; label: string; help: string 
     <p aria-live="polite" [class.error]="message()?.error" [class.notice]="message() && !message()?.error">{{ message()?.text }}</p>
   `,
   styles: `
-    fieldset { border: 0; padding: 0; margin: 0 0 12px; display: grid; gap: 8px; }
+    fieldset { border: 0; padding: 0; margin: 0 0 12px; display: grid; gap: var(--space-2); }
     legend { font-weight: 600; margin-bottom: 8px; }
-    .choice { display: flex; gap: 10px; align-items: flex-start; min-height: 44px; }
+    .choice { display: flex; gap: 10px; align-items: flex-start; min-height: var(--control-height); }
     .choice input { margin-top: 5px; }
     .choice span { display: grid; }
     p:empty { display: none; }

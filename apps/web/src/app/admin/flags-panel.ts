@@ -41,7 +41,8 @@ export const FLAG_LABELS: Record<ReviewFlag, string> = {
       <p class="muted">No flagged runs.</p>
     }
     @if (runs().length > 0) {
-      <table data-testid="flagged-runs">
+      <div class="table-wrap">
+      <table class="table" data-testid="flagged-runs">
         <caption class="visually-hidden">Flagged runs, newest first</caption>
         <thead>
           <tr><th scope="col">Player</th><th scope="col">Flags</th><th scope="col">Score</th><th scope="col">Run time</th><th scope="col">Submitted</th></tr>
@@ -72,6 +73,7 @@ export const FLAG_LABELS: Record<ReviewFlag, string> = {
           }
         </tbody>
       </table>
+      </div>
     }
     @if (cursor()) {
       <button type="button" class="button secondary" [disabled]="loading()" (click)="load(cursor())">
@@ -82,9 +84,10 @@ export const FLAG_LABELS: Record<ReviewFlag, string> = {
   styles: [
     ADMIN_FORM_STYLES,
     `
+      .table-wrap { margin-top: var(--space-4); }
+      .table { font-size: var(--text-sm); }
+      .table th, .table td { vertical-align: top; overflow-wrap: anywhere; }
       .filter { max-width: 280px; margin-bottom: 12px; }
-      table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 14px; }
-      th, td { text-align: left; vertical-align: top; padding: 8px; border-bottom: 1px solid #2b3350; overflow-wrap: anywhere; }
       .flags { margin: 0; padding-left: 18px; }
     `,
   ],

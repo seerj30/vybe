@@ -80,7 +80,7 @@ interface Message {
           } @else if (isMe()) {
             <section class="card badges" aria-labelledby="badges-title">
               <h2 id="badges-title">Badges</h2>
-              <p class="muted">No badges yet. Finish a run to unlock your first one.</p>
+              <p class="empty">No badges yet. Finish a run to unlock your first one.</p>
               <a routerLink="/achievements">See all achievements</a>
             </section>
           }
@@ -204,28 +204,27 @@ interface Message {
     </section>
   `,
   styles: `
-    .head { display: flex; gap: 16px; align-items: center; margin-bottom: 16px; }
+    .head { display: flex; gap: var(--space-4); align-items: center; margin-bottom: 16px; }
     .head vybe-avatar-portrait { width: 96px; flex: none; }
     .head h1 { margin: 0; }
     .head p { margin: 0; }
     .card + .card, .room { margin-top: 16px; }
     .room vybe-room-viewport { max-width: 560px; }
     .room .button { margin-top: 8px; }
-    .link { min-height: 44px; padding: 0; border: 0; background: none; color: #8fb3ff; font: inherit; text-decoration: underline; cursor: pointer; }
-    .badges ul { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
-    .badges li { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: #141826; font-weight: 600; }
-    .medal { color: #cd7f32; }
-    .medal[data-tier="silver"] { color: #c9d1e0; }
-    .medal[data-tier="gold"] { color: #ffc83d; }
-    .small { font-size: 14px; font-weight: 400; }
+    .link { min-height: var(--control-height); padding: 0; border: 0; background: none; color: var(--color-link); font: inherit; text-decoration: underline; cursor: pointer; }
+    .badges ul { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+    .badges li { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: var(--radius-pill); background: var(--color-bg); font-weight: 600; }
+    .medal { color: var(--color-bronze); }
+    .medal[data-tier="silver"] { color: var(--color-silver); }
+    .medal[data-tier="gold"] { color: var(--color-gold); }
+    .small { font-size: var(--text-sm); font-weight: 400; }
     h2:focus { outline: none; }
-    h2 { margin: 0 0 8px; font-size: 18px; }
+    h2 { margin: 0 0 var(--space-3); }
     fieldset { border: 0; padding: 0; margin: 0 0 12px; }
     legend { font-weight: 600; margin-bottom: 8px; }
-    .choice { display: flex; gap: 8px; align-items: center; min-height: 36px; }
-    .details { display: grid; gap: 4px; margin-bottom: 12px; }
-    textarea { padding: 8px 12px; border-radius: 10px; border: 1px solid #2b3350; background: #141826; color: inherit; font: inherit; }
-    .row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .choice { display: flex; gap: var(--space-2); align-items: center; min-height: 36px; }
+    .details { display: grid; gap: var(--space-1); margin-bottom: 12px; }
+    .row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
     p:empty { display: none; }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,

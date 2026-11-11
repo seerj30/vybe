@@ -79,7 +79,7 @@ const PAGE_SIZE = 100;
       } @else if (loading() && items().length === 0) {
         <p class="muted" role="status">Loading the shop…</p>
       } @else if (items().length === 0) {
-        <p class="muted">No items here right now.</p>
+        <p class="empty">No items here right now.</p>
       }
 
       <ul class="grid">
@@ -134,23 +134,24 @@ const PAGE_SIZE = 100;
     </section>
   `,
   styles: `
-    .filter { display: inline-flex; gap: 8px; align-items: center; margin-bottom: 12px; }
-    select { min-height: 44px; padding: 6px 10px; border-radius: 10px; background: #1b2135; color: inherit; border: 1px solid #2b3350; font: inherit; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; padding: 0; margin: 16px 0; list-style: none; }
+    .filter { display: inline-flex; gap: var(--space-2); align-items: center; margin-bottom: 12px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-3); padding: 0; margin: var(--space-4) 0; list-style: none; }
+    @media (max-width: 767px) { .item.card { padding: var(--space-3); } .item h2 { font-size: var(--text-md); } .item .button { padding-inline: var(--space-2); font-size: var(--text-sm); } }
+    @media (min-width: 768px) { .grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--space-4); } }
     .item { display: flex; flex-direction: column; gap: 6px; }
-    .item vybe-item-thumb { width: 112px; }
-    .item h2 { font-size: 18px; margin: 6px 0 0; }
+    .item vybe-item-thumb { width: 112px; max-width: 100%; }
+    .item h2 { font-size: var(--text-lg); margin: 6px 0 0; }
     .meta, .price, .owned { margin: 0; }
-    .meta { text-transform: capitalize; font-size: 14px; }
-    .price { font-weight: 800; color: #ffc83d; }
-    .item p { font-size: 14px; }
+    .meta { text-transform: capitalize; font-size: var(--text-sm); }
+    .price { font-weight: 800; color: var(--color-accent); }
+    .item p { font-size: var(--text-sm); }
     .item .button { margin-top: auto; }
-    .row { display: flex; gap: 8px; flex-wrap: wrap; }
-    .preview { display: grid; gap: 16px; align-items: center; margin-bottom: 16px; }
+    .row { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+    .preview { display: grid; gap: var(--space-4); align-items: center; margin-bottom: 16px; }
     .preview vybe-avatar-viewport { max-width: 220px; margin: 0 auto; }
-    .preview h2 { margin: 0 0 6px; font-size: 18px; }
+    .preview h2 { margin: 0 0 6px; font-size: var(--text-lg); }
     .preview h2:focus { outline: none; }
-    .link { align-self: flex-start; min-height: 44px; padding: 0; border: 0; background: none; color: #8fb3ff; font: inherit; font-size: 14px; text-decoration: underline; cursor: pointer; }
+    .link { align-self: flex-start; min-height: var(--control-height); padding: 0; border: 0; background: none; color: var(--color-link); font: inherit; font-size: var(--text-sm); text-decoration: underline; cursor: pointer; }
     @media (min-width: 768px) { .preview { grid-template-columns: 240px 1fr; } }
     .sr-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   `,

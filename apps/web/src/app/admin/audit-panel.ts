@@ -30,7 +30,8 @@ interface Filter {
       <p class="muted">No audit log entries.</p>
     }
     @if (entries().length > 0) {
-      <table>
+      <div class="table-wrap">
+      <table class="table">
         <caption class="visually-hidden">Audit log, newest first</caption>
         <thead>
           <tr><th scope="col">When</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Entity</th><th scope="col">Reason</th></tr>
@@ -54,6 +55,7 @@ interface Filter {
           }
         </tbody>
       </table>
+      </div>
     }
     @if (cursor()) {
       <button type="button" class="button secondary" (click)="load(cursor())">Show older entries</button>
@@ -62,10 +64,11 @@ interface Filter {
   styles: [
     ADMIN_FORM_STYLES,
     `
+      .table-wrap { margin-top: var(--space-4); }
+      .table { font-size: var(--text-sm); }
+      .table th, .table td { vertical-align: top; overflow-wrap: anywhere; }
       .filters { max-width: none; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; }
       .filters .actions { margin: 0; }
-      table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 14px; }
-      th, td { text-align: left; vertical-align: top; padding: 8px; border-bottom: 1px solid #2b3350; overflow-wrap: anywhere; }
       pre { white-space: pre-wrap; font-size: 12px; }
     `,
   ],

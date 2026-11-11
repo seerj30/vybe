@@ -64,9 +64,7 @@ type Step = "start" | "confirm" | "verify" | "sending";
   styles: `
     .check { display: flex; gap: 10px; align-items: flex-start; }
     .check input { width: 20px; height: 20px; margin-top: 2px; }
-    label { display: grid; gap: 4px; font-weight: 600; max-width: 420px; }
-    input[type="password"] { min-height: 44px; padding: 8px 12px; border-radius: 10px; border: 1px solid #3a4468; background: #101421; color: inherit; font: inherit; }
-    .button.danger { background: #ff6b6b; color: #141826; }
+    label { display: grid; gap: var(--space-1); font-weight: 600; max-width: 420px; }
     h3 { margin-bottom: 4px; }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,

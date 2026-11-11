@@ -17,8 +17,9 @@ import { GAMES } from "../games/games";
             <p class="muted">{{ game.blurb }}</p>
             <div class="actions">
               <a class="button" [routerLink]="game.route">Play {{ game.name }}</a>
+              <!-- One span: a flex button drops the space before a separate text run. -->
               <a class="button secondary" [routerLink]="game.practiceRoute">
-                Practice<span class="visually-hidden"> {{ game.name }}</span> (no rewards)
+                <span>Practice<span class="visually-hidden"> {{ game.name }}</span> (no rewards)</span>
               </a>
             </div>
           </article>
@@ -28,7 +29,7 @@ import { GAMES } from "../games/games";
   `,
   styles: `
     h2 { margin-top: 0; }
-    .games { display: grid; gap: 16px; }
+    .games { display: grid; gap: var(--space-4); }
     @media (min-width: 768px) { .games { grid-template-columns: 1fr 1fr; } }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,

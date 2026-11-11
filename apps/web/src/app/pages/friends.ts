@@ -70,7 +70,7 @@ interface Message {
           <div class="card">
             <h2>Your friends</h2>
             @if (l.friends.length === 0) {
-              <p class="muted">No friends yet. Send a request above, or open a player's profile and add them.</p>
+              <p class="empty">No friends yet. Send a request above, or open a player's profile and add them.</p>
             } @else {
               <ul class="list" aria-label="Your friends">
                 @for (f of l.friends; track f.handle) {
@@ -117,13 +117,13 @@ interface Message {
   `,
   styles: `
     .card { margin-top: 16px; }
-    h2 { margin: 0 0 8px; font-size: 18px; }
-    .small { font-size: 14px; margin: 0 0 8px; }
-    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-    .add .row input { flex: 1 1 200px; min-height: 44px; padding: 8px 12px; border-radius: 10px; border: 1px solid #2b3350; background: #141826; color: inherit; font: inherit; }
+    h2 { margin: 0 0 var(--space-2); }
+    .small { font-size: var(--text-sm); margin: 0 0 8px; }
+    .row { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+    .add .row input { flex: 1 1 200px; }
     .list { list-style: none; margin: 0; padding: 0; }
-    .list li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 0; }
-    .list li + li { border-top: 1px solid #2b3350; }
+    .list li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--space-2); padding: 10px 0; }
+    .list li + li { border-top: 1px solid var(--color-border); }
     .who { display: grid; min-width: 0; overflow-wrap: anywhere; }
     p:empty { display: none; }
   `,

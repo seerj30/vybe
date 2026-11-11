@@ -27,12 +27,12 @@ import { TIER_LABELS } from "./achievement-view";
     }
   `,
   styles: `
-    .toast { margin: 12px 0; padding: 12px 16px; border-radius: 14px; background: #23305a; border: 2px solid #ffc83d; animation: pop 240ms ease-out; }
+    .toast { margin: 12px 0; padding: 12px 16px; border-radius: 14px; background: var(--color-highlight); border: 2px solid var(--color-accent); animation: pop 240ms ease-out; }
     ul { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
-    li { display: flex; gap: 8px; align-items: baseline; }
-    .medal { font-size: 18px; color: #cd7f32; }
-    .medal[data-tier="silver"] { color: #c9d1e0; }
-    .medal[data-tier="gold"] { color: #ffc83d; }
+    li { display: flex; gap: var(--space-2); align-items: baseline; }
+    .medal { font-size: var(--text-lg); color: var(--color-bronze); }
+    .medal[data-tier="silver"] { color: var(--color-silver); }
+    .medal[data-tier="gold"] { color: var(--color-gold); }
     @keyframes pop { from { transform: scale(0.96); opacity: 0; } to { transform: none; opacity: 1; } }
     @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
   `,

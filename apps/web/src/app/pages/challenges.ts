@@ -107,7 +107,7 @@ const PAGE_SIZE = 20;
       } @else if (rows() === null) {
         <p class="muted" role="status">Loading your challenges…</p>
       } @else if (rows()!.length === 0) {
-        <p class="notice">You have no challenges yet. Play a run, then send it to a friend.</p>
+        <p class="empty">You have no challenges yet. Play a run, then send it to a friend.</p>
       } @else {
         <ul class="list" aria-label="My challenges">
           @for (row of rows()!; track row.challenge.challengeId) {
@@ -167,22 +167,20 @@ const PAGE_SIZE = 20;
   `,
   styles: `
     .create { margin-bottom: 16px; }
-    .create h2 { margin: 0 0 8px; font-size: 20px; }
-    .link { display: grid; gap: 4px; font-weight: 600; }
-    .link input { min-height: 44px; padding: 8px 12px; border-radius: 10px; border: 1px solid #2b3350; background: #141826; color: inherit; font: inherit; }
-    .small { font-size: 13px; }
+    .create h2 { margin: 0 0 var(--space-2); }
+    .link { display: grid; gap: var(--space-1); font-weight: 600; }
+    .small { font-size: var(--text-xs); }
     .top { margin: 0 0 16px; }
-    .list { display: grid; gap: 12px; padding: 0; margin: 0 0 16px; list-style: none; }
-    .item h2 { margin: 0 0 6px; font-size: 17px; }
+    .list { display: grid; gap: var(--space-3); padding: 0; margin: 0 0 16px; list-style: none; }
+    .item h2 { margin: 0 0 6px; font-size: var(--text-lg); }
     .status { display: flex; gap: 10px; align-items: center; margin: 0 0 8px; }
-    .badge { padding: 2px 10px; border-radius: 999px; background: #2b3460; font-size: 13px; font-weight: 600; }
-    [data-status="expired"] .badge { background: #3a3f52; }
-    .outcome { color: #ffc83d; }
-    .scores { display: flex; gap: 24px; margin: 0 0 8px; }
+    [data-status="expired"] .badge { background: var(--color-surface-raised); color: var(--color-text-muted); }
+    .outcome { color: var(--color-accent); }
+    .scores { display: flex; gap: var(--space-5); margin: 0 0 8px; }
     .scores div { display: grid; }
-    .scores dt { color: #aab1c8; font-size: 13px; }
+    .scores dt { color: var(--color-text-muted); font-size: var(--text-xs); }
     .scores dd { margin: 0; font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
-    .row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
     p:empty { display: none; }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
