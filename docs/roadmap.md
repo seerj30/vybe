@@ -43,7 +43,7 @@ branch and opens PRs. The orchestrator session reviews, tests and merges them.
 | Gate item | Status |
 |---|---|
 | Critical browser E2E (E01–E12) | In CI on every PR and on master (`tests/e2e/specs`) |
-| Load review | Local 5-minute k6 run passed; production run on the Oracle VM + Supabase Free passed on 2026-11-11 at half the target rate (read p95 126 ms, write p95 146 ms, 0 % failures; `docs/runbooks/load-test.md`). Repeat at the full rate before more than a few hundred players |
+| Load review | Local 5-minute k6 run passed; production runs on the Oracle VM + Supabase Free passed on 2026-11-11: half rate, then the full rate on the P1 release 90628e1 (read p95 121 ms, write p95 161 ms, 0 % failures, API at most 32 % of one core; `docs/runbooks/load-test.md`). Repeat after large changes to the run verification path or before a public launch |
 | Security review | Independent reviews of streams A, B, D, G, H, J, K; all findings fixed (#17, #23, #29, #30, #31, #35, #36) |
 | Telemetry, backup/restore, incident runbook | Merged (stream D, `docs/runbooks/`, ADR 0006) |
 | Privacy policy and age policy | Signed 2026-11-07 (decisions 1, 6, 8; spec v1.4). Code done (#35); drafts in `docs/legal/`. Open: counsel country list and final notice |
