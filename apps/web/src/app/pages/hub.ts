@@ -34,7 +34,7 @@ import { QuestsCard } from "../quests/quests-card";
           <div class="card">
             <h2>Wallet</h2>
             <p class="balance"><span data-testid="wallet-balance">{{ me.walletBalance }}</span> V-Coins</p>
-            <div class="links"><a routerLink="/wallet">History</a> · <a routerLink="/shop">Shop</a> · <a routerLink="/wardrobe">Wardrobe</a></div>
+            <div class="links"><a routerLink="/wallet">History</a> · <a routerLink="/shop">Shop</a> · <a routerLink="/wardrobe">Wardrobe</a> · <a routerLink="/room">My Room</a></div>
           </div>
           <div class="card play">
             <h2>Play</h2>
