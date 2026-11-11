@@ -861,6 +861,13 @@ ALTER TABLE vybe.achievements ADD reward_xp integer NOT NULL DEFAULT 0;
 
 ALTER TABLE vybe.achievements ADD version integer NOT NULL DEFAULT 0;
 
+CREATE TABLE vybe.content_markers (
+    name text NOT NULL,
+    fingerprint text NOT NULL,
+    completed_at timestamp with time zone NOT NULL,
+    CONSTRAINT pk_content_markers PRIMARY KEY (name)
+);
+
 CREATE TABLE vybe.player_stats (
     player_id uuid NOT NULL,
     stat text NOT NULL,
@@ -875,7 +882,7 @@ CREATE TABLE vybe.player_stats (
 ALTER TABLE vybe.achievements ADD CONSTRAINT ck_achievements_reward_xp CHECK (reward_xp >= 0);
 
 INSERT INTO vybe.__ef_migrations_history (migration_id, product_version)
-VALUES ('20261111085945_Achievements', '10.0.13');
+VALUES ('20261111092635_Achievements', '10.0.13');
 
 COMMIT;
 

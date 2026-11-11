@@ -36,6 +36,20 @@ namespace Vybe.Data.Migrations
                 defaultValue: 0);
 
             migrationBuilder.CreateTable(
+                name: "content_markers",
+                schema: "vybe",
+                columns: table => new
+                {
+                    name = table.Column<string>(type: "text", nullable: false),
+                    fingerprint = table.Column<string>(type: "text", nullable: false),
+                    completed_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_content_markers", x => x.name);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "player_stats",
                 schema: "vybe",
                 columns: table => new
@@ -69,6 +83,10 @@ namespace Vybe.Data.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropTable(
+                name: "content_markers",
+                schema: "vybe");
+
             migrationBuilder.DropTable(
                 name: "player_stats",
                 schema: "vybe");

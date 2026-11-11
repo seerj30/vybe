@@ -133,7 +133,7 @@ public static class AchievementProgress
             await RaiseAsync(db, playerId, AchievementStats.BestOf(session.GameId), session.Score ?? 0, now, cancellationToken);
             var rank = await WeeklyRankAsync(db, playerId, session.GameId, LeaderboardEndpoints.WeekStart(session.StartedAt!.Value), now,
                 cancellationToken);
-            if (rank <= 10)
+            if (rank <= WeeklyRankLimit)
             {
                 await RaiseAsync(db, playerId, AchievementStats.WeeklyTop10, 1, now, cancellationToken);
             }
@@ -282,10 +282,14 @@ public static class AchievementProgress
         return streak;
     }
 
+    /// <summary>Weekly rank achievements look at the top 10 only; the rank count stops there.</summary>
+    public const int WeeklyRankLimit = 10;
+
     /// <summary>
-    /// The player's rank on the global weekly board (competition rank): 1 + the listed players with a higher best score.
-    /// Same listing rule as <c>GET /leaderboards/{gameId}/weekly</c>: no private, deleting, deleted or suspended players.
-    /// Reads other players' rows without a lock.
+    /// The player's rank on the global weekly board (competition rank): 1 + the listed players with a higher best score,
+    /// counted only up to <see cref="WeeklyRankLimit"/> so the verification transaction does O(10) work: any value above
+    /// the limit means "outside the top 10". Same listing rule as <c>GET /leaderboards/{gameId}/weekly</c>: no private,
+    /// deleting, deleted or suspended players. Reads other players' rows without a lock.
     /// </summary>
     public static async Task<int> WeeklyRankAsync(
         VybeDbContext db, Guid playerId, string gameId, DateOnly weekStart, DateTime now, CancellationToken cancellationToken)
@@ -303,6 +307,7 @@ public static class AchievementProgress
             && !(p.Status == PlayerStatus.Suspended && (p.SuspendedUntil == null || p.SuspendedUntil > now)));
         var better = await scores.Where(s => s.PlayerId != playerId && s.BestScore > best)
             .Join(listed, s => s.PlayerId, p => p.Id, (s, _) => s.PlayerId)
+            .Take(WeeklyRankLimit)
             .CountAsync(cancellationToken);
         return better + 1;
     }

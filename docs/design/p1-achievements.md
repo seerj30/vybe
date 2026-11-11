@@ -62,7 +62,9 @@ daily game XP cap (same rule as quest XP, spec §8). **Effect on V-Coins:** XP r
 pays 100 V-Coins (spec §8). 1,350 XP moves a new player from level 1 to level 4 sooner (300 V-Coins earlier) and a
 level 20 player by at most one level. No achievement pays V-Coins directly. In practice the first verified run of a new
 player now reaches level 2 at once (80 run XP + 25 XP for "First Bucket" ≥ 100), so the 100 V-Coin level reward comes
-on run 1 instead of run 2. Badge only is a one-line content change (`rewardXp: 0`) if product prefers it.
+on run 1 instead of run 2. **Decided (product owner, 2026-11-11, `docs/decisions/README.md` P1 decisions): keep the
+achievement XP, including the indirect level-up V-Coins; no direct V-Coin rewards.** Review with the decision 5 economy
+review after 2 weeks of beta data.
 
 ## Why a manifest
 
@@ -88,6 +90,9 @@ pays the `reward_xp` of the row, so the transaction needs no manifest.
 **`player_achievements`** (exists): `(player_id, achievement_id) PK`, `unlocked_at`. One row per unlock. A row is
 never updated.
 
+**`content_markers`** (new): `name text PK`, `fingerprint text`, `completed_at`. A finished one-time content job
+(here: the backfill, see Backfill). No player data.
+
 **`player_stats`** (new): `(player_id, stat) PK`, `value bigint NOT NULL CHECK (value >= 0)`, `updated_at`.
 `CHECK (stat ~ '^[a-z0-9_:-]{1,64}$')`. One row per player and stat, written with one atomic upsert (invariant 11
 pattern), never read-modify-write.
@@ -110,7 +115,8 @@ that runs twice changes nothing. The `+1` writes run once per session: the sessi
 `active → verified` status change make the verification run once.
 
 The weekly rank uses the global board rule: 1 + the number of listed players (not private, not deleting, deleted or
-suspended) with a higher best score in the same game and week. Ties share a rank. A private player gets the own rank
+suspended) with a higher best score in the same game and week. Ties share a rank. The count stops at 10 (`LIMIT 10`),
+so the verification transaction does O(10) work. A private player gets the own rank
 too, as in the board's `me` field (the badge then shows only to that player). The rank is the rank at the time of
 the run; a later better run of another player does not take the achievement away.
 
@@ -185,10 +191,13 @@ achievement XP.
 ## Backfill
 
 Small data (beta): one computation in the deploy `seed` step (`release` runs it after `migrate`), after the achievement
-seeder. It runs on every seed: it is idempotent, so a backfill that stopped half way (a failed deploy) completes on the
-next one (revisit the cost at about 10,000 players). It also runs in Development and tests through the same call. For
-each player that is not deleting or deleted (checked again after the row lock), in its own transaction with the player
-row lock:
+seeder, **once per rules version**. A new table `content_markers (name PK, fingerprint, completed_at)` holds the row
+`achievements-backfill` with the SHA-256 of the active rules (code, version, stat, target). The seed step compares it
+with the manifest: equal → no backfill work; different or missing → backfill, then write the marker. The marker is
+written only after the backfill completed, so a backfill that stopped half way (a failed deploy) runs again on the next
+seed. Names, descriptions and XP are not in the fingerprint (they need no backfill). It also runs in Development and
+tests through the same call. For each player that is not deleting or deleted (checked again after the row lock), in its
+own transaction with the player row lock:
 
 - `runs`, `runs:{gameId}`, `best:{gameId}`, `games_played`: from the player's verified `game_sessions`, with the
   same eligibility rule (`Rewards.Ineligibility` with the ruleset config) and the same leaderboard rule for `best`.
@@ -233,8 +242,8 @@ without change.
 
 1. **V-Coin rewards.** Should achievements pay V-Coins (for example 50 / 100 / 250 by tier)? Not built; decide in the
    decision 5 economy review after 2 weeks of beta data.
-2. **XP values.** Bronze 25, silver 50, gold 100 XP (1,350 in total). Through levels this pays up to about 300
-   V-Coins earlier to a new player. Keep, lower, or badge only?
+2. ~~**XP values.**~~ **Decided 2026-11-11 (product owner): keep** bronze 25, silver 50, gold 100 XP (1,350 in
+   total), including the indirect level-up V-Coins. Review with the decision 5 economy review.
 3. **Weekly top 10 in a small beta.** With few players, the top 10 is easy. Keep, or start it only above N players
    on the board?
 4. **Flagged runs.** Flagged runs count for `runs` (as for quests) but not for score achievements. Should a confirmed

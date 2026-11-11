@@ -7,17 +7,44 @@ using Vybe.GameRules;
 namespace Vybe.Api.Features;
 
 /// <summary>
-/// The seed step for achievements (deploy <c>seed</c> / <c>release</c>, Development, tests): definitions, then the backfill.
-/// The backfill runs on every seed, not only when a definition changed: it is idempotent, and a backfill that stopped
-/// half way (failed deploy) then completes on the next seed. Small data in the beta; revisit at about 10,000 players.
+/// The seed step for achievements (deploy <c>seed</c> / <c>release</c>, Development, tests): definitions, then the backfill
+/// once per definitions version. The marker <c>content_markers['achievements-backfill']</c> holds the fingerprint of the
+/// rules (code, version, stat, target) and is written only after the backfill completed: an unchanged manifest costs no
+/// backfill on the next deploy, and a backfill that stopped half way (failed deploy) runs again on the next seed.
 /// </summary>
 public static class AchievementSeeding
 {
-    public static async Task SeedAndBackfillAsync(VybeDbContext db, AchievementCatalog catalog, TimeProvider clock, CancellationToken cancellationToken)
+    public const string BackfillMarker = "achievements-backfill";
+
+    /// <summary>Returns the number of players backfilled, or null when the rules did not change since the last backfill.</summary>
+    public static async Task<int?> SeedAndBackfillAsync(VybeDbContext db, AchievementCatalog catalog, TimeProvider clock, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(db);
         ArgumentNullException.ThrowIfNull(clock);
         await AchievementSeeder.SeedAsync(db, catalog, cancellationToken);
-        await AchievementBackfill.RunAsync(db, catalog, Infrastructure.Clock.UtcNowForDb(clock), cancellationToken);
+        var fingerprint = Fingerprint(catalog);
+        var done = await db.ContentMarkers.AsNoTracking().Where(m => m.Name == BackfillMarker).Select(m => m.Fingerprint)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (done == fingerprint)
+        {
+            return null;
+        }
+
+        var now = Infrastructure.Clock.UtcNowForDb(clock);
+        var players = await AchievementBackfill.RunAsync(db, catalog, now, cancellationToken);
+        await db.Database.ExecuteSqlAsync($"""
+            INSERT INTO vybe.content_markers (name, fingerprint, completed_at) VALUES ({BackfillMarker}, {fingerprint}, {now})
+            ON CONFLICT (name) DO UPDATE SET fingerprint = excluded.fingerprint, completed_at = excluded.completed_at
+            """, cancellationToken);
+        return players;
+    }
+
+    /// <summary>SHA-256 of the rules that decide unlocks; names, descriptions and XP need no backfill.</summary>
+    public static string Fingerprint(AchievementCatalog catalog)
+    {
+        ArgumentNullException.ThrowIfNull(catalog);
+        var rules = string.Join('\n', catalog.All.OrderBy(a => a.Code, StringComparer.Ordinal).Select(a => $"{a.Code}|{a.Version}|{a.Stat}|{a.Target}"));
+        return Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(rules)));
     }
 }
 
@@ -181,7 +208,7 @@ public static class AchievementBackfill
             bestRank = Math.Min(bestRank, await AchievementProgress.WeeklyRankAsync(db, playerId, week.GameId, week.WeekStart, now, cancellationToken));
         }
 
-        if (bestRank <= 10)
+        if (bestRank <= AchievementProgress.WeeklyRankLimit)
         {
             await AchievementProgress.RaiseAsync(db, playerId, AchievementStats.WeeklyTop10, 1, now, cancellationToken);
         }

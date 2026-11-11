@@ -74,3 +74,14 @@ public sealed class PlayerStat
     public long Value { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
+
+/// <summary>
+/// A finished one-time content job, by name (P1: the achievements backfill). <c>Fingerprint</c> identifies the content
+/// version it ran for; it is written only after the job completed, so a job that stopped half way runs again.
+/// </summary>
+public sealed class ContentMarker
+{
+    public required string Name { get; set; }
+    public required string Fingerprint { get; set; }
+    public DateTime CompletedAt { get; set; }
+}

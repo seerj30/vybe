@@ -12,7 +12,7 @@ using Vybe.Data;
 namespace Vybe.Data.Migrations
 {
     [DbContext(typeof(VybeDbContext))]
-    [Migration("20261111085945_Achievements")]
+    [Migration("20261111092635_Achievements")]
     partial class Achievements
     {
         /// <inheritdoc />
@@ -492,6 +492,27 @@ namespace Vybe.Data.Migrations
 
                             t.HasCheckConstraint("ck_challenges_winner_only_when_completed", "winner_player_id IS NULL OR status = 'completed'");
                         });
+                });
+
+            modelBuilder.Entity("Vybe.Data.Entities.ContentMarker", b =>
+                {
+                    b.Property<string>("Name")
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<DateTime>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("fingerprint");
+
+                    b.HasKey("Name")
+                        .HasName("pk_content_markers");
+
+                    b.ToTable("content_markers", "vybe");
                 });
 
             modelBuilder.Entity("Vybe.Data.Entities.DataExportRequest", b =>

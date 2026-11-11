@@ -298,6 +298,22 @@ public sealed class AchievementTests(ApiFactory api)
         Assert.Equal(Catalog.All.Count, await db.Achievements.CountAsync(a => a.IsActive));
     }
 
+    [Fact]
+    public async Task Seed_BackfillsOncePerRulesVersion_AndAgainAfterAStoppedBackfill()
+    {
+        await Player.CreateGuestAsync(api); // at least one player to backfill
+        await using var db = api.CreateDbContext();
+        // The test host's startup seed already backfilled these rules: an unchanged manifest does no backfill work.
+        Assert.Null(await AchievementSeeding.SeedAndBackfillAsync(db, Catalog, api.Clock, CancellationToken.None));
+        Assert.Equal(AchievementSeeding.Fingerprint(Catalog),
+            await db.ContentMarkers.Where(m => m.Name == AchievementSeeding.BackfillMarker).Select(m => m.Fingerprint).SingleAsync());
+
+        // No marker (a backfill that stopped half way, or new rules): the next seed backfills again, then marks it done.
+        await db.ContentMarkers.Where(m => m.Name == AchievementSeeding.BackfillMarker).ExecuteDeleteAsync();
+        Assert.True(await AchievementSeeding.SeedAndBackfillAsync(db, Catalog, api.Clock, CancellationToken.None) > 0);
+        Assert.Null(await AchievementSeeding.SeedAndBackfillAsync(db, Catalog, api.Clock, CancellationToken.None));
+    }
+
     private static async Task<JsonElement> ListAsync(Player player) =>
         await Contract.AssertAsync(await player.Http.GetAsync("/api/v1/me/achievements"), HttpStatusCode.OK, "AchievementList");
 

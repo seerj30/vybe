@@ -101,3 +101,12 @@ internal sealed class PlayerStatConfiguration : IEntityTypeConfiguration<PlayerS
         b.HasOne<Player>().WithMany().HasForeignKey(x => x.PlayerId);
     }
 }
+
+internal sealed class ContentMarkerConfiguration : IEntityTypeConfiguration<ContentMarker>
+{
+    public void Configure(EntityTypeBuilder<ContentMarker> b)
+    {
+        b.ToTable("content_markers");
+        b.HasKey(x => x.Name);
+    }
+}
