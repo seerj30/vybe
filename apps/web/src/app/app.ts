@@ -9,6 +9,8 @@ import { PlayerStore } from "./player/player-store";
 interface NavItem {
   path: string;
   label: string;
+  /** Hidden in the phone bottom nav (only five items fit 375 px); the hub wallet card links to it. */
+  desktopOnly?: boolean;
 }
 
 const NAV: readonly NavItem[] = [
@@ -16,8 +18,9 @@ const NAV: readonly NavItem[] = [
   { path: "/arcade", label: "Arcade" },
   { path: "/challenges", label: "Challenges" },
   { path: "/shop", label: "Shop" },
-  { path: "/wardrobe", label: "Wardrobe" },
-  { path: "/wallet", label: "Wallet" },
+  { path: "/wardrobe", label: "Wardrobe", desktopOnly: true },
+  { path: "/room", label: "My Room", desktopOnly: true },
+  { path: "/wallet", label: "Wallet", desktopOnly: true },
   { path: "/settings", label: "Settings" },
 ];
 
@@ -42,7 +45,7 @@ function layoutOf(snapshot: ActivatedRouteSnapshot): Layout {
           <a class="brand" routerLink="/hub">VYBE</a>
           <ul>
             @for (item of nav; track item.path) {
-              <li>
+              <li [class.desktop-only]="item.desktopOnly">
                 <a [routerLink]="item.path" routerLinkActive="active" ariaCurrentWhenActive="page">{{ item.label }}</a>
               </li>
             }
