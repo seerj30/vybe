@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Vybe.Data.Entities;
 
 namespace Vybe.Data;
@@ -65,7 +66,19 @@ public static class VybeDbContextOptions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
         return builder
-            .UseNpgsql(connectionString, npgsql => npgsql.MigrationsHistoryTable(MigrationsHistoryTable, VybeDbContext.Schema))
+            .UseNpgsql(WithoutGss(connectionString), npgsql => npgsql.MigrationsHistoryTable(MigrationsHistoryTable, VybeDbContext.Schema))
             .UseSnakeCaseNamingConvention();
+    }
+
+    /// <summary>
+    /// VYBE never uses Kerberos (Supabase and the local stacks use passwords over TLS). With the default
+    /// <c>GSS Encryption Mode=Prefer</c>, Npgsql asks .NET to load <c>libgssapi_krb5.so.2</c>, which the chiseled image
+    /// does not have, and every first connection prints "Cannot load library libgssapi_krb5.so.2" before the normal
+    /// fallback. Disabled, the request is never made.
+    /// </summary>
+    public static string WithoutGss(string connectionString)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        return new NpgsqlConnectionStringBuilder(connectionString) { GssEncryptionMode = GssEncryptionMode.Disable }.ConnectionString;
     }
 }
