@@ -159,6 +159,14 @@ public sealed class FriendTests(ApiFactory api)
         await DeclineAsync(a, cHandle);
         Assert.Equal(HttpStatusCode.NoContent, (await a.Http.PostAsJsonAsync("/api/v1/me/blocks", new { handle = cHandle })).StatusCode);
         await Contract.AssertProblemAsync(await RequestAsync(c, aHandle), HttpStatusCode.Conflict, "friend_request_declined");
+
+        // A declined A's request; A blocks and unblocks D: the decline wait still applies to A.
+        var (d, dHandle) = await GuestAsync();
+        await RequestOkAsync(a, dHandle);
+        await DeclineAsync(d, aHandle);
+        Assert.Equal(HttpStatusCode.NoContent, (await a.Http.PostAsJsonAsync("/api/v1/me/blocks", new { handle = dHandle })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await a.Http.DeleteAsync($"/api/v1/me/blocks/{dHandle}")).StatusCode);
+        await Contract.AssertProblemAsync(await RequestAsync(a, dHandle), HttpStatusCode.Conflict, "friend_request_declined");
     }
 
     [Fact]
@@ -201,6 +209,11 @@ public sealed class FriendTests(ApiFactory api)
 
         var (late, _) = await GuestAsync();
         await Contract.AssertProblemAsync(await RequestAsync(late, targetHandle), HttpStatusCode.Conflict, "recipient_request_limit");
+
+        // A player whom the target blocked gets the same answer (the block stays private).
+        var (blocked, blockedHandle) = await GuestAsync();
+        Assert.Equal(HttpStatusCode.NoContent, (await target.Http.PostAsJsonAsync("/api/v1/me/blocks", new { handle = blockedHandle })).StatusCode);
+        await Contract.AssertProblemAsync(await RequestAsync(blocked, targetHandle), HttpStatusCode.Conflict, "recipient_request_limit");
     }
 
     [Fact]

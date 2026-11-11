@@ -148,8 +148,9 @@ public static class FriendEndpoints
             throw Problem.Of(409, "friend_request_limit");
         }
 
+        // Checked for suppressed requests too, so the answer never depends on a block.
         var suppressed = blockers.Contains(target.Id);
-        if (!suppressed && await db.Friendships.CountAsync(
+        if (await db.Friendships.CountAsync(
                 f => f.AddresseePlayerId == target.Id && f.Status == FriendshipStatus.Pending && !f.Suppressed, cancellationToken)
             >= MaxIncomingPending)
         {
@@ -316,14 +317,15 @@ public static class FriendEndpoints
 
     /// <summary>
     /// Part of the block transaction (under the pair lock; extends invariant 8). The friendship and the blocker's own
-    /// request end. The blocked player's pending request stays, suppressed, and a declined one stays declined, so the
+    /// pending request end. The blocked player's pending request stays, suppressed, and a declined one stays declined, so the
     /// blocked player sees the same answers as without the block (spec §2 J2 block privacy).
     /// </summary>
     public static async Task ApplyBlockAsync(VybeDbContext db, Guid blockerId, Guid blockedId, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(db);
         await Pair(db, blockerId, blockedId)
-            .Where(f => f.Status == FriendshipStatus.Accepted || f.RequesterPlayerId == blockerId)
+            // Declined rows stay in both directions, so a block and unblock cannot skip the decline wait.
+            .Where(f => f.Status == FriendshipStatus.Accepted || (f.RequesterPlayerId == blockerId && f.Status == FriendshipStatus.Pending))
             .ExecuteDeleteAsync(cancellationToken);
         await db.Friendships
             .Where(f => f.RequesterPlayerId == blockedId && f.AddresseePlayerId == blockerId && f.Status == FriendshipStatus.Pending)
