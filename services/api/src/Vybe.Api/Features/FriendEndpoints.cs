@@ -353,10 +353,16 @@ public static class FriendEndpoints
         await transaction.CommitAsync(cancellationToken);
     }
 
-    /// <summary>Inside the pair lock: the other player did not start a deletion meanwhile (J4 removes their rows).</summary>
+    /// <summary>
+    /// Inside the pair lock: the other player did not start a deletion meanwhile (J4 removes their rows).
+    /// FOR SHARE waits for a running anonymization (FOR NO KEY UPDATE, PrivacyProcessor) and then reads its status;
+    /// an anonymization that starts later waits for this transaction, so its delete sees the new friendship row.
+    /// </summary>
     private static async Task EnsureStillListedAsync(VybeDbContext db, Guid otherId, CancellationToken cancellationToken)
     {
-        if (!await Listable(db).AnyAsync(p => p.Id == otherId, cancellationToken))
+        var other = await db.Players.FromSql($"SELECT * FROM vybe.players WHERE id = {otherId} FOR SHARE")
+            .AsNoTracking().SingleOrDefaultAsync(cancellationToken);
+        if (other is null || other.Status is PlayerStatus.Deleting or PlayerStatus.Deleted)
         {
             throw Problem.Of(404, "not_found");
         }
