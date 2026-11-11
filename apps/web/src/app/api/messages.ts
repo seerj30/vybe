@@ -56,6 +56,7 @@ const MESSAGES: Partial<Record<ErrorCode, string>> = {
   already_friends: "You are already friends.",
   friend_request_declined: "This player declined your last request. You can ask again 30 days after that.",
   friend_request_limit: "You have 50 open friend requests. Cancel some before you send more.",
+  recipient_request_limit: "This player has too many open friend requests. Try again later.",
   friend_limit_reached: "One of you has 200 friends, the limit. Remove a friend first.",
 };
 

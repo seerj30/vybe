@@ -178,7 +178,9 @@ export interface paths {
         put?: never;
         /**
          * Block a player
-         * @description Idempotent. Cancels open and accepted challenges between the pair (spec §4 invariant 8).
+         * @description Idempotent. Cancels open and accepted challenges between the pair (spec §4 invariant 8). Ends
+         *     the friendship and the caller's own friend request; a pending request of the blocked player
+         *     stays but never reaches the caller (P1 friends).
          */
         post: operations["blockPlayer"];
         delete?: never;
@@ -291,8 +293,11 @@ export interface paths {
          *     the target never sees the request (block privacy). A private profile (decision 6) gets the 404
          *     of an unknown handle, except when it already sent a request to the caller. Limits
          *     (provisional): 20 new requests per UTC day (429 `rate_limited`), 50 open outgoing requests
-         *     (409 `friend_request_limit`), 200 friends (409 `friend_limit_reached`), and 30 days before the
-         *     same requester asks again after a decline (409 `friend_request_declined`).
+         *     (409 `friend_request_limit`), 100 open incoming requests of the target (409
+         *     `recipient_request_limit`), 200 friends (409 `friend_limit_reached`), and 30 days before the
+         *     same requester asks again after a decline (409 `friend_request_declined`). A block keeps the
+         *     blocked player's own pending request (suppressed) and a declined one, so the blocked player sees
+         *     the same answers as before the block; an unblock lets the pending request reach the blocker.
          */
         post: operations["sendFriendRequest"];
         delete?: never;
@@ -1135,7 +1140,7 @@ export interface components {
             message?: string;
         };
         /** @enum {string} */
-        ProblemCode: "malformed_request" | "invalid_idempotency_key" | "unauthenticated" | "forbidden" | "account_suspended" | "csrf_check_failed" | "not_found" | "revision_conflict" | "request_in_progress" | "payload_too_large" | "validation_failed" | "idempotency_key_mismatch" | "idempotency_key_required" | "rate_limited" | "internal_error" | "player_not_found" | "already_authenticated" | "age_not_eligible" | "invalid_link_proof" | "identity_already_linked" | "auth_unavailable" | "invalid_preset" | "incompatible_equipment" | "self_block" | "self_report" | "self_friend_request" | "already_friends" | "friend_request_declined" | "friend_request_limit" | "friend_limit_reached" | "insufficient_funds" | "already_owned" | "level_too_low" | "item_unavailable" | "item_not_purchasable" | "item_not_owned" | "incompatible_item" | "item_inactive" | "item_already_equipped" | "outfit_limit_reached" | "outfit_items_invalid" | "session_expired" | "challenge_unavailable" | "challenge_session_exists" | "challenge_expired" | "session_not_eligible" | "session_already_used" | "self_challenge" | "recipient_blocked" | "self_accept" | "challenge_already_accepted" | "challenge_not_completed" | "rematch_already_created" | "quest_not_completed" | "quest_already_claimed" | "quest_claim_expired" | "export_in_progress" | "reauthentication_required";
+        ProblemCode: "malformed_request" | "invalid_idempotency_key" | "unauthenticated" | "forbidden" | "account_suspended" | "csrf_check_failed" | "not_found" | "revision_conflict" | "request_in_progress" | "payload_too_large" | "validation_failed" | "idempotency_key_mismatch" | "idempotency_key_required" | "rate_limited" | "internal_error" | "player_not_found" | "already_authenticated" | "age_not_eligible" | "invalid_link_proof" | "identity_already_linked" | "auth_unavailable" | "invalid_preset" | "incompatible_equipment" | "self_block" | "self_report" | "self_friend_request" | "already_friends" | "friend_request_declined" | "friend_request_limit" | "recipient_request_limit" | "friend_limit_reached" | "insufficient_funds" | "already_owned" | "level_too_low" | "item_unavailable" | "item_not_purchasable" | "item_not_owned" | "incompatible_item" | "item_inactive" | "item_already_equipped" | "outfit_limit_reached" | "outfit_items_invalid" | "session_expired" | "challenge_unavailable" | "challenge_session_exists" | "challenge_expired" | "session_not_eligible" | "session_already_used" | "self_challenge" | "recipient_blocked" | "self_accept" | "challenge_already_accepted" | "challenge_not_completed" | "rematch_already_created" | "quest_not_completed" | "quest_already_claimed" | "quest_claim_expired" | "export_in_progress" | "reauthentication_required";
         /** @description Cursor for the next page; null on the last page. */
         NextCursor: string | null;
         /** @enum {string} */
@@ -1275,10 +1280,14 @@ export interface components {
         FriendList: {
             items: components["schemas"]["FriendEntry"][];
         };
+        /**
+         * @description In the outgoing list, a player whose profile is now private shows only the handle
+         *     (`displayName` and `level` are null; spec §17 decision 6).
+         */
         FriendRequestEntry: {
             handle: components["schemas"]["Handle"];
             displayName: components["schemas"]["DisplayName"];
-            level: components["schemas"]["Level"];
+            level: components["schemas"]["Level"] | null;
             requestedAt: components["schemas"]["Timestamp"];
         };
         FriendRequestLists: {

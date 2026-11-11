@@ -133,11 +133,74 @@ public sealed class FriendTests(ApiFactory api)
         await Contract.AssertProblemAsync(await AcceptAsync(a, bHandle), HttpStatusCode.NotFound, "not_found");
         await Contract.AssertProblemAsync(await RequestAsync(a, bHandle), HttpStatusCode.UnprocessableEntity, "recipient_blocked");
 
-        // After an unblock the suppressed request stays hidden; A's own request replaces it.
+        // After an unblock the suppressed request reaches A.
         Assert.Equal(HttpStatusCode.NoContent, (await a.Http.DeleteAsync($"/api/v1/me/blocks/{bHandle}")).StatusCode);
+        Assert.Equal([bHandle], Handles((await RequestsAsync(a)).GetProperty("incoming")));
+        Assert.Equal("accepted", (await RequestOkAsync(a, bHandle)).GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task Block_KeepsTheBlockedPlayersOwnRequests_SoTheBlockStaysPrivate()
+    {
+        var (a, aHandle) = await GuestAsync();
+        var (b, bHandle) = await GuestAsync();
+        var (c, cHandle) = await GuestAsync();
+
+        // B's pending request to A: still pending for B after A's block, and a repeat answers the same.
+        await RequestOkAsync(b, aHandle);
+        Assert.Equal(HttpStatusCode.NoContent, (await a.Http.PostAsJsonAsync("/api/v1/me/blocks", new { handle = bHandle })).StatusCode);
+        Assert.Equal("outgoing", await RelationAsync(b, aHandle));
+        Assert.Equal([aHandle], Handles((await RequestsAsync(b)).GetProperty("outgoing")));
+        Assert.Equal("pending", (await RequestOkAsync(b, aHandle)).GetProperty("status").GetString());
         Assert.Empty((await RequestsAsync(a)).GetProperty("incoming").EnumerateArray());
-        Assert.Equal("pending", (await RequestOkAsync(a, bHandle)).GetProperty("status").GetString());
-        Assert.Equal("incoming", await RelationAsync(b, aHandle));
+
+        // C's declined request to A: still declined after A's block (409, as without the block).
+        await RequestOkAsync(c, aHandle);
+        await DeclineAsync(a, cHandle);
+        Assert.Equal(HttpStatusCode.NoContent, (await a.Http.PostAsJsonAsync("/api/v1/me/blocks", new { handle = cHandle })).StatusCode);
+        await Contract.AssertProblemAsync(await RequestAsync(c, aHandle), HttpStatusCode.Conflict, "friend_request_declined");
+    }
+
+    [Fact]
+    public async Task OutgoingList_ShowsOnlyTheHandle_OfAPlayerWhoTurnedPrivate()
+    {
+        var (a, _) = await GuestAsync();
+        var (p, pHandle) = await GuestAsync();
+        await RequestOkAsync(a, pHandle);
+        await Contract.AssertAsync(await p.Http.PatchAsJsonAsync("/api/v1/me/privacy", new { profileVisibility = "private" }),
+            HttpStatusCode.OK, "PrivacySettings");
+        var entry = Assert.Single((await RequestsAsync(a)).GetProperty("outgoing").EnumerateArray());
+        Assert.Equal(pHandle, entry.GetProperty("handle").GetString());
+        Assert.Equal(JsonValueKind.Null, entry.GetProperty("displayName").ValueKind);
+        Assert.Equal(JsonValueKind.Null, entry.GetProperty("level").ValueKind);
+    }
+
+    [Fact]
+    public async Task IncomingRequestLimit_ProtectsTheTarget()
+    {
+        var (target, targetHandle) = await GuestAsync();
+        await using (var db = api.CreateDbContext())
+        {
+            var now = api.Clock.GetUtcNow().UtcDateTime;
+            for (var i = 0; i < FriendEndpoints.MaxIncomingPending; i++)
+            {
+                var other = await GuestAsync();
+                db.Friendships.Add(new Friendship
+                {
+                    Id = Guid.CreateVersion7(),
+                    RequesterPlayerId = other.Player.Id,
+                    AddresseePlayerId = target.Id,
+                    Status = FriendshipStatus.Pending,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                });
+            }
+
+            await db.SaveChangesAsync();
+        }
+
+        var (late, _) = await GuestAsync();
+        await Contract.AssertProblemAsync(await RequestAsync(late, targetHandle), HttpStatusCode.Conflict, "recipient_request_limit");
     }
 
     [Fact]

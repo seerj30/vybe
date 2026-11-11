@@ -48,8 +48,11 @@ week; the top 100 is an index range scan; "my rank" is one indexed count.
 | Lists `GET /me/friends`, `GET /me/friend-requests` | Only the caller's own relations. No endpoint shows another player's friends. |
 | Relation `GET /me/friendships/{handle}` | `none`, `friends`, `outgoing`, `incoming`. An unknown handle is `none` (no existence check). |
 
-**Blocks.** A block (either direction) deletes the pair's `friendships` row in the block transaction, under the
-pair lock (extends invariant 8). With a block in place:
+**Blocks.** In the block transaction, under the pair lock (extends invariant 8), the blocker's block ends the
+friendship and the blocker's own request (row deleted). A pending request of the blocked player stays pending but
+becomes `suppressed`, and a declined one stays declined: the blocked player sees the same answers as without the
+block (a deleted request would answer differently from a decline and tell the block). An unblock lets a suppressed
+request reach the blocker. With a block in place:
 
 - The caller blocked the target → 422 `recipient_blocked` (the caller knows it already).
 - The target blocked the caller → the API answers as for a normal request (`pending`) and stores the row with
@@ -65,6 +68,7 @@ can send a request at any time; it replaces the row.
 - A private player cannot receive new requests: 404 `not_found`, the same as an unknown handle. Exception: when the
   private player already sent a request to the caller, the caller's request accepts it (the private player asked).
 - A private player can send requests. The addressee sees the requester's handle, display name and level.
+- A player who turns private after a request shows only the handle in the requester's outgoing list.
 - Friend lists show a private friend (the friendship is a mutual choice) with `profileVisible: false`; the web
   app then shows no profile link. Nobody can read another player's friend list, so a private player never appears
   to strangers through friends.
@@ -84,6 +88,7 @@ decline, cancel, remove and the lists still work.
 |---|---|---|
 | New requests per player per UTC day (`friend_request_counters`) | 20 | 429 `rate_limited` |
 | Open outgoing requests per player | 50 | 409 `friend_request_limit` |
+| Open visible incoming requests per player | 100 | 409 `recipient_request_limit` |
 | Friends per player (checked for both players at accept) | 200 | 409 `friend_limit_reached` |
 | Re-request after a decline | 30 days | 409 `friend_request_declined` |
 | List size | 200 friends, 100 newest incoming, 50 outgoing | no paging needed |

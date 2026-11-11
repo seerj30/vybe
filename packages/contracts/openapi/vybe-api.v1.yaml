@@ -350,7 +350,10 @@ paths:
       parameters:
         - $ref: "#/components/parameters/CsrfHeader"
       summary: Block a player
-      description: Idempotent. Cancels open and accepted challenges between the pair (spec §4 invariant 8).
+      description: |
+        Idempotent. Cancels open and accepted challenges between the pair (spec §4 invariant 8). Ends
+        the friendship and the caller's own friend request; a pending request of the blocked player
+        stays but never reaches the caller (P1 friends).
       x-problem-codes:
         "404": [not_found]
         "422": [self_block]
@@ -493,14 +496,17 @@ paths:
         the target never sees the request (block privacy). A private profile (decision 6) gets the 404
         of an unknown handle, except when it already sent a request to the caller. Limits
         (provisional): 20 new requests per UTC day (429 `rate_limited`), 50 open outgoing requests
-        (409 `friend_request_limit`), 200 friends (409 `friend_limit_reached`), and 30 days before the
-        same requester asks again after a decline (409 `friend_request_declined`).
+        (409 `friend_request_limit`), 100 open incoming requests of the target (409
+        `recipient_request_limit`), 200 friends (409 `friend_limit_reached`), and 30 days before the
+        same requester asks again after a decline (409 `friend_request_declined`). A block keeps the
+        blocked player's own pending request (suppressed) and a declined one, so the blocked player sees
+        the same answers as before the block; an unblock lets the pending request reach the blocker.
       parameters:
         - $ref: "#/components/parameters/CsrfHeader"
       x-problem-codes:
         "403": [account_suspended]
         "404": [not_found]
-        "409": [already_friends, friend_request_declined, friend_request_limit, friend_limit_reached]
+        "409": [already_friends, friend_request_declined, friend_request_limit, recipient_request_limit, friend_limit_reached]
         "422": [self_friend_request, recipient_blocked]
         "429": [rate_limited]
       requestBody:
@@ -2151,6 +2157,7 @@ components:
         - already_friends
         - friend_request_declined
         - friend_request_limit
+        - recipient_request_limit
         - friend_limit_reached
         # catalog / wardrobe
         - insufficient_funds
@@ -2465,13 +2472,18 @@ components:
     FriendRequestEntry:
       type: object
       required: [handle, displayName, level, requestedAt]
+      description: |
+        In the outgoing list, a player whose profile is now private shows only the handle
+        (`displayName` and `level` are null; spec §17 decision 6).
       properties:
         handle:
           $ref: "#/components/schemas/Handle"
         displayName:
           $ref: "#/components/schemas/DisplayName"
         level:
-          $ref: "#/components/schemas/Level"
+          oneOf:
+            - $ref: "#/components/schemas/Level"
+            - type: "null"
         requestedAt:
           $ref: "#/components/schemas/Timestamp"
     FriendRequestLists:

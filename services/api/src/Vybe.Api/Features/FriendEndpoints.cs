@@ -14,7 +14,7 @@ public sealed record FriendEntry(string Handle, string? DisplayName, int Level, 
 
 public sealed record FriendList(IReadOnlyList<FriendEntry> Items);
 
-public sealed record FriendRequestEntry(string Handle, string? DisplayName, int Level, DateTime RequestedAt);
+public sealed record FriendRequestEntry(string Handle, string? DisplayName, int? Level, DateTime RequestedAt);
 
 public sealed record FriendRequestLists(IReadOnlyList<FriendRequestEntry> Incoming, IReadOnlyList<FriendRequestEntry> Outgoing);
 
@@ -34,6 +34,9 @@ public static class FriendEndpoints
     public const int MaxOutgoingPending = 50;
     public const int MaxFriends = 200;
     public const int MaxIncomingListed = 100;
+
+    /// <summary>Open visible requests one player can receive; more would push real requests out of the list.</summary>
+    public const int MaxIncomingPending = MaxIncomingListed;
     public static readonly TimeSpan DeclineCooldown = TimeSpan.FromDays(30);
 
     public static void Map(RouteGroupBuilder api)
@@ -87,6 +90,7 @@ public static class FriendEndpoints
         var now = clock.UtcNowForDb();
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         await PairLock.AcquireAsync(db, playerId, target.Id, cancellationToken);
+        await EnsureStillListedAsync(db, target.Id, cancellationToken);
         var blockers = await ChallengeRuns.BlockersAsync(db, playerId, target.Id, cancellationToken);
         if (blockers.Contains(playerId))
         {
@@ -144,6 +148,14 @@ public static class FriendEndpoints
             throw Problem.Of(409, "friend_request_limit");
         }
 
+        var suppressed = blockers.Contains(target.Id);
+        if (!suppressed && await db.Friendships.CountAsync(
+                f => f.AddresseePlayerId == target.Id && f.Status == FriendshipStatus.Pending && !f.Suppressed, cancellationToken)
+            >= MaxIncomingPending)
+        {
+            throw Problem.Of(409, "recipient_request_limit");
+        }
+
         if (row is null)
         {
             row = new Friendship { Id = Guid.CreateVersion7() };
@@ -153,7 +165,7 @@ public static class FriendEndpoints
         row.RequesterPlayerId = playerId;
         row.AddresseePlayerId = target.Id;
         row.Status = FriendshipStatus.Pending;
-        row.Suppressed = blockers.Contains(target.Id);
+        row.Suppressed = suppressed;
         row.CreatedAt = now;
         row.RespondedAt = null;
         row.UpdatedAt = now;
@@ -172,6 +184,7 @@ public static class FriendEndpoints
         var requester = await PlayerHandles.FindAsync(db, handle, cancellationToken) ?? throw Problem.Of(404, "not_found");
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         await PairLock.AcquireAsync(db, playerId, requester.Id, cancellationToken);
+        await EnsureStillListedAsync(db, requester.Id, cancellationToken);
         var row = await db.Friendships.SingleOrDefaultAsync(
                 f => f.RequesterPlayerId == requester.Id && f.AddresseePlayerId == playerId
                     && f.Status == FriendshipStatus.Pending && !f.Suppressed,
@@ -269,11 +282,14 @@ public static class FriendEndpoints
             .Take(MaxIncomingListed)
             .Select(r => new FriendRequestEntry(r.Handle, r.DisplayName, r.Level, r.CreatedAt))
             .ToListAsync(cancellationToken);
+        // A player who turned private after the request shows only the handle the caller typed (spec §17 decision 6).
         var outgoing = await pending.Where(f => f.RequesterPlayerId == playerId)
-            .Join(Listable(db), f => f.AddresseePlayerId, p => p.Id, (f, p) => new { p.Handle, p.DisplayName, p.Level, f.CreatedAt })
+            .Join(Listable(db), f => f.AddresseePlayerId, p => p.Id, (f, p) => new { p.Handle, p.DisplayName, p.Level, p.ProfileVisibility, f.CreatedAt })
             .OrderByDescending(r => r.CreatedAt).ThenBy(r => r.Handle)
             .Take(MaxOutgoingPending)
-            .Select(r => new FriendRequestEntry(r.Handle, r.DisplayName, r.Level, r.CreatedAt))
+            .Select(r => r.ProfileVisibility == ProfileVisibility.Private
+                ? new FriendRequestEntry(r.Handle, null, null, r.CreatedAt)
+                : new FriendRequestEntry(r.Handle, r.DisplayName, r.Level, r.CreatedAt))
             .ToListAsync(cancellationToken);
         return new FriendRequestLists(incoming, outgoing);
     }
@@ -296,6 +312,52 @@ public static class FriendEndpoints
             { Status: FriendshipStatus.Pending, Suppressed: false } => FriendRelation.Incoming,
             _ => FriendRelation.None,
         });
+    }
+
+    /// <summary>
+    /// Part of the block transaction (under the pair lock; extends invariant 8). The friendship and the blocker's own
+    /// request end. The blocked player's pending request stays, suppressed, and a declined one stays declined, so the
+    /// blocked player sees the same answers as without the block (spec §2 J2 block privacy).
+    /// </summary>
+    public static async Task ApplyBlockAsync(VybeDbContext db, Guid blockerId, Guid blockedId, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        await Pair(db, blockerId, blockedId)
+            .Where(f => f.Status == FriendshipStatus.Accepted || f.RequesterPlayerId == blockerId)
+            .ExecuteDeleteAsync(cancellationToken);
+        await db.Friendships
+            .Where(f => f.RequesterPlayerId == blockedId && f.AddresseePlayerId == blockerId && f.Status == FriendshipStatus.Pending)
+            .ExecuteUpdateAsync(u => u.SetProperty(f => f.Suppressed, true), cancellationToken);
+    }
+
+    /// <summary>After an unblock, a suppressed request of the other player reaches the caller, unless a block remains.</summary>
+    public static async Task ApplyUnblockAsync(VybeDbContext db, Guid playerId, string handle, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        if (await PlayerHandles.FindAsync(db, handle, cancellationToken) is not { } other || other.Id == playerId)
+        {
+            return;
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await PairLock.AcquireAsync(db, playerId, other.Id, cancellationToken);
+        if ((await ChallengeRuns.BlockersAsync(db, playerId, other.Id, cancellationToken)).Count == 0)
+        {
+            await db.Friendships
+                .Where(f => f.RequesterPlayerId == other.Id && f.AddresseePlayerId == playerId && f.Status == FriendshipStatus.Pending && f.Suppressed)
+                .ExecuteUpdateAsync(u => u.SetProperty(f => f.Suppressed, false), cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    /// <summary>Inside the pair lock: the other player did not start a deletion meanwhile (J4 removes their rows).</summary>
+    private static async Task EnsureStillListedAsync(VybeDbContext db, Guid otherId, CancellationToken cancellationToken)
+    {
+        if (!await Listable(db).AnyAsync(p => p.Id == otherId, cancellationToken))
+        {
+            throw Problem.Of(404, "not_found");
+        }
     }
 
     private static IQueryable<Player> Listable(VybeDbContext db) =>
