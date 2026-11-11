@@ -28,14 +28,16 @@ public sealed record GameSessionResponse(
 
 public static class GameplayEndpoints
 {
-    public const string StreetHoops = "street-hoops";
     private static readonly TimeSpan StartWindow = TimeSpan.FromMinutes(10); // provisional, spec §17 item 4
 
     public static void Map(RouteGroupBuilder api)
     {
         ArgumentNullException.ThrowIfNull(api);
         api.MapGet("/games/rulesets/{rulesetId}", GetRulesetAsync).AllowAnonymous();
-        api.MapPost("/games/street-hoops/sessions", CreateSessionAsync);
+        api.MapPost("/games/street-hoops/sessions", (SessionCreateRequest request, VybeDbContext db, CurrentPlayer current, TimeProvider clock, CancellationToken ct) =>
+            CreateSessionAsync(Games.StreetHoops, request, db, current, clock, ct));
+        api.MapPost("/games/street-juggle/sessions", (SessionCreateRequest request, VybeDbContext db, CurrentPlayer current, TimeProvider clock, CancellationToken ct) =>
+            CreateSessionAsync(Games.StreetJuggle, request, db, current, clock, ct));
         api.MapPost("/games/sessions/{sessionId:guid}/start", StartSessionAsync);
         api.MapPost("/games/sessions/{sessionId:guid}/submit", SubmitAsync);
         api.MapGet("/games/sessions/{sessionId:guid}", GetSessionAsync);
@@ -51,7 +53,7 @@ public static class GameplayEndpoints
     }
 
     private static async Task<IResult> CreateSessionAsync(
-        SessionCreateRequest request, VybeDbContext db, CurrentPlayer current, TimeProvider clock, CancellationToken cancellationToken)
+        string gameId, SessionCreateRequest request, VybeDbContext db, CurrentPlayer current, TimeProvider clock, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         var playerId = await current.GetIdAsync(cancellationToken);
@@ -69,15 +71,20 @@ public static class GameplayEndpoints
             (challenge, var creatorSeed) = await ChallengeRuns.LockForRecipientAsync(db, playerId, challengeId, now, cancellationToken);
             seed = (uint)creatorSeed;
             rulesetId = challenge.RulesetId;
+            // A challenge is played in its own game: another game's route does not see it.
+            if (await db.GameRulesets.Where(r => r.Id == rulesetId).Select(r => r.GameId).SingleAsync(cancellationToken) != gameId)
+            {
+                throw Problem.Of(404, "challenge_unavailable");
+            }
         }
         else
         {
             rulesetId = await db.GameRulesets.AsNoTracking()
-                .Where(r => r.GameId == StreetHoops && r.RetiredAt == null && r.ActiveFrom <= now)
+                .Where(r => r.GameId == gameId && r.RetiredAt == null && r.ActiveFrom <= now)
                 .OrderByDescending(r => r.Version)
                 .Select(r => r.Id)
                 .FirstOrDefaultAsync(cancellationToken)
-                ?? throw new InvalidOperationException("no active Street Hoops ruleset");
+                ?? throw new InvalidOperationException($"no active {gameId} ruleset");
         }
 
         // Serialize this player's session creations (double tap, two tabs); otherwise both inserts
@@ -89,7 +96,7 @@ public static class GameplayEndpoints
         var session = new GameSession
         {
             PlayerId = playerId,
-            GameId = StreetHoops,
+            GameId = gameId,
             RulesetId = rulesetId,
             Seed = seed,
             Status = GameSessionStatus.Created,
@@ -177,7 +184,7 @@ public static class GameplayEndpoints
             }
         }
 
-        var config = RulesetConfig.Parse(await RulesetJsonAsync(db, session.RulesetId, cancellationToken));
+        var config = RulesetConfig.Parse(session.GameId, await RulesetJsonAsync(db, session.RulesetId, cancellationToken));
         session.Status = GameSessionStatus.Active;
         session.StartedAt = now;
         session.SubmitDeadline = now.AddMilliseconds(config.DurationMs + config.GraceMs);
@@ -234,41 +241,24 @@ public static class GameplayEndpoints
         }
 
         var now = clock.UtcNowForDb();
-        var config = RulesetConfig.Parse(await RulesetJsonAsync(db, session.RulesetId, cancellationToken));
         var eventsJson = events.GetRawText();
-
-        EvaluateInput Input(IReadOnlyList<ShotEvent> trace) => new(
-            config,
+        var run = new RunContext(
             session.RulesetId,
             session.Seed,
             new SessionTiming(
                 session.Status == GameSessionStatus.Created ? SessionStatus.Created : SessionStatus.Active,
                 ToMs(session.StartedAt ?? now),
                 ToMs(session.SubmitDeadline ?? now)),
-            new Submission(submittedRulesetId, ToMs(now), trace));
+            submittedRulesetId,
+            ToMs(now));
+        var verdict = Games.For(session.GameId).Verify(await RulesetJsonAsync(db, session.RulesetId, cancellationToken), run, events);
 
-        EvaluateResult result;
-        if (SubmitParser.TryParseEvents(events, out var shots))
+        if (verdict.InvalidEvent)
         {
-            result = StreetHoopsSimulator.Evaluate(Input(shots));
-        }
-        else
-        {
-            // Spec §7 check order: not_started, expired and ruleset_mismatch (checks 1–3) come before
-            // invalid_event (check 4). An empty trace runs exactly those checks.
-            var precheck = StreetHoopsSimulator.Evaluate(Input([]));
-            var decidedEarlier = precheck.Outcome == Outcome.Expired
-                || precheck.Reason is RejectionReason.NotStarted or RejectionReason.RulesetMismatch;
-            if (!decidedEarlier)
-            {
-                return await FinishRejectedAsync(db, session, now, SessionRejectionReason.InvalidEvent, eventsJson, null, cancellationToken);
-            }
-
-            result = precheck;
-            shots = [];
+            return await FinishRejectedAsync(db, session, now, SessionRejectionReason.InvalidEvent, eventsJson, null, cancellationToken);
         }
 
-        switch (result.Outcome)
+        switch (verdict.Outcome)
         {
             case Outcome.Expired:
                 session.Status = GameSessionStatus.Expired;
@@ -277,12 +267,13 @@ public static class GameplayEndpoints
                 return new OperationResult(200, new { sessionId = session.Id, status = "expired" });
 
             case Outcome.Rejected:
-                return await FinishRejectedAsync(db, session, now, Map(result.Reason!.Value), eventsJson, shots.Count, cancellationToken);
+                return await FinishRejectedAsync(db, session, now, Map(verdict.Reason!.Value), eventsJson, verdict.EventCount, cancellationToken);
         }
 
+        var eventCount = verdict.EventCount!.Value;
         var (rewards, runNumber) = await RewardService.GrantForRunAsync(
-            db, session, config, result.Score!.Value, shots.Count, result.MaxStreak ?? 0, now, cancellationToken);
-        var flags = ReviewFlags.ForRun(result.Shots!);
+            db, session, verdict.Config, verdict.Score, eventCount, verdict.MaxStreak, now, cancellationToken);
+        var flags = verdict.Flags.ToList();
         if (runNumber is { } n
             && await ReviewFlags.IsDailyCapStreakAsync(db, playerId, DateOnly.FromDateTime(session.StartedAt!.Value), n, cancellationToken))
         {
@@ -293,19 +284,19 @@ public static class GameplayEndpoints
         session.Status = GameSessionStatus.Verified;
         session.SubmittedAt = now;
         session.VerifiedAt = now;
-        session.Score = result.Score;
-        session.EventCount = shots.Count;
+        session.Score = verdict.Score;
+        session.EventCount = eventCount;
         session.RewardDay = DateOnly.FromDateTime(session.StartedAt!.Value);
         session.RewardCoins = rewards.Coins;
         session.RewardXp = rewards.Xp;
-        AddTrace(db, session, eventsJson, shots.Count, now);
+        AddTrace(db, session, eventsJson, eventCount, now);
         await db.SaveChangesAsync(cancellationToken);
         if (session.ChallengeId is not null)
         {
-            await ChallengeRuns.ResolveAsync(db, session, result.Score.Value, now, cancellationToken);
+            await ChallengeRuns.ResolveAsync(db, session, verdict.Score, now, cancellationToken);
         }
 
-        return new OperationResult(200, new { sessionId = session.Id, status = "verified", score = result.Score, rewards });
+        return new OperationResult(200, new { sessionId = session.Id, status = "verified", score = verdict.Score, rewards });
     }
 
     private static async Task<OperationResult> FinishRejectedAsync(
@@ -361,7 +352,7 @@ public static class GameplayEndpoints
         NoCoinsReason? noCoins = null;
         if (session.RewardCoins == 0)
         {
-            var config = RulesetConfig.Parse(await RulesetJsonAsync(db, session.RulesetId, cancellationToken));
+            var config = RulesetConfig.Parse(session.GameId, await RulesetJsonAsync(db, session.RulesetId, cancellationToken));
             noCoins = Rewards.NoCoins(config, session.RewardCoins, session.Score ?? 0, session.EventCount ?? 0,
                 session.StartedAt!.Value, session.SubmittedAt!.Value);
         }

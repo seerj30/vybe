@@ -420,9 +420,33 @@ export interface paths {
          * @description Creates a session in state `created`. No seed is returned yet. Any other
          *     `created`/`active` session of the caller becomes `expired`.
          *     With `challengeId`, only the bound recipient of an `accepted` challenge may call it,
-         *     before `complete_deadline`; the session uses the creator run's seed and ruleset.
+         *     before `complete_deadline`; the session uses the creator run's seed and ruleset. The
+         *     challenge must be a Street Hoops challenge; another game's challenge answers 404
+         *     `challenge_unavailable`.
          */
         post: operations["createStreetHoopsSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/games/street-juggle/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a Street Juggle session
+         * @description Same rules as `createStreetHoopsSession`, for Street Juggle (docs/design/p1-second-game.md).
+         *     With `challengeId`, the challenge must be a Street Juggle challenge; another game's
+         *     challenge answers 404 `challenge_unavailable`.
+         */
+        post: operations["createStreetJuggleSession"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1218,14 +1242,74 @@ export interface components {
             /** @description Base coins need `score` at least this value; XP and quests do not. */
             minScoreForCoins: number;
         };
-        Ruleset: {
+        /**
+         * @description Street Juggle ruleset config (docs/design/p1-second-game.md §2.2). All values are integers.
+         *     Heights use 1/100,000 of the play height; speeds and gravity are per 10 ms tick.
+         */
+        StreetJuggleConfig: {
+            /** Format: int64 */
+            streamId: number;
+            durationMs: number;
+            graceMs: number;
+            earlyToleranceMs: number;
+            tickMs: number;
+            lanes: number;
+            serveY: number;
+            kickY: number;
+            goodDy: number;
+            perfectDy: number;
+            gravityStart: number;
+            gravityStep: number;
+            levelMs: number;
+            launchMin: number;
+            launchMax: number;
+            respawnMs: number;
+            whiffLockMs: number;
+            goodPoints: number;
+            perfectPoints: number;
+            starPercent: number;
+            starPoints: number;
+            streakStart: number;
+            streakStep: number;
+            streakMax: number;
+            minGapMs: number;
+            maxEvents: number;
+            /** @description Minimum touches for rewards, quests and challenges (API rule). */
+            minEventsForRewards: number;
+            /**
+             * @description A verified run is reward-eligible only when `submittedAt − startedAt` (server clock) is
+             *     at least this value. An API rule, not a simulator check.
+             */
+            minRunMsForRewards: number;
+            /** @description Base coins need `score` at least this value; XP and quests do not. */
+            minScoreForCoins: number;
+        };
+        /** @description Lowercase hex SHA-256 of the RFC 8785 canonical JSON of `config`. */
+        RulesetChecksum: string;
+        StreetHoopsRuleset: {
             id: components["schemas"]["RulesetId"];
-            gameId: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            gameId: "street-hoops";
             version: number;
             config: components["schemas"]["StreetHoopsConfig"];
-            /** @description Lowercase hex SHA-256 of the RFC 8785 canonical JSON of `config`. */
-            checksum: string;
+            checksum: components["schemas"]["RulesetChecksum"];
         };
+        StreetJuggleRuleset: {
+            id: components["schemas"]["RulesetId"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            gameId: "street-juggle";
+            version: number;
+            config: components["schemas"]["StreetJuggleConfig"];
+            checksum: components["schemas"]["RulesetChecksum"];
+        };
+        /** @description A ruleset; `gameId` selects the config type. */
+        Ruleset: components["schemas"]["StreetHoopsRuleset"] | components["schemas"]["StreetJuggleRuleset"];
         /** @enum {string} */
         GameSessionStatus: "created" | "active" | "submitted" | "verified" | "rejected" | "expired";
         /** @enum {string} */
@@ -1249,8 +1333,9 @@ export interface components {
             submitDeadline: components["schemas"]["Timestamp"];
         };
         /**
-         * @description Each `events` item should be `{ "tMs": int, "aimX": int, "power": int }` (spec §7 units).
-         *     Items are free-form here on purpose: the server validates raw tokens and answers
+         * @description Each `events` item should be `{ "tMs": int, "aimX": int, "power": int }` for Street Hoops
+         *     (spec §7 units) or `{ "tMs": int, "lane": int }` for Street Juggle (design p1-second-game §2.1);
+         *     the session's game decides. Items are free-form here on purpose: the server validates raw tokens and answers
          *     `rejected` / `invalid_event` instead of 400. `clientReportedScore` is diagnostic only.
          */
         SubmitRequest: {
@@ -2402,6 +2487,43 @@ export interface operations {
         };
     };
     createStreetHoopsSession: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Must be `vybe-web`. Declared on every unsafe operation that guests can call; clients
+                 *     always send it. The server checks it itself (not through generic schema validation) on
+                 *     cookie-authenticated requests: missing or wrong → 403 `csrf_check_failed`.
+                 */
+                "X-Requested-With": components["parameters"]["CsrfHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Session created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionCreated"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    createStreetJuggleSession: {
         parameters: {
             query?: never;
             header: {
