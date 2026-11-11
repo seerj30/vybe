@@ -105,6 +105,8 @@ public static class ServiceSetup
         PrivacyEndpoints.Map(api);
         AdminEndpoints.Map(api);
         ReviewFlagEndpoints.Map(api);
+        FriendEndpoints.Map(api);
+        LeaderboardEndpoints.Map(api);
         return app;
     }
 

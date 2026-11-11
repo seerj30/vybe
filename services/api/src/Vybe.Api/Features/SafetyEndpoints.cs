@@ -63,6 +63,11 @@ public static class SafetyEndpoints
                     || (c.CreatorPlayerId == target.Id && c.RecipientPlayerId == playerId))
                 && (c.Status == ChallengeStatus.Open || c.Status == ChallengeStatus.Accepted))
             .ExecuteUpdateAsync(u => u.SetProperty(c => c.Status, ChallengeStatus.Cancelled), cancellationToken);
+        // P1 friends: the block ends the friendship and any request of the pair, in the same transaction.
+        await db.Friendships
+            .Where(f => (f.RequesterPlayerId == playerId && f.AddresseePlayerId == target.Id)
+                || (f.RequesterPlayerId == target.Id && f.AddresseePlayerId == playerId))
+            .ExecuteDeleteAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return Results.NoContent();
     }
