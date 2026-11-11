@@ -50,6 +50,26 @@ public sealed record CatalogEntry(
 
 public sealed record CatalogFile(int CatalogVersion, string? Description, CatalogEntry[] Items);
 
+/// <summary>Footprint in cells: <c>W × D</c> on the floor, <c>W × H</c> on a wall (docs/design/p1-my-room.md).</summary>
+public sealed record RoomFootprint(int W, int? D, int? H);
+
+public sealed record RoomEntry(
+    string Sku,
+    ItemSlot Slot,
+    string Name,
+    long Price,
+    int MinLevel,
+    Rarity Rarity,
+    string AssetKey,
+    string[] Surfaces,
+    RoomFootprint? Footprint = null,
+    string? Layer = null,
+    string? ThumbnailUrl = null);
+
+public sealed record RoomGrid(int Columns, int Rows);
+
+public sealed record RoomFile(int Version, string? Description, RoomGrid Floor, RoomGrid Wall, int MaxItems, RoomEntry[] Items);
+
 public sealed record RulesetContent(string Id, string GameId, int Version, IRewardConfig Config, string ConfigJson, string Checksum);
 
 /// <summary>Versioned static content (ADR 0001: avatar manifest; spec §8 catalog; spec §7 rulesets), loaded once.</summary>
@@ -70,7 +90,11 @@ public sealed class ContentCatalog
         Options = options;
         Avatar = Read<AvatarManifest>(Path.Combine(options.Root, "assets", "manifests", "avatar.v1.json"));
         Catalog = Read<CatalogFile>(Path.Combine(options.Root, "assets", "manifests", "catalog.v1.json"));
-        thumbnails = Catalog.Items
+        Room = Read<RoomFile>(Path.Combine(options.Root, "assets", "manifests", "room.v1.json"));
+        RoomItems = Room.Items.ToDictionary(i => i.Sku, StringComparer.Ordinal);
+        // Room skus never repeat avatar skus (check_assets.py), so one map holds both.
+        thumbnails = Catalog.Items.Select(i => (i.Sku, i.ThumbnailUrl))
+            .Concat(Room.Items.Select(i => (i.Sku, i.ThumbnailUrl)))
             .Where(i => !string.IsNullOrEmpty(i.ThumbnailUrl))
             .ToDictionary(i => i.Sku, i => i.ThumbnailUrl!, StringComparer.Ordinal);
         Rulesets = Directory
@@ -84,6 +108,11 @@ public sealed class ContentCatalog
     public AvatarManifest Avatar { get; }
 
     public CatalogFile Catalog { get; }
+
+    /// <summary>My Room grid and room items (footprints, layers, surfaces) by sku.</summary>
+    public RoomFile Room { get; }
+
+    public IReadOnlyDictionary<string, RoomEntry> RoomItems { get; }
 
     public IReadOnlyDictionary<string, RulesetContent> Rulesets { get; }
 
@@ -172,7 +201,10 @@ public static class ContentSeeder
         }
 
         var items = await db.CatalogItems.ToDictionaryAsync(i => i.Sku, StringComparer.Ordinal, cancellationToken);
-        foreach (var entry in content.Catalog.Items)
+        // Room items are catalog items in the room slots; the body preset column has no effect for them.
+        var roomEntries = content.Room.Items.Select(r => new CatalogEntry(
+            r.Sku, r.Slot, r.Name, r.Price, r.MinLevel, r.AssetKey, content.Avatar.BodyPresets, r.Rarity));
+        foreach (var entry in content.Catalog.Items.Concat(roomEntries))
         {
             if (!items.TryGetValue(entry.Sku, out var item))
             {

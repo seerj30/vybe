@@ -31,7 +31,7 @@ public sealed class SchemaTests(PostgresFixture db)
             db.DataSource, "SELECT count(*) FROM pg_trigger WHERE tgrelid::regclass::text LIKE 'vybe.%' AND NOT tgisinternal"));
 
         await migrator.MigrateAsync();
-        Assert.Equal(11L, await Sql.ScalarAsync<long>(
+        Assert.Equal(12L, await Sql.ScalarAsync<long>(
             db.DataSource, "SELECT count(*) FROM pg_trigger WHERE tgrelid::regclass::text LIKE 'vybe.%' AND NOT tgisinternal"));
     }
 

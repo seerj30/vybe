@@ -481,7 +481,9 @@ export interface paths {
         /**
          * Equip or unequip one slot
          * @description `itemId: null` unequips the slot. `attachIndex` (0 or 1) is required when
-         *     `slot = accessory` and forbidden otherwise (422 `validation_failed`).
+         *     `slot = accessory` and forbidden otherwise (422 `validation_failed`). A room slot
+         *     (`furniture`, `wall_decor`, `room_wall`, `room_floor`) is never worn: 422 `validation_failed`
+         *     (room items are placed with `PUT /me/room`).
          */
         post: operations["equipItem"];
         delete?: never;
@@ -544,6 +546,61 @@ export interface paths {
          * @description All-or-nothing. If any item is no longer owned, active or compatible, nothing changes.
          */
         post: operations["applyOutfit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/room": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the own room
+         * @description A player who never saved a room gets the empty default room (revision 0).
+         */
+        get: operations["getMyRoom"];
+        /**
+         * Save the whole room layout
+         * @description Replaces the finishes and all placements, all or nothing. The server checks ownership,
+         *     slots, surfaces, bounds, overlaps and the item limit with the footprints of the room
+         *     manifest (docs/design/p1-my-room.md); it never trusts the client layout.
+         *     Idempotent: a layout equal to the stored room returns it unchanged, also with an old
+         *     `expectedRevision`. Another layout with an old revision gets 409 `revision_conflict`.
+         *     Problems about one item carry `itemId`.
+         */
+        put: operations["saveMyRoom"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profiles/{handle}/room": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get another player's room
+         * @description The visibility rules of `getProfile` (spec §17 decision 6): anonymous callers, unknown,
+         *     deleting or deleted handles and private profiles of other players get the same 404
+         *     `not_found`. A block in either direction gives the empty default room (not a 404), so
+         *     the answer does not tell the caller about the block. `revision` is always 0 and
+         *     `updatedAt` always null here: they belong to the owner (`getMyRoom`), and without them an
+         *     emptied room, a never-decorated room and a room that a block hides look the same.
+         *     Every response carries `Cache-Control: private, no-store` and `X-Robots-Tag: noindex`.
+         */
+        get: operations["getProfileRoom"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1179,6 +1236,8 @@ export interface components {
             exportId?: components["schemas"]["Uuid"];
             /** @description Affected items for `incompatible_equipment` and `outfit_items_invalid`. */
             itemIds?: components["schemas"]["Uuid"][];
+            /** @description The refused item of a room save (`item_not_owned`, `incompatible_item`, `item_inactive`, `placement_*`). */
+            itemId?: components["schemas"]["Uuid"];
         };
         FieldError: {
             /** @description JSON Pointer to the invalid field. */
@@ -1187,7 +1246,7 @@ export interface components {
             message?: string;
         };
         /** @enum {string} */
-        ProblemCode: "malformed_request" | "invalid_idempotency_key" | "unauthenticated" | "forbidden" | "account_suspended" | "csrf_check_failed" | "not_found" | "revision_conflict" | "request_in_progress" | "payload_too_large" | "validation_failed" | "idempotency_key_mismatch" | "idempotency_key_required" | "rate_limited" | "internal_error" | "player_not_found" | "already_authenticated" | "age_not_eligible" | "invalid_link_proof" | "identity_already_linked" | "auth_unavailable" | "invalid_preset" | "incompatible_equipment" | "self_block" | "self_report" | "self_friend_request" | "already_friends" | "friend_request_declined" | "friend_request_limit" | "recipient_request_limit" | "friend_limit_reached" | "insufficient_funds" | "already_owned" | "level_too_low" | "item_unavailable" | "item_not_purchasable" | "item_not_owned" | "incompatible_item" | "item_inactive" | "item_already_equipped" | "outfit_limit_reached" | "outfit_items_invalid" | "session_expired" | "challenge_unavailable" | "challenge_session_exists" | "challenge_expired" | "session_not_eligible" | "session_already_used" | "self_challenge" | "recipient_blocked" | "self_accept" | "challenge_already_accepted" | "challenge_not_completed" | "rematch_already_created" | "quest_not_completed" | "quest_already_claimed" | "quest_claim_expired" | "export_in_progress" | "reauthentication_required";
+        ProblemCode: "malformed_request" | "invalid_idempotency_key" | "unauthenticated" | "forbidden" | "account_suspended" | "csrf_check_failed" | "not_found" | "revision_conflict" | "request_in_progress" | "payload_too_large" | "validation_failed" | "idempotency_key_mismatch" | "idempotency_key_required" | "rate_limited" | "internal_error" | "player_not_found" | "already_authenticated" | "age_not_eligible" | "invalid_link_proof" | "identity_already_linked" | "auth_unavailable" | "invalid_preset" | "incompatible_equipment" | "self_block" | "self_report" | "self_friend_request" | "already_friends" | "friend_request_declined" | "friend_request_limit" | "recipient_request_limit" | "friend_limit_reached" | "insufficient_funds" | "already_owned" | "level_too_low" | "item_unavailable" | "item_not_purchasable" | "item_not_owned" | "incompatible_item" | "item_inactive" | "item_already_equipped" | "outfit_limit_reached" | "outfit_items_invalid" | "room_item_limit" | "placement_out_of_bounds" | "placement_overlap" | "session_expired" | "challenge_unavailable" | "challenge_session_exists" | "challenge_expired" | "session_not_eligible" | "session_already_used" | "self_challenge" | "recipient_blocked" | "self_accept" | "challenge_already_accepted" | "challenge_not_completed" | "rematch_already_created" | "quest_not_completed" | "quest_already_claimed" | "quest_claim_expired" | "export_in_progress" | "reauthentication_required";
         /** @description Cursor for the next page; null on the last page. */
         NextCursor: string | null;
         /** @enum {string} */
@@ -1391,8 +1450,12 @@ export interface components {
         ReportAccepted: {
             reportId: components["schemas"]["Uuid"];
         };
-        /** @enum {string} */
-        ItemSlot: "hair" | "top" | "bottom" | "shoes" | "accessory" | "emote";
+        /**
+         * @description Avatar slots (`hair` to `emote`) and room slots: `furniture` (floor), `wall_decor` (walls),
+         *     `room_wall` and `room_floor` (finishes). Room items are never worn.
+         * @enum {string}
+         */
+        ItemSlot: "hair" | "top" | "bottom" | "shoes" | "accessory" | "emote" | "furniture" | "wall_decor" | "room_wall" | "room_floor";
         /** @enum {string} */
         Rarity: "common" | "rare" | "epic";
         CatalogItem: {
@@ -1473,6 +1536,51 @@ export interface components {
         };
         OutfitApplyRequest: {
             expectedAvatarRevision: components["schemas"]["Revision"];
+        };
+        /** @enum {string} */
+        RoomSurface: "floor" | "wall_back" | "wall_left";
+        /**
+         * @description Degrees around the vertical axis; wall items always 0.
+         * @enum {integer}
+         */
+        RoomRotation: 0 | 90 | 180 | 270;
+        /** @description Grid cell of the footprint corner with the smallest x and y (floor 8 × 8, wall 8 columns × 5 rows). */
+        RoomCell: number;
+        RoomItemRef: {
+            itemId: components["schemas"]["Uuid"];
+            sku: string;
+        };
+        RoomPlacement: {
+            itemId: components["schemas"]["Uuid"];
+            /** @description Finds the art in assets/manifests/room.v1.json. */
+            sku: string;
+            surface: components["schemas"]["RoomSurface"];
+            x: components["schemas"]["RoomCell"];
+            y: components["schemas"]["RoomCell"];
+            rotation: components["schemas"]["RoomRotation"];
+        };
+        Room: {
+            revision: components["schemas"]["Revision"];
+            /** @description Wall finish; null = the default walls. */
+            wallItem: components["schemas"]["RoomItemRef"] | null;
+            /** @description Floor finish; null = the default floor. */
+            floorItem: components["schemas"]["RoomItemRef"] | null;
+            items: components["schemas"]["RoomPlacement"][];
+            updatedAt: components["schemas"]["NullableTimestamp"];
+        };
+        RoomPlacementInput: {
+            itemId: components["schemas"]["Uuid"];
+            surface: components["schemas"]["RoomSurface"];
+            x: number;
+            y: number;
+            rotation: components["schemas"]["RoomRotation"];
+        };
+        RoomLayoutRequest: {
+            expectedRevision: components["schemas"]["Revision"];
+            wallItemId: components["schemas"]["NullableUuid"];
+            floorItemId: components["schemas"]["NullableUuid"];
+            /** @description At most 40 (more → 422 `room_item_limit`); each item once. */
+            items: components["schemas"]["RoomPlacementInput"][];
         };
         /** @enum {string} */
         LedgerReason: "game_reward" | "quest_reward" | "purchase" | "level_reward" | "challenge_reward" | "admin_adjustment";
@@ -2737,6 +2845,11 @@ export interface operations {
         parameters: {
             query?: {
                 slot?: components["schemas"]["ItemSlot"];
+                /**
+                 * @description `room`: room items (slots `furniture`, `wall_decor`, `room_wall`, `room_floor`).
+                 *     `avatar`: every other slot. Combines with `slot`.
+                 */
+                category?: "avatar" | "room";
                 /** @description Opaque cursor from the previous page's `nextCursor`. */
                 cursor?: components["parameters"]["Cursor"];
                 limit?: number;
@@ -3019,6 +3132,101 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["UnprocessableContent"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getMyRoom: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The room. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Room"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    saveMyRoom: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Must be `vybe-web`. Declared on every unsafe operation that guests can call; clients
+                 *     always send it. The server checks it itself (not through generic schema validation) on
+                 *     cookie-authenticated requests: missing or wrong → 403 `csrf_check_failed`.
+                 */
+                "X-Requested-With": components["parameters"]["CsrfHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoomLayoutRequest"];
+            };
+        };
+        responses: {
+            /** @description The room now stored. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Room"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableContent"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getProfileRoom: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Player handle; matched case-insensitively. */
+                handle: components["parameters"]["HandlePath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The room (or the empty default room). */
+            200: {
+                headers: {
+                    "Cache-Control": components["headers"]["CacheControlPrivate"];
+                    "X-Robots-Tag": components["headers"]["RobotsNoIndex"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Room"];
+                };
+            };
+            /** @description Not found, not visible to the caller, or an anonymous caller. */
+            404: {
+                headers: {
+                    "Cache-Control": components["headers"]["CacheControlPrivate"];
+                    "X-Robots-Tag": components["headers"]["RobotsNoIndex"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             default: components["responses"]["Problem"];
         };
     };

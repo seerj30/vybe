@@ -12,8 +12,8 @@ using Vybe.Data;
 namespace Vybe.Data.Migrations
 {
     [DbContext(typeof(VybeDbContext))]
-    [Migration("20261111083937_Achievements")]
-    partial class Achievements
+    [Migration("20261111081642_MyRoom")]
+    partial class MyRoom
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -49,21 +49,9 @@ namespace Vybe.Data.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("criteria");
 
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean")
-                        .HasColumnName("is_active");
-
                     b.Property<Guid?>("RewardItemId")
                         .HasColumnType("uuid")
                         .HasColumnName("reward_item_id");
-
-                    b.Property<int>("RewardXp")
-                        .HasColumnType("integer")
-                        .HasColumnName("reward_xp");
-
-                    b.Property<int>("Version")
-                        .HasColumnType("integer")
-                        .HasColumnName("version");
 
                     b.HasKey("Id")
                         .HasName("pk_achievements");
@@ -78,8 +66,6 @@ namespace Vybe.Data.Migrations
                     b.ToTable("achievements", "vybe", t =>
                         {
                             t.HasCheckConstraint("ck_achievements_criteria_object", "jsonb_typeof(criteria) = 'object'");
-
-                            t.HasCheckConstraint("ck_achievements_reward_xp", "reward_xp >= 0");
                         });
                 });
 
@@ -342,7 +328,7 @@ namespace Vybe.Data.Migrations
 
                             t.HasCheckConstraint("ck_catalog_items_rarity", "rarity IN ('common', 'epic', 'rare')");
 
-                            t.HasCheckConstraint("ck_catalog_items_slot", "slot IN ('accessory', 'bottom', 'emote', 'hair', 'shoes', 'top')");
+                            t.HasCheckConstraint("ck_catalog_items_slot", "slot IN ('accessory', 'bottom', 'emote', 'furniture', 'hair', 'room_floor', 'room_wall', 'shoes', 'top', 'wall_decor')");
                         });
                 });
 
@@ -1518,15 +1504,35 @@ namespace Vybe.Data.Migrations
                         });
                 });
 
-            modelBuilder.Entity("Vybe.Data.Entities.PlayerStat", b =>
+            modelBuilder.Entity("Vybe.Data.Entities.PlayerRoom", b =>
                 {
                     b.Property<Guid>("PlayerId")
                         .HasColumnType("uuid")
                         .HasColumnName("player_id");
 
-                    b.Property<string>("Stat")
-                        .HasColumnType("text")
-                        .HasColumnName("stat");
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid?>("FloorItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("floor_item_id");
+
+                    b.Property<string>("LayoutJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("layout_json")
+                        .HasDefaultValueSql("'[]'::jsonb");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L)
+                        .HasColumnName("revision");
 
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
@@ -1534,18 +1540,24 @@ namespace Vybe.Data.Migrations
                         .HasColumnName("updated_at")
                         .HasDefaultValueSql("now()");
 
-                    b.Property<long>("Value")
-                        .HasColumnType("bigint")
-                        .HasColumnName("value");
+                    b.Property<Guid?>("WallItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("wall_item_id");
 
-                    b.HasKey("PlayerId", "Stat")
-                        .HasName("pk_player_stats");
+                    b.HasKey("PlayerId")
+                        .HasName("pk_player_rooms");
 
-                    b.ToTable("player_stats", "vybe", t =>
+                    b.HasIndex("FloorItemId")
+                        .HasDatabaseName("ix_player_rooms_floor_item_id");
+
+                    b.HasIndex("WallItemId")
+                        .HasDatabaseName("ix_player_rooms_wall_item_id");
+
+                    b.ToTable("player_rooms", "vybe", t =>
                         {
-                            t.HasCheckConstraint("ck_player_stats_stat", "stat ~ '^[a-z0-9_:-]{1,64}$'");
+                            t.HasCheckConstraint("ck_player_rooms_layout_json_shape", "jsonb_typeof(layout_json) = 'array' AND jsonb_array_length(layout_json) <= 40");
 
-                            t.HasCheckConstraint("ck_player_stats_value", "value >= 0");
+                            t.HasCheckConstraint("ck_player_rooms_revision", "revision >= 0");
                         });
                 });
 
@@ -2076,14 +2088,26 @@ namespace Vybe.Data.Migrations
                         .HasConstraintName("fk_player_reports_players_target_player_id");
                 });
 
-            modelBuilder.Entity("Vybe.Data.Entities.PlayerStat", b =>
+            modelBuilder.Entity("Vybe.Data.Entities.PlayerRoom", b =>
                 {
-                    b.HasOne("Vybe.Data.Entities.Player", null)
+                    b.HasOne("Vybe.Data.Entities.CatalogItem", null)
                         .WithMany()
-                        .HasForeignKey("PlayerId")
+                        .HasForeignKey("FloorItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_player_rooms_catalog_items_floor_item_id");
+
+                    b.HasOne("Vybe.Data.Entities.Player", null)
+                        .WithOne()
+                        .HasForeignKey("Vybe.Data.Entities.PlayerRoom", "PlayerId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
-                        .HasConstraintName("fk_player_stats_players_player_id");
+                        .HasConstraintName("fk_player_rooms_players_player_id");
+
+                    b.HasOne("Vybe.Data.Entities.CatalogItem", null)
+                        .WithMany()
+                        .HasForeignKey("WallItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_player_rooms_catalog_items_wall_item_id");
                 });
 
             modelBuilder.Entity("Vybe.Data.Entities.SavedOutfit", b =>

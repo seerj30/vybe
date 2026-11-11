@@ -821,6 +821,40 @@ VALUES ('20261111065922_FriendsAndLeaderboard', '10.0.13');
 COMMIT;
 
 START TRANSACTION;
+ALTER TABLE vybe.catalog_items DROP CONSTRAINT ck_catalog_items_slot;
+
+CREATE TABLE vybe.player_rooms (
+    player_id uuid NOT NULL,
+    wall_item_id uuid,
+    floor_item_id uuid,
+    layout_json jsonb NOT NULL DEFAULT ('[]'::jsonb),
+    revision bigint NOT NULL DEFAULT 0,
+    created_at timestamp with time zone NOT NULL DEFAULT (now()),
+    updated_at timestamp with time zone NOT NULL DEFAULT (now()),
+    CONSTRAINT pk_player_rooms PRIMARY KEY (player_id),
+    CONSTRAINT ck_player_rooms_layout_json_shape CHECK (jsonb_typeof(layout_json) = 'array' AND jsonb_array_length(layout_json) <= 40),
+    CONSTRAINT ck_player_rooms_revision CHECK (revision >= 0),
+    CONSTRAINT fk_player_rooms_catalog_items_floor_item_id FOREIGN KEY (floor_item_id) REFERENCES vybe.catalog_items (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_player_rooms_catalog_items_wall_item_id FOREIGN KEY (wall_item_id) REFERENCES vybe.catalog_items (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_player_rooms_players_player_id FOREIGN KEY (player_id) REFERENCES vybe.players (id) ON DELETE RESTRICT
+);
+
+ALTER TABLE vybe.catalog_items ADD CONSTRAINT ck_catalog_items_slot CHECK (slot IN ('accessory', 'bottom', 'emote', 'furniture', 'hair', 'room_floor', 'room_wall', 'shoes', 'top', 'wall_decor'));
+
+CREATE INDEX ix_player_rooms_floor_item_id ON vybe.player_rooms (floor_item_id);
+
+CREATE INDEX ix_player_rooms_wall_item_id ON vybe.player_rooms (wall_item_id);
+
+CREATE TRIGGER player_rooms_a_increment_revision
+    BEFORE UPDATE ON vybe.player_rooms
+    FOR EACH ROW EXECUTE FUNCTION vybe.increment_revision();
+
+INSERT INTO vybe.__ef_migrations_history (migration_id, product_version)
+VALUES ('20261111081642_MyRoom', '10.0.13');
+
+COMMIT;
+
+START TRANSACTION;
 ALTER TABLE vybe.achievements ADD is_active boolean NOT NULL DEFAULT FALSE;
 
 ALTER TABLE vybe.achievements ADD reward_xp integer NOT NULL DEFAULT 0;
@@ -841,7 +875,7 @@ CREATE TABLE vybe.player_stats (
 ALTER TABLE vybe.achievements ADD CONSTRAINT ck_achievements_reward_xp CHECK (reward_xp >= 0);
 
 INSERT INTO vybe.__ef_migrations_history (migration_id, product_version)
-VALUES ('20261111083937_Achievements', '10.0.13');
+VALUES ('20261111085945_Achievements', '10.0.13');
 
 COMMIT;
 

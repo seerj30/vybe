@@ -103,6 +103,7 @@ public static class ServiceSetup
         ProfileEndpoints.Map(api);
         SafetyEndpoints.Map(api);
         OutfitEndpoints.Map(api);
+        RoomEndpoints.Map(api);
         PrivacyEndpoints.Map(api);
         AdminEndpoints.Map(api);
         ReviewFlagEndpoints.Map(api);

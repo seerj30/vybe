@@ -71,6 +71,8 @@ export const routes: Routes = [
       { path: "arcade", component: Arcade, title: "Arcade · VYBE" },
       { path: "shop", component: Shop, title: "Shop · VYBE" },
       { path: "wardrobe", component: Wardrobe, title: "Wardrobe · VYBE" },
+      // My Room: the editor and its Three.js scene load as a lazy chunk (spec §10).
+      { path: "room", loadComponent: () => import("./pages/room").then((m) => m.Room), title: "My Room · VYBE" },
       { path: "wallet", component: Wallet, title: "Wallet · VYBE" },
       { path: "settings", component: Settings, title: "Settings · VYBE" },
       { path: "challenges", component: Challenges, title: "Challenges · VYBE" },

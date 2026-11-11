@@ -42,7 +42,7 @@ public static class EconomyEndpoints
     }
 
     private static async Task<Page<CatalogItemResponse>> ListCatalogAsync(
-        string? slot, string? cursor, int? limit, HttpContext context, VybeDbContext db, CurrentPlayer current,
+        string? slot, string? category, string? cursor, int? limit, HttpContext context, VybeDbContext db, CurrentPlayer current,
         ContentCatalog content, TimeProvider clock, CancellationToken cancellationToken)
     {
         var take = Cursor.Limit(limit, 24);
@@ -61,6 +61,19 @@ public static class EconomyEndpoints
                 ? TextEnums.FromDatabase<ItemSlot>(slot)
                 : throw Problem.ValidationFailed("/slot", "invalid", "unknown slot");
             query = query.Where(i => i.Slot == parsed);
+        }
+
+        if (category is not null)
+        {
+            // "room": furniture, wall decor and finishes (docs/design/p1-my-room.md); "avatar": everything else.
+            var room = category switch
+            {
+                "room" => true,
+                "avatar" => false,
+                _ => throw Problem.ValidationFailed("/category", "invalid", "category must be avatar or room"),
+            };
+            query = query.Where(i => (i.Slot == ItemSlot.Furniture || i.Slot == ItemSlot.WallDecor
+                || i.Slot == ItemSlot.RoomWall || i.Slot == ItemSlot.RoomFloor) == room);
         }
 
         if (after is not null)
@@ -161,6 +174,12 @@ public static class EconomyEndpoints
     {
         ArgumentNullException.ThrowIfNull(request);
         var playerId = await current.GetIdAsync(cancellationToken);
+        if (!Enum.IsDefined(request.Slot) || RoomLayout.IsRoomSlot(request.Slot))
+        {
+            // Room items are placed with PUT /me/room, never worn (docs/design/p1-my-room.md).
+            throw Problem.ValidationFailed("/slot", "invalid", "slot must be an avatar slot");
+        }
+
         var isAccessory = request.Slot == ItemSlot.Accessory;
         if (isAccessory != request.AttachIndex.HasValue || request.AttachIndex is not (null or 0 or 1))
         {

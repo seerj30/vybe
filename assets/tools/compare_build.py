@@ -92,7 +92,7 @@ def files(root: str) -> Dict[str, Tuple[str, str]]:
 def manifest(root: str, name: str) -> dict:
     with open(os.path.join(root, "assets", "manifests", name), encoding="utf-8") as f:
         doc = json.load(f)
-    if name.startswith("catalog"):
+    if name.startswith(("catalog", "room")):
         for item in doc["items"]:
             item.pop("thumbnailUrl", None)
     return doc
@@ -117,7 +117,7 @@ def main(committed: str, rebuilt: str) -> int:
                 sys.stdout.write(f"note: {key}: {share:.2%} of the pixels differ (renderer noise, accepted)\n")
         elif a != b:
             errors.append(f"{key}: the rebuild has other bytes ({old[key][0]} → {new[key][0]})")
-    for name in ("avatar-3d.v1.json", "catalog.v1.json"):
+    for name in ("avatar-3d.v1.json", "catalog.v1.json", "room.v1.json"):
         if manifest(committed, name) != manifest(rebuilt, name):
             errors.append(f"{name}: the rebuild differs (thumbnail URLs not compared)")
     for e in errors:

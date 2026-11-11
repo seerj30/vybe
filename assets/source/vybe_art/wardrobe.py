@@ -434,3 +434,32 @@ def crown(name: str) -> Mesh:
         g.icosahedron(m, (c[0] + (r + 0.012) * math.cos(a), c[1] + (r * 0.95 + 0.012) * math.sin(a), c[2] + 0.022),
                       (0.014, 0.014, 0.014), "head", "gem")
     return m
+
+
+def bucket_hat(name: str) -> Mesh:
+    """Soft dome and a brim that slopes down all around (hides the hair)."""
+    m = Mesh(name)
+    g.cap_shell(m, g.add(HEAD_CENTER, (0, 0, 0.015)), (HEAD_RADII[0] + 0.03, HEAD_RADII[1] + 0.03, HEAD_RADII[2] + 0.04),
+                lambda th: math.radians(78 if math.sin(th) < 0 else 90), "head", "primary", lon=12, rows=4)
+    c = g.add(HEAD_CENTER, (0, 0, 0.05))
+    band = [g.ring(g.add(c, (0, 0, dz)), (0, 0, 1), HEAD_RADII[0] + 0.035, HEAD_RADII[1] + 0.035, 12) for dz in (0.0, 0.035)]
+    g.loft(m, band, ["head", "head"], "secondary")
+    inner = g.ring(g.add(c, (0, 0, 0.002)), (0, 0, 1), HEAD_RADII[0] + 0.034, HEAD_RADII[1] + 0.034, 12)
+    outer = g.ring(g.add(c, (0, 0, -0.05)), (0, 0, 1), HEAD_RADII[0] + 0.11, HEAD_RADII[1] + 0.11, 12)
+    g.loft(m, [outer, inner], ["head", "head"], "primary")
+    return m
+
+
+def headband(name: str) -> Mesh:
+    """A band around the forehead with a small badge at the front."""
+    m = Mesh(name)
+    rings = []
+    for dz in (0.07, 0.115):
+        s = math.sqrt(1 - (dz / HEAD_RADII[2]) ** 2)  # the head gets narrower above its center
+        rings.append(g.ring(g.add(HEAD_CENTER, (0, 0, dz)), (0, 0, 1), HEAD_RADII[0] * s + 0.014,
+                            HEAD_RADII[1] * s + 0.014, 12))
+    g.loft(m, rings, ["head", "head"], "primary")
+    z = HEAD_CENTER[2] + 0.092
+    y = head_surface_y(0, z) - 0.012
+    g.box(m, (0, y, z), (0.05, 0.012, 0.03), "head", "accent")
+    return m

@@ -14,7 +14,7 @@ from .geom import Mesh
 from .palette import Material, materials
 from .rig import Dims
 
-CATALOG_VERSION = 2
+CATALOG_VERSION = 3
 BOTH = ("body_a", "body_b")
 
 
@@ -147,12 +147,25 @@ ASSETS: List[Asset] = [
           materials(primary="#118ab2", secondary="#073b4c"), attach_bone="chest"),
     Asset("court_crown", "accessory", lambda _d: w.crown("item"),
           materials(metal="#ffd23f|#5c4500", gem="#ff4d6d|#ff0040"), attach_bone="head", fits_bodies=False),
+    # Catalog version 3 assets (stream Q).
+    Asset("aurora_puffer", "top",
+          _top(sleeves="long", fit=0.034, scale=1.1, hem=0.78, collar=True, zipper="trim", puffy=0.014),
+          materials(primary="#1d2b64", trim="#7df9ff|#00e5ff"), TOP_LONG),
+    Asset("neon_joggers", "bottom", _bottom(length="long", cuff="trim", stripe="glow"),
+          materials(primary="#111827", glow="#ff2bd6|#ff00c8", trim="#39ff14|#2bff00"), LEGS_LONG),
+    Asset("bucket_hat", "accessory", lambda _d: w.bucket_hat("item"),
+          materials(primary="#f4a259", secondary="#5b8e7d"), hide=("hair",), attach_bone="head", fits_bodies=False),
+    Asset("headband", "accessory", lambda _d: w.headband("item"), materials(primary="#ef476f", accent="#ffffff"),
+          attach_bone="head", fits_bodies=False),
+    Asset("laser_shades", "accessory", lambda _d: w.shades("item"),
+          materials(primary="#e0e0e0", lens="#ff006e|#ff2bd6"), attach_bone="head", fits_bodies=False),
     # Emotes (animation only)
     Asset("swish", "emote", lambda _d: Mesh("none"), {}, fits_bodies=False, emote="swish"),
     Asset("wave", "emote", lambda _d: Mesh("none"), {}, fits_bodies=False, emote="wave"),
     Asset("cheer", "emote", lambda _d: Mesh("none"), {}, fits_bodies=False, emote="cheer"),
     Asset("groove", "emote", lambda _d: Mesh("none"), {}, fits_bodies=False, emote="groove"),
     Asset("bow", "emote", lambda _d: Mesh("none"), {}, fits_bodies=False, emote="bow"),
+    Asset("jump", "emote", lambda _d: Mesh("none"), {}, fits_bodies=False, emote="jump"),
 ]
 ASSET_BY_ID = {a.id: a for a in ASSETS}
 
@@ -207,6 +220,27 @@ ITEMS: List[Item] = [
     Item("emote_cheer", "Cheer", 500, "common", 2, "cheer", "emotes/cheer"),
     Item("emote_bow", "Bow", 350, "common", 1, "bow", "emotes/bow"),
     Item("emote_groove", "Groove", 2000, "rare", 5, "groove", "emotes/groove"),
+    # Catalog version 3 items (stream Q, P1 "additional cosmetics").
+    Item("top_mint_tank", "Mint Stripe Tank", 400, "common", 1, "striped_tank", "tops/mint_tank",
+         colors={"primary": "#e8fff6", "secondary": "#2ec4b6", "trim": "#0b3954"}),
+    Item("top_gold_hoodie", "Gold Team Hoodie", 700, "common", 2, "hoodie", "tops/gold_hoodie",
+         colors={"primary": "#ffd23f", "trim": "#1d3557"}),
+    Item("top_forest_windbreaker", "Forest Windbreaker", 1800, "rare", 3, "windbreaker", "tops/forest_windbreaker",
+         colors={"primary": "#2d6a4f", "secondary": "#95d5b2", "accent": "#1b4332"}),
+    Item("top_aurora_puffer", "Aurora Puffer", 7500, "epic", 9, "aurora_puffer", "tops/aurora_puffer"),
+    Item("bottom_denim_shorts", "Denim Shorts", 400, "common", 1, "court_shorts", "bottoms/denim_shorts",
+         colors={"primary": "#3a6ea5", "secondary": "#c0d6df", "trim": "#1b263b"}),
+    Item("bottom_neon_joggers", "Neon Joggers", 6500, "epic", 8, "neon_joggers", "bottoms/neon_joggers"),
+    Item("shoes_classic_highs", "Classic Highs", 600, "common", 1, "high_tops", "shoes/classic_highs",
+         colors={"primary": "#f5f5f5", "trim": "#1c1c22"}),
+    Item("shoes_lava_boots", "Lava Boots", 1900, "rare", 4, "trail_boots", "shoes/lava_boots",
+         colors={"primary": "#3c3c3c", "secondary": "#d62828", "trim": "#ffb703"}),
+    Item("acc_bucket_hat", "Bucket Hat", 450, "common", 1, "bucket_hat", "accessories/bucket_hat"),
+    Item("acc_headband", "Headband", 300, "common", 1, "headband", "accessories/headband"),
+    Item("acc_gold_wristband", "Gold Wristband", 1500, "rare", 3, "sweatband", "accessories/gold_wristband",
+         colors={"primary": "#ffd23f", "accent": "#1c1c22"}),
+    Item("acc_laser_shades", "Laser Shades", 6000, "epic", 7, "laser_shades", "accessories/laser_shades"),
+    Item("emote_jump", "Jump", 450, "common", 2, "jump", "emotes/jump"),
 ]
 
 STARTER_BY_SLOT = {ASSET_BY_ID[i.asset].slot: i.sku for i in ITEMS if i.starter}

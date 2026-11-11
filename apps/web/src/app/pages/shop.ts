@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, type ElementRef, Injector, afterNextRender, computed, inject, signal, viewChild } from "@angular/core";
-import { RouterLink } from "@angular/router";
+import { ActivatedRoute, RouterLink } from "@angular/router";
 import type { Schemas } from "@vybe/contracts";
 import { ActionKeys, isApiError } from "../api/api-client";
 import { API } from "../api/api";
@@ -10,7 +10,7 @@ import { type AvatarPresets, DEFAULT_PRESETS, pickPresets } from "../avatar/pres
 import { AvatarViewport } from "../avatar-viewport/avatar-viewport";
 import { PlayerStore } from "../player/player-store";
 import { ItemThumb } from "../ui/item-thumb";
-import { SLOT_LABELS, SLOTS } from "../ui/labels";
+import { AVATAR_SLOTS, ROOM_SLOTS, SLOT_LABELS, SLOTS, isRoomSlot } from "../ui/labels";
 
 type CatalogItem = Schemas["CatalogItem"];
 type ItemSlot = Schemas["ItemSlot"];
@@ -20,8 +20,8 @@ type Purchase = { kind: "confirming" } | { kind: "buying" } | { kind: "unknown";
 
 const LOST = "The connection was lost.";
 
-// The whole beta catalog (about 40 items) fits on the first page; "Show more items" stays for a larger catalog.
-const PAGE_SIZE = 48;
+// The whole beta catalog (84 priced items with the room items) fits on the first page; "Show more items" stays for a larger catalog.
+const PAGE_SIZE = 100;
 
 /**
  * `/shop` (spec §3, §8): catalog with slot filter and purchases. The server decides; the buttons only
@@ -37,12 +37,20 @@ const PAGE_SIZE = 48;
         <p>Balance: <strong>{{ me.walletBalance }} V-Coins</strong>. Purchases are final. Items never change game results.</p>
       }
       <label class="filter">
-        Slot
+        Show
         <select (change)="filter($event)">
-          <option value="">All items</option>
-          @for (slot of slots; track slot) {
-            <option [value]="slot" [selected]="slot === slotFilter()">{{ slotLabels[slot] }}</option>
-          }
+          <option value="" [selected]="filterValue() === ''">All items</option>
+          <optgroup label="Avatar">
+            @for (slot of avatarSlots; track slot) {
+              <option [value]="slot" [selected]="slot === filterValue()">{{ slotLabels[slot] }}</option>
+            }
+          </optgroup>
+          <optgroup label="Room">
+            <option value="room" [selected]="filterValue() === 'room'">All room items</option>
+            @for (slot of roomSlots; track slot) {
+              <option [value]="slot" [selected]="slot === filterValue()">{{ slotLabels[slot] }}</option>
+            }
+          </optgroup>
         </select>
       </label>
       @if (picturesFailed()) {
@@ -81,10 +89,16 @@ const PAGE_SIZE = 48;
             <h2>{{ item.name }}</h2>
             <p class="muted meta">{{ slotLabels[item.slot] }} · {{ item.rarity }} · level {{ item.minLevel }}+</p>
             <p class="price">{{ item.price }} V-Coins</p>
-            <button type="button" class="link" (click)="preview(item)">Preview<span class="visually-hidden"> {{ item.name }}</span></button>
+            @if (!isRoomItem(item)) {
+              <button type="button" class="link" (click)="preview(item)">Preview<span class="visually-hidden"> {{ item.name }}</span></button>
+            }
             @let state = purchases()[item.id];
             @if (item.owned) {
-              <p class="owned">Owned · <a routerLink="/wardrobe">Wear it</a></p>
+              @if (isRoomItem(item)) {
+                <p class="owned">Owned · <a routerLink="/room">Place it</a></p>
+              } @else {
+                <p class="owned">Owned · <a routerLink="/wardrobe">Wear it</a></p>
+              }
             } @else {
               @switch (state?.kind) {
                 @case ("confirming") {
@@ -145,10 +159,12 @@ const PAGE_SIZE = 48;
 export class Shop {
   private readonly api = inject(API);
   protected readonly player = inject(PlayerStore);
-  protected readonly slots = SLOTS;
+  protected readonly avatarSlots = AVATAR_SLOTS;
+  protected readonly roomSlots = ROOM_SLOTS;
   protected readonly slotLabels = SLOT_LABELS;
 
-  protected readonly slotFilter = signal<ItemSlot | null>(null);
+  /** "" (all), a slot, or "room" (all room items, `category=room`). `?filter=room` opens the shop on it. */
+  protected readonly filterValue = signal<string>(initialFilter(inject(ActivatedRoute).snapshot.queryParamMap.get("filter")));
   protected readonly items = signal<CatalogItem[]>([]);
   protected readonly nextCursor = signal<string | null>(null);
   protected readonly loading = signal(false);
@@ -187,6 +203,10 @@ export class Shop {
     return null;
   }
 
+  protected isRoomItem(item: CatalogItem): boolean {
+    return isRoomSlot(item.slot);
+  }
+
   protected picture(item: CatalogItem): string {
     return itemPicture(item.sku, item.previewUrl);
   }
@@ -214,8 +234,7 @@ export class Shop {
   }
 
   protected filter(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value;
-    this.slotFilter.set(value === "" ? null : (value as ItemSlot));
+    this.filterValue.set((event.target as HTMLSelectElement).value);
     void this.reload();
   }
 
@@ -284,7 +303,13 @@ export class Shop {
     this.loading.set(true);
     this.loadError.set(null);
     try {
-      const page = await this.api.listCatalog({ slot: this.slotFilter() ?? undefined, cursor, limit: PAGE_SIZE });
+      const value = this.filterValue();
+      const page = await this.api.listCatalog({
+        slot: SLOTS.includes(value as ItemSlot) ? (value as ItemSlot) : undefined,
+        category: value === "room" ? "room" : undefined,
+        cursor,
+        limit: PAGE_SIZE,
+      });
       if (list !== this.list) return;
       this.items.update((items) => [...items, ...page.items]);
       this.nextCursor.set(page.nextCursor);
@@ -304,6 +329,10 @@ export class Shop {
   private setPurchase(itemId: string, state: Purchase | undefined): void {
     this.purchases.update((purchases) => ({ ...purchases, [itemId]: state }));
   }
+}
+
+function initialFilter(value: string | null): string {
+  return value === "room" || SLOTS.includes(value as ItemSlot) ? value! : "";
 }
 
 function unknownText(error: unknown): string {

@@ -64,3 +64,18 @@ public sealed class WalletTransaction
     public required string LedgerKey { get; set; }
     public DateTime CreatedAt { get; set; }
 }
+
+/// <summary>My Room (docs/design/p1-my-room.md): one room per player; the API validates every layout.</summary>
+public sealed class PlayerRoom
+{
+    public Guid PlayerId { get; set; }
+    public Guid? WallItemId { get; set; }
+    public Guid? FloorItemId { get; set; }
+
+    /// <summary>JSON array of placements: <c>[{"itemId","surface","x","y","rotation"}]</c>, at most 40.</summary>
+    public string LayoutJson { get; set; } = "[]";
+
+    public long Revision { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}

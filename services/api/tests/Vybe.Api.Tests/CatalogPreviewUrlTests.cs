@@ -10,8 +10,12 @@ namespace Vybe.Api.Tests;
 [Collection(ApiTestGroup.Name)]
 public sealed class CatalogPreviewUrlTests(ApiFactory api)
 {
+    private static readonly ContentCatalog Content = new(new ContentOptions { Root = ApiFactory.RepoRoot });
+
+    // Avatar items and room items (docs/design/p1-my-room.md) both have pipeline thumbnails.
     private static readonly Dictionary<string, string?> Thumbnails =
-        new ContentCatalog(new ContentOptions { Root = ApiFactory.RepoRoot }).Catalog.Items.ToDictionary(i => i.Sku, i => i.ThumbnailUrl);
+        Content.Catalog.Items.Select(i => (i.Sku, i.ThumbnailUrl)).Concat(Content.Room.Items.Select(i => (i.Sku, i.ThumbnailUrl)))
+            .ToDictionary(i => i.Sku, i => i.ThumbnailUrl);
 
     private static void AssertThumbnail(System.Text.Json.JsonElement item)
     {

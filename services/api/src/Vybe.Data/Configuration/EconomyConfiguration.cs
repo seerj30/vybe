@@ -116,3 +116,26 @@ internal sealed class WalletTransactionConfiguration : IEntityTypeConfiguration<
         b.HasOne<Player>().WithMany().HasForeignKey(x => x.PlayerId);
     }
 }
+
+internal sealed class PlayerRoomConfiguration : IEntityTypeConfiguration<PlayerRoom>
+{
+    public void Configure(EntityTypeBuilder<PlayerRoom> b)
+    {
+        b.ToTable("player_rooms", t =>
+        {
+            t.Check("revision", "revision >= 0");
+            // The full placement rules need the manifest footprints; the API checks them (docs/design/p1-my-room.md).
+            t.Check("layout_json_shape", "jsonb_typeof(layout_json) = 'array' AND jsonb_array_length(layout_json) <= 40");
+        });
+        b.HasKey(x => x.PlayerId);
+        b.Property(x => x.LayoutJson).Jsonb().HasDefaultValueSql("'[]'::jsonb");
+        b.Property(x => x.Revision).IsConcurrencyToken().ValueGeneratedOnAddOrUpdate().HasDefaultValue(0L);
+        b.Property(x => x.CreatedAt).DefaultNow();
+        b.Property(x => x.UpdatedAt).DefaultNow();
+        b.HasIndex(x => x.WallItemId);
+        b.HasIndex(x => x.FloorItemId);
+        b.HasOne<Player>().WithOne().HasForeignKey<PlayerRoom>(x => x.PlayerId);
+        b.HasOne<CatalogItem>().WithMany().HasForeignKey(x => x.WallItemId);
+        b.HasOne<CatalogItem>().WithMany().HasForeignKey(x => x.FloorItemId);
+    }
+}
