@@ -51,5 +51,5 @@ Proposed style brief for the product owner to accept or change: stylized cartoon
 | Real preset ids | `assets/manifests/avatar.v1.json` → a new version (`avatar.v2.json`); the API validates presets from it (ADR 0001, ADR 0003 #6) | art owner, API stream |
 | Item manifest fields of §9 (`assetVersion`, `rigVersion`, `contentHash`, budget fields) | `assets/manifests/catalog.v1.json` → new version; `ContentCatalog.cs` loader | art owner, API stream |
 | CI manifest check (budgets, compatible bodies, hashes) | `.github/workflows/ci.yml`, spec §13 | stream D |
-| CDN base URL for `previewUrl` and assets (`Content:AssetBaseUrl`, default `https://cdn.vybe.invalid/assets` in `Content/ContentCatalog.cs`) | API configuration, `infra/` | stream D |
+| Base URL for `previewUrl` and assets: done (#54). `previewUrl` is the manifest `thumbnailUrl` under `Content:AssetBaseUrl` (`https://<web origin>/assets`, written by `infra/oracle/stage-env.sh`) | API configuration, `infra/` | stream N |
 | 3D `AvatarViewport` with mount/dispose and fallback | `apps/web` | stream C successor |

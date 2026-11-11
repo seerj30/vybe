@@ -63,6 +63,7 @@ public static class SafetyEndpoints
                     || (c.CreatorPlayerId == target.Id && c.RecipientPlayerId == playerId))
                 && (c.Status == ChallengeStatus.Open || c.Status == ChallengeStatus.Accepted))
             .ExecuteUpdateAsync(u => u.SetProperty(c => c.Status, ChallengeStatus.Cancelled), cancellationToken);
+        await FriendEndpoints.ApplyBlockAsync(db, playerId, target.Id, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return Results.NoContent();
     }
@@ -79,6 +80,7 @@ public static class SafetyEndpoints
                 .Where(b => b.BlockerPlayerId == playerId
                     && db.Players.Any(p => p.Id == b.BlockedPlayerId && p.HandleNormalized == normalized))
                 .ExecuteDeleteAsync(cancellationToken);
+            await FriendEndpoints.ApplyUnblockAsync(db, playerId, handle, cancellationToken);
         }
 
         return Results.NoContent();

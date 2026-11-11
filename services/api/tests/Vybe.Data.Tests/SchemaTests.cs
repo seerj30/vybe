@@ -14,7 +14,8 @@ public sealed class SchemaTests(PostgresFixture db)
         await using var context = db.CreateContext();
 
         Assert.Empty(await context.Database.GetPendingMigrationsAsync());
-        Assert.Equal(5, (await context.Database.GetAppliedMigrationsAsync()).Count());
+        // Every migration of the assembly applies (streams add migrations in parallel, so no fixed count).
+        Assert.Equal(context.Database.GetMigrations(), await context.Database.GetAppliedMigrationsAsync());
         Assert.False(context.Database.HasPendingModelChanges(), "the model changed without a migration");
     }
 

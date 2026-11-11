@@ -43,6 +43,10 @@ tags:
     description: Asynchronous challenges.
   - name: quests
     description: Daily quests.
+  - name: friends
+    description: Friend requests and friend lists (P1).
+  - name: leaderboards
+    description: Weekly leaderboards (P1).
   - name: account
     description: Data export and deletion.
   - name: admin
@@ -348,7 +352,10 @@ paths:
       parameters:
         - $ref: "#/components/parameters/CsrfHeader"
       summary: Block a player
-      description: Idempotent. Cancels open and accepted challenges between the pair (spec §4 invariant 8).
+      description: |
+        Idempotent. Cancels open and accepted challenges between the pair (spec §4 invariant 8). Ends
+        the friendship and the caller's own friend request; a pending request of the blocked player
+        stays but never reaches the caller (P1 friends).
       x-problem-codes:
         "404": [not_found]
         "422": [self_block]
@@ -419,6 +426,253 @@ paths:
           $ref: "#/components/responses/UnprocessableContent"
         "429":
           $ref: "#/components/responses/TooManyRequests"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # ------------------------------------------------------------------ friends (P1)
+  /me/friends:
+    get:
+      tags: [friends]
+      operationId: listMyFriends
+      summary: List the caller's friends
+      description: |
+        Accepted friends, by handle (at most 200). Only the caller's own friends: no operation lists
+        another player's friends. A friend with a private profile is listed with `profileVisible: false`
+        (design: docs/design/p1-friends-leaderboard.md).
+      responses:
+        "200":
+          description: The caller's friends.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FriendList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /me/friends/{handle}:
+    delete:
+      tags: [friends]
+      operationId: removeFriend
+      summary: End a friendship
+      description: Idempotent. Either friend can end it.
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+        - $ref: "#/components/parameters/HandlePath"
+      responses:
+        "204":
+          description: Friendship ended or not present.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /me/friend-requests:
+    get:
+      tags: [friends]
+      operationId: listMyFriendRequests
+      summary: List pending friend requests
+      description: |
+        Incoming (newest 100) and outgoing (at most 50) pending requests, newest first. A request
+        from a player whom the caller blocked is never listed as incoming.
+      responses:
+        "200":
+          description: Pending requests.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FriendRequestLists"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      tags: [friends]
+      operationId: sendFriendRequest
+      summary: Send a friend request
+      description: |
+        Under the pair lock (spec §4 invariant 12). A pending request from the target makes the pair
+        friends at once (`status: accepted`). A repeat of the caller's own pending request returns
+        `pending` again. When the target blocked the caller, the answer is the normal `pending`, and
+        the target never sees the request (block privacy). A private profile (decision 6) gets the 404
+        of an unknown handle, except when it already sent a request to the caller. Limits
+        (provisional): 20 new requests per UTC day (429 `rate_limited`), 50 open outgoing requests
+        (409 `friend_request_limit`), 100 open incoming requests of the target (409
+        `recipient_request_limit`), 200 friends (409 `friend_limit_reached`), and 30 days before the
+        same requester asks again after a decline (409 `friend_request_declined`). A block keeps the
+        blocked player's own pending request (suppressed) and a declined one, so the blocked player sees
+        the same answers as before the block; an unblock lets the pending request reach the blocker.
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+      x-problem-codes:
+        "403": [account_suspended]
+        "404": [not_found]
+        "409": [already_friends, friend_request_declined, friend_request_limit, recipient_request_limit, friend_limit_reached]
+        "422": [self_friend_request, recipient_blocked]
+        "429": [rate_limited]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FriendRequestCreate"
+      responses:
+        "200":
+          description: Request pending, or the pair is now friends.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FriendRequestResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableContent"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /me/friend-requests/{handle}:
+    delete:
+      tags: [friends]
+      operationId: cancelFriendRequest
+      summary: Cancel the caller's pending request
+      description: Idempotent. A cancel does not give back the daily request.
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+        - $ref: "#/components/parameters/HandlePath"
+      responses:
+        "204":
+          description: Request cancelled or not present.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /me/friend-requests/{handle}/accept:
+    post:
+      tags: [friends]
+      operationId: acceptFriendRequest
+      summary: Accept a pending request from this player
+      description: Under the pair lock; a block in either direction gives the 404 of a missing request.
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+        - $ref: "#/components/parameters/HandlePath"
+      x-problem-codes:
+        "404": [not_found]
+        "409": [friend_limit_reached]
+      responses:
+        "200":
+          description: The pair is now friends.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FriendRequestResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /me/friend-requests/{handle}/decline:
+    post:
+      tags: [friends]
+      operationId: declineFriendRequest
+      summary: Decline a pending request from this player
+      description: Idempotent. The requester can ask again after 30 days (provisional).
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+        - $ref: "#/components/parameters/HandlePath"
+      responses:
+        "204":
+          description: Request declined or not present.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /me/friendships/{handle}:
+    get:
+      tags: [friends]
+      operationId: getFriendship
+      summary: The caller's relation to a player
+      description: An unknown handle is `none`, so the answer tells nothing about the handle.
+      parameters:
+        - $ref: "#/components/parameters/HandlePath"
+      responses:
+        "200":
+          description: The relation from the caller's view.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FriendshipState"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # ------------------------------------------------------------------ leaderboards (P1)
+  /leaderboards/{gameId}/weekly:
+    get:
+      tags: [leaderboards]
+      operationId: getWeeklyLeaderboard
+      summary: Weekly leaderboard of one game
+      description: |
+        ISO week in UTC (a run counts in the week of its `startedAt`). Best counted score per player:
+        verified, reward-eligible (spec v1.4 §7 minimum play), not a challenge recipient run, no review
+        flags. Deleting, deleted and suspended players are left out. `global`: top 100 without private
+        profiles. `friends`: the caller and the caller's friends. Ties share a rank (1, 2, 2, 4) and are
+        ordered by the earlier run. `me` is the caller's own rank in the scope, also outside the list.
+        `Cache-Control: private, no-store`.
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          description: A game with a ruleset, for example `street-hoops`. Unknown → 404 `not_found`.
+          schema:
+            type: string
+            pattern: "^[a-z0-9-]{1,40}$"
+        - name: scope
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/LeaderboardScope"
+        - name: week
+          in: query
+          required: false
+          description: ISO week `YYYY-Www`, from 2026-W01 to the current week; default the current week.
+          schema:
+            type: string
+            pattern: "^[0-9]{4}-W[0-9]{2}$"
+      x-problem-codes:
+        "404": [not_found]
+        "422": [validation_failed]
+      responses:
+        "200":
+          description: The board.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlPrivate"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WeeklyLeaderboard"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableContent"
         default:
           $ref: "#/components/responses/Problem"
 
@@ -2018,6 +2272,13 @@ components:
         # safety
         - self_block
         - self_report
+        # friends (P1)
+        - self_friend_request
+        - already_friends
+        - friend_request_declined
+        - friend_request_limit
+        - recipient_request_limit
+        - friend_limit_reached
         # catalog / wardrobe
         - insufficient_funds
         - already_owned
@@ -2291,6 +2552,151 @@ components:
             $ref: "#/components/schemas/BlockedPlayer"
         nextCursor:
           $ref: "#/components/schemas/NextCursor"
+    # ---------------------------------------------------------------- friends (P1)
+    FriendRequestCreate:
+      type: object
+      required: [handle]
+      additionalProperties: false
+      properties:
+        handle:
+          $ref: "#/components/schemas/HandleInput"
+    FriendRequestResult:
+      type: object
+      required: [handle, status]
+      properties:
+        handle:
+          $ref: "#/components/schemas/Handle"
+        status:
+          type: string
+          enum: [pending, accepted]
+    FriendEntry:
+      type: object
+      required: [handle, displayName, level, since, profileVisible]
+      properties:
+        handle:
+          $ref: "#/components/schemas/Handle"
+        displayName:
+          $ref: "#/components/schemas/DisplayName"
+        level:
+          $ref: "#/components/schemas/Level"
+        since:
+          $ref: "#/components/schemas/Timestamp"
+        profileVisible:
+          type: boolean
+          description: False for a private profile; `getProfile` then answers 404.
+    FriendList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/FriendEntry"
+    FriendRequestEntry:
+      type: object
+      required: [handle, displayName, level, requestedAt]
+      description: |
+        In the outgoing list, a player whose profile is now private shows only the handle
+        (`displayName` and `level` are null; spec §17 decision 6).
+      properties:
+        handle:
+          $ref: "#/components/schemas/Handle"
+        displayName:
+          $ref: "#/components/schemas/DisplayName"
+        level:
+          oneOf:
+            - $ref: "#/components/schemas/Level"
+            - type: "null"
+        requestedAt:
+          $ref: "#/components/schemas/Timestamp"
+    FriendRequestLists:
+      type: object
+      required: [incoming, outgoing]
+      properties:
+        incoming:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/FriendRequestEntry"
+        outgoing:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/FriendRequestEntry"
+    FriendshipState:
+      type: object
+      required: [relation]
+      properties:
+        relation:
+          type: string
+          enum: [none, friends, outgoing, incoming]
+
+    # ---------------------------------------------------------------- leaderboards (P1)
+    LeaderboardScope:
+      type: string
+      enum: [global, friends]
+    LeaderboardEntry:
+      type: object
+      required: [rank, handle, displayName, level, score, isMe]
+      properties:
+        rank:
+          type: integer
+          minimum: 1
+        handle:
+          $ref: "#/components/schemas/Handle"
+        displayName:
+          $ref: "#/components/schemas/DisplayName"
+        level:
+          $ref: "#/components/schemas/Level"
+        score:
+          type: integer
+          minimum: 0
+        isMe:
+          type: boolean
+    LeaderboardMe:
+      type: object
+      required: [rank, score, listed]
+      properties:
+        rank:
+          type: integer
+          minimum: 1
+        score:
+          type: integer
+          minimum: 0
+        listed:
+          type: boolean
+          description: False when the caller is outside the list (below the top 100, or a private profile on the global board).
+    WeeklyLeaderboard:
+      type: object
+      required: [gameId, scope, week, weekStart, weekEnd, entries, me]
+      properties:
+        gameId:
+          type: string
+        scope:
+          $ref: "#/components/schemas/LeaderboardScope"
+        week:
+          type: string
+          pattern: "^[0-9]{4}-W[0-9]{2}$"
+        weekStart:
+          type: string
+          format: date
+          description: Monday (UTC).
+        weekEnd:
+          type: string
+          format: date
+          description: Sunday (UTC).
+        entries:
+          type: array
+          maxItems: 201
+          items:
+            $ref: "#/components/schemas/LeaderboardEntry"
+        me:
+          oneOf:
+            - $ref: "#/components/schemas/LeaderboardMe"
+            - type: "null"
+          description: Null when the caller has no counted run in this week.
+
     ReportReason:
       type: string
       enum: [offensive_name, cheating, harassment, other]

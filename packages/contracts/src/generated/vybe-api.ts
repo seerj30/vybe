@@ -178,7 +178,9 @@ export interface paths {
         put?: never;
         /**
          * Block a player
-         * @description Idempotent. Cancels open and accepted challenges between the pair (spec §4 invariant 8).
+         * @description Idempotent. Cancels open and accepted challenges between the pair (spec §4 invariant 8). Ends
+         *     the friendship and the caller's own friend request; a pending request of the blocked player
+         *     stays but never reaches the caller (P1 friends).
          */
         post: operations["blockPlayer"];
         delete?: never;
@@ -221,6 +223,188 @@ export interface paths {
          * @description Rate limited (provisional 10 per day per reporter).
          */
         post: operations["reportPlayer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/friends": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the caller's friends
+         * @description Accepted friends, by handle (at most 200). Only the caller's own friends: no operation lists
+         *     another player's friends. A friend with a private profile is listed with `profileVisible: false`
+         *     (design: docs/design/p1-friends-leaderboard.md).
+         */
+        get: operations["listMyFriends"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/friends/{handle}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * End a friendship
+         * @description Idempotent. Either friend can end it.
+         */
+        delete: operations["removeFriend"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/friend-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List pending friend requests
+         * @description Incoming (newest 100) and outgoing (at most 50) pending requests, newest first. A request
+         *     from a player whom the caller blocked is never listed as incoming.
+         */
+        get: operations["listMyFriendRequests"];
+        put?: never;
+        /**
+         * Send a friend request
+         * @description Under the pair lock (spec §4 invariant 12). A pending request from the target makes the pair
+         *     friends at once (`status: accepted`). A repeat of the caller's own pending request returns
+         *     `pending` again. When the target blocked the caller, the answer is the normal `pending`, and
+         *     the target never sees the request (block privacy). A private profile (decision 6) gets the 404
+         *     of an unknown handle, except when it already sent a request to the caller. Limits
+         *     (provisional): 20 new requests per UTC day (429 `rate_limited`), 50 open outgoing requests
+         *     (409 `friend_request_limit`), 100 open incoming requests of the target (409
+         *     `recipient_request_limit`), 200 friends (409 `friend_limit_reached`), and 30 days before the
+         *     same requester asks again after a decline (409 `friend_request_declined`). A block keeps the
+         *     blocked player's own pending request (suppressed) and a declined one, so the blocked player sees
+         *     the same answers as before the block; an unblock lets the pending request reach the blocker.
+         */
+        post: operations["sendFriendRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/friend-requests/{handle}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Cancel the caller's pending request
+         * @description Idempotent. A cancel does not give back the daily request.
+         */
+        delete: operations["cancelFriendRequest"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/friend-requests/{handle}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept a pending request from this player
+         * @description Under the pair lock; a block in either direction gives the 404 of a missing request.
+         */
+        post: operations["acceptFriendRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/friend-requests/{handle}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decline a pending request from this player
+         * @description Idempotent. The requester can ask again after 30 days (provisional).
+         */
+        post: operations["declineFriendRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/friendships/{handle}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's relation to a player
+         * @description An unknown handle is `none`, so the answer tells nothing about the handle.
+         */
+        get: operations["getFriendship"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/leaderboards/{gameId}/weekly": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Weekly leaderboard of one game
+         * @description ISO week in UTC (a run counts in the week of its `startedAt`). Best counted score per player:
+         *     verified, reward-eligible (spec v1.4 §7 minimum play), not a challenge recipient run, no review
+         *     flags. Deleting, deleted and suspended players are left out. `global`: top 100 without private
+         *     profiles. `friends`: the caller and the caller's friends. Ties share a rank (1, 2, 2, 4) and are
+         *     ordered by the earlier run. `me` is the caller's own rank in the scope, also outside the list.
+         *     `Cache-Control: private, no-store`.
+         */
+        get: operations["getWeeklyLeaderboard"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1015,7 +1199,7 @@ export interface components {
             message?: string;
         };
         /** @enum {string} */
-        ProblemCode: "malformed_request" | "invalid_idempotency_key" | "unauthenticated" | "forbidden" | "account_suspended" | "csrf_check_failed" | "not_found" | "revision_conflict" | "request_in_progress" | "payload_too_large" | "validation_failed" | "idempotency_key_mismatch" | "idempotency_key_required" | "rate_limited" | "internal_error" | "player_not_found" | "already_authenticated" | "age_not_eligible" | "invalid_link_proof" | "identity_already_linked" | "auth_unavailable" | "invalid_preset" | "incompatible_equipment" | "self_block" | "self_report" | "insufficient_funds" | "already_owned" | "level_too_low" | "item_unavailable" | "item_not_purchasable" | "item_not_owned" | "incompatible_item" | "item_inactive" | "item_already_equipped" | "outfit_limit_reached" | "outfit_items_invalid" | "room_item_limit" | "placement_out_of_bounds" | "placement_overlap" | "session_expired" | "challenge_unavailable" | "challenge_session_exists" | "challenge_expired" | "session_not_eligible" | "session_already_used" | "self_challenge" | "recipient_blocked" | "self_accept" | "challenge_already_accepted" | "challenge_not_completed" | "rematch_already_created" | "quest_not_completed" | "quest_already_claimed" | "quest_claim_expired" | "export_in_progress" | "reauthentication_required";
+        ProblemCode: "malformed_request" | "invalid_idempotency_key" | "unauthenticated" | "forbidden" | "account_suspended" | "csrf_check_failed" | "not_found" | "revision_conflict" | "request_in_progress" | "payload_too_large" | "validation_failed" | "idempotency_key_mismatch" | "idempotency_key_required" | "rate_limited" | "internal_error" | "player_not_found" | "already_authenticated" | "age_not_eligible" | "invalid_link_proof" | "identity_already_linked" | "auth_unavailable" | "invalid_preset" | "incompatible_equipment" | "self_block" | "self_report" | "self_friend_request" | "already_friends" | "friend_request_declined" | "friend_request_limit" | "recipient_request_limit" | "friend_limit_reached" | "insufficient_funds" | "already_owned" | "level_too_low" | "item_unavailable" | "item_not_purchasable" | "item_not_owned" | "incompatible_item" | "item_inactive" | "item_already_equipped" | "outfit_limit_reached" | "outfit_items_invalid" | "room_item_limit" | "placement_out_of_bounds" | "placement_overlap" | "session_expired" | "challenge_unavailable" | "challenge_session_exists" | "challenge_expired" | "session_not_eligible" | "session_already_used" | "self_challenge" | "recipient_blocked" | "self_accept" | "challenge_already_accepted" | "challenge_not_completed" | "rematch_already_created" | "quest_not_completed" | "quest_already_claimed" | "quest_claim_expired" | "export_in_progress" | "reauthentication_required";
         /** @description Cursor for the next page; null on the last page. */
         NextCursor: string | null;
         /** @enum {string} */
@@ -1135,6 +1319,77 @@ export interface components {
         BlockedPlayerPage: {
             items: components["schemas"]["BlockedPlayer"][];
             nextCursor: components["schemas"]["NextCursor"];
+        };
+        FriendRequestCreate: {
+            handle: components["schemas"]["HandleInput"];
+        };
+        FriendRequestResult: {
+            handle: components["schemas"]["Handle"];
+            /** @enum {string} */
+            status: "pending" | "accepted";
+        };
+        FriendEntry: {
+            handle: components["schemas"]["Handle"];
+            displayName: components["schemas"]["DisplayName"];
+            level: components["schemas"]["Level"];
+            since: components["schemas"]["Timestamp"];
+            /** @description False for a private profile; `getProfile` then answers 404. */
+            profileVisible: boolean;
+        };
+        FriendList: {
+            items: components["schemas"]["FriendEntry"][];
+        };
+        /**
+         * @description In the outgoing list, a player whose profile is now private shows only the handle
+         *     (`displayName` and `level` are null; spec §17 decision 6).
+         */
+        FriendRequestEntry: {
+            handle: components["schemas"]["Handle"];
+            displayName: components["schemas"]["DisplayName"];
+            level: components["schemas"]["Level"] | null;
+            requestedAt: components["schemas"]["Timestamp"];
+        };
+        FriendRequestLists: {
+            incoming: components["schemas"]["FriendRequestEntry"][];
+            outgoing: components["schemas"]["FriendRequestEntry"][];
+        };
+        FriendshipState: {
+            /** @enum {string} */
+            relation: "none" | "friends" | "outgoing" | "incoming";
+        };
+        /** @enum {string} */
+        LeaderboardScope: "global" | "friends";
+        LeaderboardEntry: {
+            rank: number;
+            handle: components["schemas"]["Handle"];
+            displayName: components["schemas"]["DisplayName"];
+            level: components["schemas"]["Level"];
+            score: number;
+            isMe: boolean;
+        };
+        LeaderboardMe: {
+            rank: number;
+            score: number;
+            /** @description False when the caller is outside the list (below the top 100, or a private profile on the global board). */
+            listed: boolean;
+        };
+        WeeklyLeaderboard: {
+            gameId: string;
+            scope: components["schemas"]["LeaderboardScope"];
+            week: string;
+            /**
+             * Format: date
+             * @description Monday (UTC).
+             */
+            weekStart: string;
+            /**
+             * Format: date
+             * @description Sunday (UTC).
+             */
+            weekEnd: string;
+            entries: components["schemas"]["LeaderboardEntry"][];
+            /** @description Null when the caller has no counted run in this week. */
+            me: components["schemas"]["LeaderboardMe"] | null;
         };
         /** @enum {string} */
         ReportReason: "offensive_name" | "cheating" | "harassment" | "other";
@@ -2165,6 +2420,269 @@ export interface operations {
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableContent"];
             429: components["responses"]["TooManyRequests"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    listMyFriends: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's friends. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FriendList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    removeFriend: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Must be `vybe-web`. Declared on every unsafe operation that guests can call; clients
+                 *     always send it. The server checks it itself (not through generic schema validation) on
+                 *     cookie-authenticated requests: missing or wrong → 403 `csrf_check_failed`.
+                 */
+                "X-Requested-With": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                /** @description Player handle; matched case-insensitively. */
+                handle: components["parameters"]["HandlePath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Friendship ended or not present. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    listMyFriendRequests: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pending requests. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FriendRequestLists"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    sendFriendRequest: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Must be `vybe-web`. Declared on every unsafe operation that guests can call; clients
+                 *     always send it. The server checks it itself (not through generic schema validation) on
+                 *     cookie-authenticated requests: missing or wrong → 403 `csrf_check_failed`.
+                 */
+                "X-Requested-With": components["parameters"]["CsrfHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FriendRequestCreate"];
+            };
+        };
+        responses: {
+            /** @description Request pending, or the pair is now friends. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FriendRequestResult"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableContent"];
+            429: components["responses"]["TooManyRequests"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    cancelFriendRequest: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Must be `vybe-web`. Declared on every unsafe operation that guests can call; clients
+                 *     always send it. The server checks it itself (not through generic schema validation) on
+                 *     cookie-authenticated requests: missing or wrong → 403 `csrf_check_failed`.
+                 */
+                "X-Requested-With": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                /** @description Player handle; matched case-insensitively. */
+                handle: components["parameters"]["HandlePath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Request cancelled or not present. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    acceptFriendRequest: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Must be `vybe-web`. Declared on every unsafe operation that guests can call; clients
+                 *     always send it. The server checks it itself (not through generic schema validation) on
+                 *     cookie-authenticated requests: missing or wrong → 403 `csrf_check_failed`.
+                 */
+                "X-Requested-With": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                /** @description Player handle; matched case-insensitively. */
+                handle: components["parameters"]["HandlePath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The pair is now friends. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FriendRequestResult"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    declineFriendRequest: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Must be `vybe-web`. Declared on every unsafe operation that guests can call; clients
+                 *     always send it. The server checks it itself (not through generic schema validation) on
+                 *     cookie-authenticated requests: missing or wrong → 403 `csrf_check_failed`.
+                 */
+                "X-Requested-With": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                /** @description Player handle; matched case-insensitively. */
+                handle: components["parameters"]["HandlePath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Request declined or not present. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getFriendship: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Player handle; matched case-insensitively. */
+                handle: components["parameters"]["HandlePath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The relation from the caller's view. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FriendshipState"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getWeeklyLeaderboard: {
+        parameters: {
+            query?: {
+                scope?: components["schemas"]["LeaderboardScope"];
+                /** @description ISO week `YYYY-Www`, from 2026-W01 to the current week; default the current week. */
+                week?: string;
+            };
+            header?: never;
+            path: {
+                /** @description A game with a ruleset, for example `street-hoops`. Unknown → 404 `not_found`. */
+                gameId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The board. */
+            200: {
+                headers: {
+                    "Cache-Control": components["headers"]["CacheControlPrivate"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WeeklyLeaderboard"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableContent"];
             default: components["responses"]["Problem"];
         };
     };
