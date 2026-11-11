@@ -67,15 +67,20 @@ public static class GameplayEndpoints
         string rulesetId;
         if (request.ChallengeId is { } challengeId)
         {
+            // A challenge is played in its own game: another game's route does not see it, before any status check.
+            var challengeGame = await db.Challenges.AsNoTracking()
+                .Where(c => c.Id == challengeId)
+                .Join(db.GameRulesets, c => c.RulesetId, r => r.Id, (c, r) => r.GameId)
+                .SingleOrDefaultAsync(cancellationToken);
+            if (challengeGame is not null && challengeGame != gameId)
+            {
+                throw Problem.Of(404, "challenge_unavailable");
+            }
+
             // Recipient run: the creator run's ruleset and seed (spec §7 challenge rules).
             (challenge, var creatorSeed) = await ChallengeRuns.LockForRecipientAsync(db, playerId, challengeId, now, cancellationToken);
             seed = (uint)creatorSeed;
             rulesetId = challenge.RulesetId;
-            // A challenge is played in its own game: another game's route does not see it.
-            if (await db.GameRulesets.Where(r => r.Id == rulesetId).Select(r => r.GameId).SingleAsync(cancellationToken) != gameId)
-            {
-                throw Problem.Of(404, "challenge_unavailable");
-            }
         }
         else
         {

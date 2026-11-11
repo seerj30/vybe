@@ -179,6 +179,8 @@ export class StreetJuggle implements OnInit {
   private hiddenAtMs: number | null = null;
   private rafId = 0;
   private lastFrameMs = 0;
+  /** Ends the run when no frame runs (hidden tab), so the upload still meets its grace window. */
+  private endTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     const destroyRef = inject(DestroyRef);
@@ -196,6 +198,7 @@ export class StreetJuggle implements OnInit {
       this.rafId = requestAnimationFrame(this.frame);
       destroyRef.onDestroy(() => {
         cancelAnimationFrame(this.rafId);
+        this.clearEndTimer();
         observer.disconnect();
         this.scene = null;
       });
@@ -284,6 +287,7 @@ export class StreetJuggle implements OnInit {
     if (hiddenAt === null || this.phase() !== "running" || this.run === null) return;
     if (this.mode() === "practice") {
       this.run = { ...this.run, startMs: this.run.startMs + (now - hiddenAt) };
+      this.armEndTimer(this.run, this.run.config.durationMs - (now - this.run.startMs));
       this.notice.set("Paused while the tab was hidden");
     } else {
       this.notice.set("The run clock kept running while the tab was hidden");
@@ -351,6 +355,7 @@ export class StreetJuggle implements OnInit {
     this.lastSeed.set(seed);
     this.secondsLeft.set(Math.ceil(config.durationMs / 1000));
     this.phase.set("running");
+    this.armEndTimer(this.run, config.durationMs);
     this.stage().nativeElement.focus();
   }
 
@@ -427,6 +432,8 @@ export class StreetJuggle implements OnInit {
   };
 
   private finish(run: ActiveRun): void {
+    if (this.run !== run) return;
+    this.clearEndTimer();
     run.sim.advanceTo(run.sim.totalTicks);
     let result: JuggleEvaluateResult;
     try {
@@ -483,7 +490,18 @@ export class StreetJuggle implements OnInit {
     this.phase.set("finished");
   }
 
+  private armEndTimer(run: ActiveRun, remainingMs: number): void {
+    this.clearEndTimer();
+    this.endTimer = setTimeout(() => this.finish(run), Math.max(0, remainingMs) + 50);
+  }
+
+  private clearEndTimer(): void {
+    if (this.endTimer !== null) clearTimeout(this.endTimer);
+    this.endTimer = null;
+  }
+
   private fail(message: string): void {
+    this.clearEndTimer();
     this.run = null;
     this.error.set(message);
     this.phase.set("error");
