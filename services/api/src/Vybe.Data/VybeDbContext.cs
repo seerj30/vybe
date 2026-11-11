@@ -32,6 +32,9 @@ public sealed class VybeDbContext(DbContextOptions<VybeDbContext> options) : DbC
     public DbSet<DeletionRequest> DeletionRequests => Set<DeletionRequest>();
     public DbSet<OutboxJob> OutboxJobs => Set<OutboxJob>();
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
+    public DbSet<Friendship> Friendships => Set<Friendship>();
+    public DbSet<FriendRequestCounter> FriendRequestCounters => Set<FriendRequestCounter>();
+    public DbSet<WeeklyLeaderboardScore> WeeklyLeaderboardScores => Set<WeeklyLeaderboardScore>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

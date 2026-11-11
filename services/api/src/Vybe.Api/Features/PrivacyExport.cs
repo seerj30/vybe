@@ -104,6 +104,23 @@ public static class PlayerDataExport
             reportsFiled = await db.PlayerReports.AsNoTracking().Where(r => r.ReporterPlayerId == playerId).OrderBy(r => r.CreatedAt)
                 .Join(db.Players, r => r.TargetPlayerId, p => p.Id, (r, p) => new { r.Id, targetHandle = p.Handle, r.Reason, r.Details, r.Status, r.CreatedAt })
                 .ToListAsync(cancellationToken),
+            // P1 friends: the player's own requests and friendships; requests suppressed by the player's block are left out.
+            friendships = await db.Friendships.AsNoTracking()
+                .Where(f => f.RequesterPlayerId == playerId || (f.AddresseePlayerId == playerId && !f.Suppressed))
+                .OrderBy(f => f.CreatedAt)
+                .Join(db.Players, f => f.RequesterPlayerId == playerId ? f.AddresseePlayerId : f.RequesterPlayerId, p => p.Id, (f, p) => new
+                {
+                    otherHandle = p.Handle,
+                    role = f.RequesterPlayerId == playerId ? "requester" : "addressee",
+                    f.Status,
+                    requestedAt = f.CreatedAt,
+                    f.RespondedAt,
+                })
+                .ToListAsync(cancellationToken),
+            weeklyLeaderboardScores = await db.WeeklyLeaderboardScores.AsNoTracking().Where(s => s.PlayerId == playerId)
+                .OrderBy(s => s.WeekStart).ThenBy(s => s.GameId)
+                .Select(s => new { s.GameId, s.WeekStart, s.BestScore, s.SessionId, s.AchievedAt })
+                .ToListAsync(cancellationToken),
         };
     }
 }
