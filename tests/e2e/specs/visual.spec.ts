@@ -101,6 +101,7 @@ test("hub", async ({ page }) => {
   await snap(page, "hub", [
     avatarReady(page),
     page.getByTestId("wallet-balance"),
+    page.getByTestId("recent-changes"), // the last wallet changes loaded
     page.getByTestId("guest-expiry"),
     page.getByText("Score 1,500 points in one run"), // the daily quests loaded
   ]);

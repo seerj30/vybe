@@ -139,7 +139,7 @@ const PROBLEMS: Record<LayoutProblem, string> = {
             <section class="card" aria-labelledby="placed-title">
               <h2 id="placed-title">In your room ({{ draft().items.length }} of {{ maxItems }})</h2>
               @if (draft().items.length === 0) {
-                <p class="muted">Nothing yet. Place an item from the list below.</p>
+                <p class="empty">Nothing yet. Place an item from the list below.</p>
               }
               <ul class="list">
                 @for (p of draft().items; track p.itemId) {
@@ -155,7 +155,7 @@ const PROBLEMS: Record<LayoutProblem, string> = {
             <section class="card" aria-labelledby="tray-title">
               <h2 id="tray-title">Your room items</h2>
               @if (placeable().length === 0 && unplaced().length === 0) {
-                <p class="muted">You own no furniture or decor yet. <a routerLink="/shop" [queryParams]="{ filter: 'room' }">Find some in the shop</a>.</p>
+                <p class="empty">You own no furniture or decor yet. <a routerLink="/shop" [queryParams]="{ filter: 'room' }">Find some in the shop</a>.</p>
               } @else if (unplaced().length === 0) {
                 <p class="muted">All your items are in the room.</p>
               }
@@ -178,21 +178,20 @@ const PROBLEMS: Record<LayoutProblem, string> = {
     </section>
   `,
   styles: `
-    .layout { display: grid; gap: 16px; }
-    .side { display: grid; gap: 16px; align-content: start; }
-    .stage { display: grid; gap: 8px; }
-    .row { display: flex; gap: 8px; flex-wrap: wrap; }
-    .small { font-size: 13px; margin: 0; }
-    .controls h2, .card h2 { margin: 0 0 8px; font-size: 18px; }
+    .layout { display: grid; gap: var(--space-4); }
+    .side { display: grid; gap: var(--space-4); align-content: start; }
+    .stage { display: grid; gap: var(--space-2); }
+    .row { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+    .small { font-size: var(--text-xs); margin: 0; }
+    .controls h2, .card h2 { margin: 0 0 var(--space-3); }
     .controls h2:focus { outline: none; }
-    .pad { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 8px 0; }
-    .pad-button { min-height: 44px; border-radius: 10px; border: 1px solid #2b3350; background: #1b2135; color: inherit; font: inherit; cursor: pointer; }
-    .pad-button:focus-visible, .pick:focus-visible { outline: 3px solid #ffc83d; outline-offset: 2px; }
-    .field { display: grid; gap: 4px; margin-bottom: 8px; }
-    select { min-height: 44px; padding: 6px 10px; border-radius: 10px; background: #1b2135; color: inherit; border: 1px solid #2b3350; font: inherit; }
+    .pad { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); margin: 8px 0; }
+    .pad-button { min-height: var(--control-height); border-radius: var(--radius-md); border: 1px solid var(--color-border); background: var(--color-surface); color: inherit; font: inherit; cursor: pointer; }
+    .pad-button:focus-visible, .pick:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; }
+    .field { display: grid; gap: var(--space-1); margin-bottom: 8px; }
     .list, .tray { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-    .pick { width: 100%; min-height: 44px; text-align: left; padding: 8px 10px; border-radius: 10px; border: 1px solid #2b3350; background: #1b2135; color: inherit; font: inherit; cursor: pointer; }
-    .pick[aria-pressed="true"] { border-color: #2ee5ff; box-shadow: inset 0 0 0 1px #2ee5ff; }
+    .pick { width: 100%; min-height: var(--control-height); text-align: left; padding: 8px 10px; border-radius: var(--radius-md); border: 1px solid var(--color-border); background: var(--color-surface); color: inherit; font: inherit; cursor: pointer; }
+    .pick[aria-pressed="true"] { border-color: var(--color-selected); box-shadow: inset 0 0 0 1px var(--color-selected); }
     .tray-item { display: grid; grid-template-columns: 48px 1fr auto; gap: 10px; align-items: center; }
     .tray-item vybe-item-thumb { width: 48px; }
     .sr-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }

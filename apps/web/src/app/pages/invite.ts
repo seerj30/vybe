@@ -124,13 +124,13 @@ type View =
   styles: `
     .invite { max-width: 560px; }
     .lead { margin: 0; }
-    .score { margin: 4px 0; font-size: 44px; font-weight: 800; color: #ffc83d; font-variant-numeric: tabular-nums; }
-    .small { font-size: 13px; }
-    h2 { font-size: 20px; margin: 20px 0 8px; }
-    .scores { display: flex; gap: 32px; margin: 0; }
+    .score { margin: 4px 0; font-size: 44px; font-weight: 800; color: var(--color-accent); font-variant-numeric: tabular-nums; }
+    .small { font-size: var(--text-xs); }
+    h2 { margin: 20px 0 var(--space-2); }
+    .scores { display: flex; gap: var(--space-6); margin: 0; }
     .scores div { display: grid; }
-    .scores dt { color: #aab1c8; font-size: 13px; }
-    .scores dd { margin: 0; font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .scores dt { color: var(--color-text-muted); font-size: var(--text-xs); }
+    .scores dd { margin: 0; font-size: var(--text-2xl); font-weight: 800; font-variant-numeric: tabular-nums; }
     .detail { margin-top: 16px; }
     .state:focus { outline: none; }
   `,

@@ -25,14 +25,14 @@ type Load = { kind: "loading" } | { kind: "failed"; message: string } | { kind: 
 
       <nav class="tabs" aria-label="Game">
         @for (g of games; track g.id) {
-          <a routerLink="/leaderboard" [queryParams]="{ game: g.id, scope: activeScope(), week: week() ?? null }" [class.active]="activeGame().id === g.id"
+          <a class="chip" routerLink="/leaderboard" [queryParams]="{ game: g.id, scope: activeScope(), week: week() ?? null }" [class.active]="activeGame().id === g.id"
             [attr.aria-current]="activeGame().id === g.id ? 'page' : null">{{ g.name }}</a>
         }
       </nav>
       <nav class="tabs" aria-label="Leaderboard">
-        <a routerLink="/leaderboard" [queryParams]="{ game: activeGame().id, scope: 'global', week: week() ?? null }" [class.active]="activeScope() === 'global'"
+        <a class="chip" routerLink="/leaderboard" [queryParams]="{ game: activeGame().id, scope: 'global', week: week() ?? null }" [class.active]="activeScope() === 'global'"
           [attr.aria-current]="activeScope() === 'global' ? 'page' : null">Global</a>
-        <a routerLink="/leaderboard" [queryParams]="{ game: activeGame().id, scope: 'friends', week: week() ?? null }" [class.active]="activeScope() === 'friends'"
+        <a class="chip" routerLink="/leaderboard" [queryParams]="{ game: activeGame().id, scope: 'friends', week: week() ?? null }" [class.active]="activeScope() === 'friends'"
           [attr.aria-current]="activeScope() === 'friends' ? 'page' : null">Friends</a>
       </nav>
 
@@ -43,7 +43,7 @@ type Load = { kind: "loading" } | { kind: "failed"; message: string } | { kind: 
         }
         @case ("failed") {
           <p class="error" role="alert">{{ l.message }}</p>
-          <button type="button" class="button" (click)="load()">Try again</button>
+          <div class="actions"><button type="button" class="button" (click)="load()">Try again</button></div>
         }
         @case ("ready") {
           @let b = l.board;
@@ -74,7 +74,7 @@ type Load = { kind: "loading" } | { kind: "failed"; message: string } | { kind: 
           </div>
 
           @if (b.entries.length === 0) {
-            <p class="muted">
+            <p class="empty">
               @if (b.scope === "friends") {
                 No scores from you or your friends this week. <a routerLink="/friends">Add friends</a>
               } @else {
@@ -82,7 +82,8 @@ type Load = { kind: "loading" } | { kind: "failed"; message: string } | { kind: 
               }
             </p>
           } @else {
-            <table class="card board">
+            <div class="table-wrap">
+            <table class="table board">
               <caption class="visually-hidden">{{ b.scope === "friends" ? "Friends" : "Global" }} leaderboard, {{ range(b) }}</caption>
               <thead>
                 <tr><th scope="col">Rank</th><th scope="col">Player</th><th scope="col" class="num">Score</th></tr>
@@ -105,26 +106,23 @@ type Load = { kind: "loading" } | { kind: "failed"; message: string } | { kind: 
                 }
               </tbody>
             </table>
+            </div>
           }
         }
       }
     </section>
   `,
   styles: `
-    .tabs { display: flex; gap: 8px; margin: 16px 0; }
-    .tabs a { min-height: 44px; display: inline-flex; align-items: center; padding: 8px 16px; border-radius: 12px; background: #2b3460; color: #f4f6ff; text-decoration: none; font-weight: 700; }
-    .tabs a.active { background: #ffc83d; color: #141826; }
-    .week { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px; }
-    h2 { margin: 0 0 8px; font-size: 18px; }
-    .me { margin-bottom: 16px; }
+    .tabs { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-4) 0; }
+    .tabs + .tabs { margin-top: calc(-1 * var(--space-2)); }
+    .week { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: var(--space-2); margin-top: var(--space-5); }
+    h2 { margin: 0 0 var(--space-3); font-size: var(--text-lg); }
+    .me { margin-bottom: var(--space-4); }
     .me p { margin: 0; }
-    .rank { font-size: 20px; }
-    .small { font-size: 14px; }
-    .board { width: 100%; border-collapse: collapse; padding: 0; }
-    .board th, .board td { padding: 10px 12px; text-align: left; }
-    .board tbody tr + tr td { border-top: 1px solid #2b3350; }
-    .board .num { text-align: right; font-variant-numeric: tabular-nums; }
-    .board tr.mine td { background: #23305a; }
+    .rank { font-size: var(--text-xl); }
+    .small { font-size: var(--text-sm); }
+    .board tr.mine td { background: var(--color-highlight); }
+    .board td:first-child { font-weight: 700; width: 4.5em; }
     .who { overflow-wrap: anywhere; }
     .who .small { display: block; }
   `,

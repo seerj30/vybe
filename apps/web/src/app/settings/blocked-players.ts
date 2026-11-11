@@ -19,7 +19,7 @@ type BlockedPlayer = Schemas["BlockedPlayer"];
       <p class="notice" role="status">{{ notice }}</p>
     }
     @if (loaded() && players().length === 0) {
-      <p class="muted">You have not blocked anyone.</p>
+      <p class="empty">You have not blocked anyone.</p>
     }
     @if (players().length > 0) {
       <ul class="blocks" aria-label="Blocked players">
@@ -41,8 +41,8 @@ type BlockedPlayer = Schemas["BlockedPlayer"];
     }
   `,
   styles: `
-    .blocks { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
-    .blocks li { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+    .blocks { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-2); }
+    .blocks li { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; justify-content: space-between; }
     .blocks span { display: grid; }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,

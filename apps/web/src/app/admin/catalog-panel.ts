@@ -48,7 +48,8 @@ interface KnownItem {
       <p class="notice" role="status">{{ notice }}</p>
     }
     @if (items().length > 0) {
-      <table>
+      <div class="table-wrap">
+      <table class="table">
         <caption>Known items</caption>
         <thead><tr><th scope="col">Name</th><th scope="col">State</th><th scope="col">Id</th></tr></thead>
         <tbody>
@@ -61,18 +62,20 @@ interface KnownItem {
           }
         </tbody>
       </table>
+      </div>
     }
   `,
   styles: [
     ADMIN_FORM_STYLES,
     `
-      fieldset { border: 1px solid #2b3350; border-radius: 10px; display: grid; gap: 8px; }
-      .radio { display: flex; gap: 8px; align-items: center; font-weight: 400; }
+      .table-wrap { margin-top: var(--space-4); }
+      .table { font-size: var(--text-sm); }
+      .table th, .table td { vertical-align: top; overflow-wrap: anywhere; }
+      fieldset { border: 1px solid var(--color-border); border-radius: var(--radius-md); display: grid; gap: var(--space-2); }
+      .radio { display: flex; gap: var(--space-2); align-items: center; font-weight: 400; }
       .radio input { min-height: auto; }
-      table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 14px; }
-      caption { text-align: left; font-weight: 700; padding-bottom: 8px; }
-      th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #2b3350; }
-      .link { background: none; border: 0; color: #8fb3ff; cursor: pointer; padding: 0; font: inherit; text-align: left; overflow-wrap: anywhere; }
+      caption { text-align: left; font-weight: 700; padding: var(--space-3) var(--space-3) 0; }
+      .link { background: none; border: 0; color: var(--color-link); cursor: pointer; padding: 0; font: inherit; text-align: left; overflow-wrap: anywhere; }
     `,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,

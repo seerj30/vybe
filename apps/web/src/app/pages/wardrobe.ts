@@ -59,7 +59,7 @@ const ACCESSORY: readonly Place[] = [
             }
             <p aria-live="polite" [class.error]="message()?.error" [class.notice]="message() && !message()?.error">{{ message()?.text }}</p>
             @if (groups().length === 0) {
-              <p class="muted">You own no items yet. <a routerLink="/shop">Visit the shop</a>.</p>
+              <p class="empty">You own no items yet. <a routerLink="/shop">Visit the shop</a>.</p>
             }
             @for (group of groups(); track group.slot) {
               <section class="slot" [attr.aria-labelledby]="'slot-' + group.slot">
@@ -106,17 +106,17 @@ const ACCESSORY: readonly Place[] = [
     </section>
   `,
   styles: `
-    .layout { display: grid; gap: 16px; }
+    .layout { display: grid; gap: var(--space-4); }
     .preview { display: flex; flex-direction: column; align-items: center; }
     .preview vybe-avatar-viewport { max-width: 220px; }
-    .small { font-size: 13px; margin-bottom: 0; }
-    .slot h2 { font-size: 18px; margin: 16px 0 8px; }
-    ul { display: grid; gap: 12px; padding: 0; margin: 0; list-style: none; }
-    .item { display: grid; grid-template-columns: 72px 1fr; gap: 12px; align-items: center; }
-    .item h3 { margin: 0 0 4px; font-size: 16px; }
-    .info p { margin: 0 0 6px; font-size: 14px; }
-    .row { display: flex; flex-wrap: wrap; gap: 8px; }
-    .worn { color: #7be3a1; font-weight: 700; margin-top: 6px !important; }
+    .small { font-size: var(--text-xs); margin-bottom: 0; }
+    .slot h2 { margin: var(--space-5) 0 var(--space-2); }
+    ul { display: grid; gap: var(--space-3); padding: 0; margin: 0; list-style: none; }
+    .item { display: grid; grid-template-columns: 72px 1fr; gap: var(--space-3); align-items: center; }
+    .item h3 { margin: 0 0 4px; font-size: var(--text-md); }
+    .info p { margin: 0 0 6px; font-size: var(--text-sm); }
+    .row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+    .worn { color: var(--color-success); font-weight: 700; margin-top: 6px !important; }
     p:empty { display: none; }
     @media (min-width: 768px) { .layout { grid-template-columns: 220px 1fr; align-items: start; } .preview { position: sticky; top: 24px; } }
   `,

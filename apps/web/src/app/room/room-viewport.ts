@@ -111,23 +111,23 @@ function initials(name: string): string {
     }
   `,
   styles: `
-    :host { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+    :host { display: flex; flex-direction: column; gap: var(--space-2); width: 100%; }
     .stage { position: relative; width: 100%; aspect-ratio: 4 / 3; }
     .stage[hidden] { display: none; }
     canvas { display: block; width: 100%; height: 100%; touch-action: pan-y; }
     canvas.editable { cursor: pointer; }
-    .loading { position: absolute; inset: 0; margin: auto; width: 36px; height: 36px; border-radius: 50%; border: 4px solid #2b3350; border-top-color: #ffc83d; animation: spin 0.9s linear infinite; }
+    .loading { position: absolute; inset: 0; margin: auto; width: 36px; height: 36px; border-radius: 50%; border: 4px solid var(--color-border); border-top-color: var(--color-accent); animation: spin 0.9s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
     @media (prefers-reduced-motion: reduce) { .loading { animation: none; } }
     .plan { display: grid; gap: 10px; }
-    .surface { display: grid; gap: 4px; }
-    .surface-label { font-size: 13px; color: #8a90a6; }
-    .grid { display: grid; aspect-ratio: 1; gap: 2px; padding: 2px; border-radius: 8px; background: #2b3350; cursor: pointer; }
+    .surface { display: grid; gap: var(--space-1); }
+    .surface-label { font-size: var(--text-xs); color: var(--color-text-faint); }
+    .grid { display: grid; aspect-ratio: 1; gap: 2px; padding: 2px; border-radius: var(--radius-sm); background: var(--color-border); cursor: pointer; }
     .grid.wall { aspect-ratio: 8 / 5; background: #39405e; }
     .tile { display: grid; place-items: center; min-width: 0; border-radius: 6px; background: #5b6487; color: #fff; font-size: 12px; font-weight: 800; overflow: hidden; }
-    .tile.rug { background: #46506f; color: #c9cfdb; outline: 2px dashed #8a90a6; outline-offset: -4px; }
-    .tile.selected { outline: 3px solid #2ee5ff; outline-offset: -3px; }
-    .notice { margin: 0; font-size: 13px; }
+    .tile.rug { background: #46506f; color: #c9cfdb; outline: 2px dashed var(--color-text-faint); outline-offset: -4px; }
+    .tile.selected { outline: 3px solid var(--color-selected); outline-offset: -3px; }
+    .notice { margin: 0; font-size: var(--text-xs); }
     @media (min-width: 768px) { .plan { grid-template-columns: 1fr 1fr; } .surface:last-child { grid-column: 1 / -1; max-width: 420px; } }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,

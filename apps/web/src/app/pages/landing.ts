@@ -58,7 +58,7 @@ type State = { kind: "loading" } | { kind: "player"; me: Me } | { kind: "new" } 
   styles: `
     .landing { padding-top: 18vh; text-align: center; }
     h1 { font-size: clamp(48px, 12vw, 96px); letter-spacing: 0.1em; margin: 0; }
-    .tagline { font-size: 18px; color: #c8cde0; }
+    .tagline { font-size: var(--text-lg); color: #c8cde0; }
     .actions { justify-content: center; }
     .sign-in { max-width: 480px; margin: 24px auto 0; text-align: left; }
     .sign-in h2 { margin-top: 0; }

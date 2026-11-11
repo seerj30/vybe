@@ -73,7 +73,7 @@ const REASONS: Record<Schemas["ReportReason"], string> = {
     ADMIN_FORM_STYLES,
     `
       .filter { max-width: 240px; margin-bottom: 12px; }
-      .reports { list-style: none; padding: 0; display: grid; gap: 12px; }
+      .reports { list-style: none; padding: 0; display: grid; gap: var(--space-3); }
       .reports p { margin: 0 0 8px; }
       .details { white-space: pre-wrap; overflow-wrap: anywhere; }
     `,

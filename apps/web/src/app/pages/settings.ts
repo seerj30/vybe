@@ -91,10 +91,10 @@ import { ProfilePrivacy } from "../settings/profile-privacy";
     </section>
   `,
   styles: `
-    .settings { display: grid; gap: 16px; }
+    .settings { display: grid; gap: var(--space-4); }
     .card h2 { margin-top: 0; }
-    .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 0 0 12px; }
-    .facts dt { font-size: 12px; text-transform: uppercase; color: #aab1c8; }
+    .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-3); margin: 0 0 12px; }
+    .facts dt { font-size: var(--text-xs); font-weight: 600; color: var(--color-text-muted); }
     .facts dd { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,

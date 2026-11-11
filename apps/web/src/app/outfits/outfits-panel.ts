@@ -46,7 +46,7 @@ export function itemNames(ids: readonly string[], names: ReadonlyMap<string, str
         <button type="button" class="button secondary" (click)="load()">Try again</button>
       } @else if (outfits(); as outfits) {
         @if (outfits.length === 0) {
-          <p class="muted">No saved outfits. Save what you wear now to switch back to it later.</p>
+          <p class="empty">No saved outfits. Save what you wear now to switch back to it later.</p>
         }
         <ul>
           @for (outfit of outfits; track outfit.id) {
@@ -88,15 +88,14 @@ export function itemNames(ids: readonly string[], names: ReadonlyMap<string, str
     </section>
   `,
   styles: `
-    h2 { font-size: 18px; margin: 16px 0 8px; }
+    h2 { margin: var(--space-5) 0 var(--space-2); }
     h2:focus { outline: none; }
-    ul { display: grid; gap: 12px; padding: 0; margin: 0 0 12px; list-style: none; }
-    h3 { margin: 0 0 4px; font-size: 16px; }
-    .small { font-size: 13px; margin: 0 0 8px; }
-    .row { display: flex; flex-wrap: wrap; gap: 8px; }
-    .save { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
-    .save label { display: grid; gap: 4px; flex: 1 1 200px; font-weight: 600; }
-    .save input { min-height: 44px; padding: 8px 12px; border-radius: 10px; border: 1px solid #2b3350; background: #141826; color: inherit; font: inherit; }
+    ul { display: grid; gap: var(--space-3); padding: 0; margin: 0 0 12px; list-style: none; }
+    h3 { margin: 0 0 4px; font-size: var(--text-md); }
+    .small { font-size: var(--text-xs); margin: 0 0 8px; }
+    .row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+    .save { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: end; }
+    .save label { display: grid; gap: var(--space-1); flex: 1 1 200px; font-weight: 600; }
     p:empty { display: none; }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,

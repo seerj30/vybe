@@ -39,7 +39,7 @@ function claimBy(iso: string): string {
       } @else if (quests() === null) {
         <p class="muted" role="status">Loading quests…</p>
       } @else if (quests()!.length === 0) {
-        <p class="muted">No quests today. Come back tomorrow.</p>
+        <p class="empty">No quests today. Come back tomorrow.</p>
       } @else {
         <ul>
           @for (quest of quests()!; track quest.playerQuestId) {
@@ -73,14 +73,14 @@ function claimBy(iso: string): string {
     </section>
   `,
   styles: `
-    h2 { margin: 0 0 8px; font-size: 18px; }
+    h2 { margin: 0 0 var(--space-3); }
     ul { display: grid; gap: 14px; padding: 0; margin: 0; list-style: none; }
     h3 { margin: 0; font-size: 15px; }
-    .top, .bottom { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .reward { color: #ffc83d; font-size: 13px; font-weight: 600; }
-    progress { width: 100%; height: 10px; margin: 6px 0; accent-color: #ffc83d; }
-    .done { color: #7be3a1; font-weight: 700; }
-    .small { font-size: 13px; margin: 4px 0 0; }
+    .top, .bottom { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+    .reward { color: var(--color-accent); font-size: var(--text-xs); font-weight: 600; }
+    progress { width: 100%; height: 10px; margin: 6px 0; accent-color: var(--color-accent); }
+    .done { color: var(--color-success); font-weight: 700; }
+    .small { font-size: var(--text-xs); margin: 4px 0 0; }
     p:empty { display: none; }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,

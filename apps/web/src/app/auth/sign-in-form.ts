@@ -44,9 +44,8 @@ type Mode = "sign-in" | "sign-up";
     </form>
   `,
   styles: `
-    .sign-in { display: grid; gap: 12px; max-width: 420px; }
-    label { display: grid; gap: 4px; font-weight: 600; }
-    input { min-height: 44px; padding: 8px 12px; border-radius: 10px; border: 1px solid #3a4468; background: #101421; color: inherit; font: inherit; }
+    .sign-in { display: grid; gap: var(--space-3); max-width: 420px; }
+    label { display: grid; gap: var(--space-1); font-weight: 600; }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

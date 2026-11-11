@@ -16,9 +16,9 @@ import { ChangeDetectionStrategy, Component, computed, input, output, signal } f
     }
   `,
   styles: `
-    :host { display: block; aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: #232a40; }
+    :host { display: block; aspect-ratio: 1; border-radius: var(--radius-lg); overflow: hidden; background: var(--color-surface-raised); }
     img { display: block; width: 100%; height: 100%; object-fit: cover; }
-    .fallback { display: grid; place-items: center; width: 100%; height: 100%; font-size: 28px; font-weight: 800; color: #8a90a6; }
+    .fallback { display: grid; place-items: center; width: 100%; height: 100%; font-size: var(--text-2xl); font-weight: 800; color: var(--color-text-faint); }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

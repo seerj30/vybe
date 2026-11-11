@@ -90,10 +90,10 @@ import { SignInForm } from "../auth/sign-in-form";
     </section>
   `,
   styles: `
-    .admin { max-width: 1100px; display: grid; gap: 16px; }
-    .who { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 0; }
-    .role { padding: 2px 10px; border-radius: 999px; background: #2b3460; font-weight: 700; }
-    .sections { display: flex; flex-wrap: wrap; gap: 16px; }
+    .admin { max-width: 1100px; display: grid; gap: var(--space-4); }
+    .who { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; margin: 0; }
+    .role { padding: 2px 10px; border-radius: var(--radius-pill); background: var(--color-secondary); font-weight: 700; }
+    .sections { display: flex; flex-wrap: wrap; gap: var(--space-4); }
     .card h2 { margin-top: 0; }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,

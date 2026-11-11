@@ -84,14 +84,14 @@ let nextId = 0;
     </form>
   `,
   styles: `
-    .age-gate { display: grid; gap: 8px; max-width: 420px; }
-    fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
+    .age-gate { display: grid; gap: var(--space-2); max-width: 420px; }
+    fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: var(--space-2); }
     legend { font-weight: 700; padding: 0; margin-bottom: 4px; }
     p { margin: 0; }
-    .fields { display: flex; flex-wrap: wrap; gap: 12px; }
-    label { display: grid; gap: 4px; font-weight: 600; }
-    select, input { min-height: 44px; padding: 8px 12px; border-radius: 10px; border: 1px solid #2b3350; background: #141826; color: inherit; font: inherit; }
-    input { width: 8ch; }
+    .fields { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+    label { display: grid; gap: var(--space-1); font-weight: 600; }
+    input { width: 9ch; }
+    select { min-width: 160px; }
     .actions { margin-top: 8px; }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,

@@ -93,20 +93,20 @@ export const WARNINGS = {
     }
   `,
   styles: `
-    :host { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; }
+    :host { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); width: 100%; }
     .stage { position: relative; width: 100%; aspect-ratio: 3 / 4; }
     .stage[hidden] { display: none; }
     canvas { display: block; width: 100%; height: 100%; touch-action: pan-y; cursor: grab; }
     canvas:active { cursor: grabbing; }
     .portrait { width: 70%; max-width: 200px; }
-    .loading { position: absolute; inset: 0; margin: auto; width: 36px; height: 36px; border-radius: 50%; border: 4px solid #2b3350; border-top-color: #ffc83d; animation: spin 0.9s linear infinite; }
+    .loading { position: absolute; inset: 0; margin: auto; width: 36px; height: 36px; border-radius: 50%; border: 4px solid var(--color-border); border-top-color: var(--color-accent); animation: spin 0.9s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
     @media (prefers-reduced-motion: reduce) { .loading { animation: none; } }
-    .controls { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+    .controls { display: flex; gap: var(--space-2); flex-wrap: wrap; justify-content: center; }
     .controls.pending { visibility: hidden; }
-    .turn { min-width: 44px; min-height: 44px; border-radius: 10px; border: 1px solid #2b3350; background: #1b2135; color: inherit; font-size: 20px; cursor: pointer; }
-    .turn:focus-visible { outline: 3px solid #ffc83d; outline-offset: 2px; }
-    .notice { margin: 0; font-size: 13px; text-align: center; }
+    .turn { min-width: var(--control-height); min-height: var(--control-height); border-radius: var(--radius-md); border: 1px solid var(--color-border); background: var(--color-surface); color: inherit; font-size: var(--text-xl); cursor: pointer; }
+    .turn:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; }
+    .notice { margin: 0; font-size: var(--text-xs); text-align: center; }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
