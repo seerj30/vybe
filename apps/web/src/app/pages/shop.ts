@@ -136,7 +136,7 @@ const PAGE_SIZE = 100;
   styles: `
     .filter { display: inline-flex; gap: var(--space-2); align-items: center; margin-bottom: 12px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-3); padding: 0; margin: var(--space-4) 0; list-style: none; }
-    @media (max-width: 767px) { .item.card { padding: var(--space-3); } .item h2 { font-size: var(--text-md); } .item .button { padding-inline: var(--space-2); font-size: var(--text-sm); } }
+    @media (max-width: 767px) { .item.card { padding: var(--space-3); } .item h2 { font-size: var(--text-md); } .item .button { padding-inline: var(--space-2); font-size: var(--text-sm); text-wrap: balance; } }
     @media (min-width: 768px) { .grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--space-4); } }
     .item { display: flex; flex-direction: column; gap: 6px; }
     .item vybe-item-thumb { width: 112px; max-width: 100%; }
