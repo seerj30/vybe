@@ -62,8 +62,13 @@ def wave() -> List[Key]:
     ]
 
 
+# Raised arms make a "V" (upper arm 125° up, forearm 10° out): with the large cartoon head, arms near vertical
+# put both hands in front of the face at the peak.
+V_ARMS = _merge(_both("upper_arm", 0, -125, 0), _both("lower_arm", 0, 10, 0))
+
+
 def cheer() -> List[Key]:
-    arms = _merge(_both("upper_arm", 0, -150, 0), _both("lower_arm", 0, -15, 0), {"chest": (-8, 0, 0), "head": (-10, 0, 0)})
+    arms = _merge(V_ARMS, {"chest": (-8, 0, 0), "head": (-10, 0, 0)})
     bend = _merge(_both("upper_leg", -20), _both("lower_leg", 35), _both("foot", -15))
     return [
         REST,
@@ -105,8 +110,7 @@ def bow() -> List[Key]:
 def jump() -> List[Key]:
     crouch = _merge(_both("upper_leg", -40), _both("lower_leg", 70), _both("foot", -28),
                     _both("upper_arm", 30, -6), {"chest": (10, 0, 0)})
-    air = _merge(_both("upper_arm", 0, -160, 0), _both("lower_arm", 0, -10, 0), _both("upper_leg", -10),
-                 _both("lower_leg", 25), {"head": (-10, 0, 0)})
+    air = _merge(V_ARMS, _both("upper_leg", -10), _both("lower_leg", 25), {"head": (-10, 0, 0)})
     return [
         REST,
         (9, crouch, {"hips": (0, 0, -0.08)}),
