@@ -1,7 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Vybe.Api.Infrastructure;
-using Vybe.GameRules;
 
 namespace Vybe.Api.Features;
 
@@ -11,8 +10,6 @@ namespace Vybe.Api.Features;
 /// </summary>
 public static partial class SubmitParser
 {
-    private static readonly string[] EventFields = ["aimX", "power", "tMs"];
-
     public sealed record Shape(string RulesetId, JsonElement Events);
 
     public static Shape ParseShape(JsonDocument body)
@@ -29,10 +26,14 @@ public static partial class SubmitParser
         return new Shape(rulesetId.GetString()!, events);
     }
 
-    /// <summary>Strict integers only: no fraction, no exponent, absolute value below 2^31; exactly tMs, aimX, power.</summary>
-    public static bool TryParseEvents(JsonElement events, out List<ShotEvent> parsed)
+    /// <summary>
+    /// Strict integers only: no fraction, no exponent, absolute value below 2^31. Each event must be an object
+    /// with exactly <paramref name="fields"/> (sorted by ordinal); each row holds the values in that order.
+    /// </summary>
+    public static bool TryParseEvents(JsonElement events, IReadOnlyList<string> fields, out List<int[]> rows)
     {
-        parsed = [];
+        ArgumentNullException.ThrowIfNull(fields);
+        rows = [];
         foreach (var element in events.EnumerateArray())
         {
             if (element.ValueKind != JsonValueKind.Object)
@@ -41,19 +42,21 @@ public static partial class SubmitParser
             }
 
             var names = element.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal).ToArray();
-            if (!names.SequenceEqual(EventFields, StringComparer.Ordinal))
+            if (!names.SequenceEqual(fields, StringComparer.Ordinal))
             {
                 return false;
             }
 
-            if (!TryStrictInt(element.GetProperty("tMs"), out var tMs)
-                || !TryStrictInt(element.GetProperty("aimX"), out var aimX)
-                || !TryStrictInt(element.GetProperty("power"), out var power))
+            var row = new int[fields.Count];
+            for (var i = 0; i < fields.Count; i++)
             {
-                return false;
+                if (!TryStrictInt(element.GetProperty(fields[i]), out row[i]))
+                {
+                    return false;
+                }
             }
 
-            parsed.Add(new ShotEvent(tMs, aimX, power));
+            rows.Add(row);
         }
 
         return true;

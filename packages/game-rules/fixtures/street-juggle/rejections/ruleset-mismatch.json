@@ -1,0 +1,78 @@
+{
+  "name": "ruleset-mismatch",
+  "description": "Submission names another game's ruleset.",
+  "input": {
+    "config": {
+      "streamId": 77,
+      "durationMs": 60000,
+      "graceMs": 5000,
+      "earlyToleranceMs": 2000,
+      "tickMs": 10,
+      "lanes": 3,
+      "serveY": 90000,
+      "kickY": 28000,
+      "goodDy": 18000,
+      "perfectDy": 5000,
+      "gravityStart": 18,
+      "gravityStep": 3,
+      "levelMs": 12000,
+      "launchMin": 1300,
+      "launchMax": 1700,
+      "respawnMs": 1000,
+      "whiffLockMs": 450,
+      "goodPoints": 100,
+      "perfectPoints": 150,
+      "starPercent": 15,
+      "starPoints": 100,
+      "streakStart": 3,
+      "streakStep": 25,
+      "streakMax": 100,
+      "minGapMs": 150,
+      "maxEvents": 400,
+      "minEventsForRewards": 5,
+      "minRunMsForRewards": 58000,
+      "minScoreForCoins": 500
+    },
+    "rulesetId": "street-juggle-v1",
+    "seed": 12345,
+    "session": {
+      "status": "active",
+      "startedAtMs": 1000,
+      "submitDeadlineMs": 66000
+    },
+    "submission": {
+      "rulesetId": "street-hoops-v1",
+      "submittedAtMs": 61500,
+      "events": [
+        {
+          "tMs": 820,
+          "lane": 2
+        },
+        {
+          "tMs": 2540,
+          "lane": 0
+        },
+        {
+          "tMs": 4100,
+          "lane": 2
+        },
+        {
+          "tMs": 5810,
+          "lane": 2
+        },
+        {
+          "tMs": 7600,
+          "lane": 2
+        },
+        {
+          "tMs": 9360,
+          "lane": 0
+        }
+      ]
+    }
+  },
+  "expected": {
+    "outcome": "rejected",
+    "reason": "ruleset_mismatch"
+  }
+}

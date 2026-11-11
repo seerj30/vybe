@@ -9,3 +9,11 @@ export {
 } from "./simulator.ts";
 export { canonicalJson, rulesetChecksum } from "./checksum.ts";
 export * from "./types.ts";
+export {
+  assertValidJuggleConfig,
+  evaluateJuggle,
+  gravityAt,
+  juggleStreakBonus,
+  StreetJuggleSim,
+} from "./juggle.ts";
+export * from "./juggle-types.ts";
