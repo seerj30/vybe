@@ -13,6 +13,7 @@ export const FLAG_LABELS: Record<ReviewFlag, string> = {
   gap_variance_low: "Even shot timing",
   aim_variance_low: "Even aim and power",
   daily_cap_streak: "Daily run cap 7 days in a row",
+  timing_spread_low: "Even touch timing",
 };
 
 /**

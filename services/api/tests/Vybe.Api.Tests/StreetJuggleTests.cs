@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Vybe.Api.Content;
 using Vybe.Api.Features;
 using Vybe.GameRules;
 
@@ -51,7 +52,7 @@ public sealed class StreetJuggleTests(ApiFactory api)
         await using var db = api.CreateDbContext();
         var stored = await db.GameSessions.AsNoTracking().SingleAsync(s => s.Id == run.SessionId);
         Assert.Equal(trace.Count, stored.EventCount);
-        Assert.Equal([ReviewFlags.PerfectRateHigh], stored.ReviewFlags);
+        Assert.Equal([ReviewFlags.PerfectRateHigh, ReviewFlags.TimingSpreadLow], stored.ReviewFlags); // a perfect bot: even timing too
     }
 
     /// <summary>P1 weekly leaderboard: Street Juggle has its own board; a flagged run does not count (design p1-friends-leaderboard).</summary>
@@ -204,16 +205,44 @@ public sealed class StreetJuggleTests(ApiFactory api)
             await recipient.Http.PostAsJsonAsync("/api/v1/games/street-hoops/sessions", new { challengeId }), HttpStatusCode.Created, "SessionCreated");
     }
 
-    [Fact]
-    public void ForJuggle_FlagsOnlyAnAlmostPerfectRun()
-    {
-        static List<JuggleTouchResult> Touches(int count, int perfects) => Enumerable.Range(0, count)
-            .Select(i => new JuggleTouchResult(i * 1000, 1, 1, 28_000, i < perfects ? JuggleTouchKind.Perfect : JuggleTouchKind.Good, 150, i + 1))
-            .ToList();
+    private static readonly StreetJuggleConfig JuggleConfig =
+        (StreetJuggleConfig)new ContentCatalog(new ContentOptions { Root = ApiFactory.RepoRoot }).Rulesets["street-juggle-v1"].Config;
 
-        Assert.Empty(ReviewFlags.ForJuggle(Touches(29, 29)));
-        Assert.Empty(ReviewFlags.ForJuggle(Touches(40, 36)));
-        Assert.Equal([ReviewFlags.PerfectRateHigh], ReviewFlags.ForJuggle(Touches(40, 37)));
+    /// <summary>Touches with human-like spread: early and late, up to 0.5 of the good band (spread about 0.32).</summary>
+    private static List<JuggleTouchResult> SpreadTouches(int count, int perfects) => Enumerable.Range(0, count)
+        .Select(i => new JuggleTouchResult(
+            i * 1000, 1, 1, JuggleConfig.KickY + (i % 5 - 2) * (JuggleConfig.GoodDy / 4),
+            i < perfects ? JuggleTouchKind.Perfect : JuggleTouchKind.Good, 150, i + 1))
+        .ToList();
+
+    /// <summary>Every touch at the same height offset, as a bot that aims at a fixed offset plays.</summary>
+    private static List<JuggleTouchResult> EvenTouches(int count, int offset, JuggleTouchKind kind) => Enumerable.Range(0, count)
+        .Select(i => new JuggleTouchResult(i * 1000, 1, 1, JuggleConfig.KickY + offset, kind, 150, i + 1))
+        .ToList();
+
+    [Fact]
+    public void ForJuggle_PerfectRate_FlagsOnlyAnAlmostPerfectRun()
+    {
+        Assert.Empty(ReviewFlags.ForJuggle(SpreadTouches(29, 29), JuggleConfig));
+        Assert.Empty(ReviewFlags.ForJuggle(SpreadTouches(40, 36), JuggleConfig));
+        Assert.Equal([ReviewFlags.PerfectRateHigh], ReviewFlags.ForJuggle(SpreadTouches(40, 37), JuggleConfig));
+    }
+
+    [Fact]
+    public void ForJuggle_TimingSpread_FlagsAFixedOffsetBot_NotHumanSpread()
+    {
+        // A bot that plays "good, not perfect" at a fixed offset avoids perfect_rate_high but not timing_spread_low.
+        Assert.Equal([ReviewFlags.TimingSpreadLow], ReviewFlags.ForJuggle(EvenTouches(40, 9_000, JuggleTouchKind.Good), JuggleConfig));
+        // A perfect bot gets both flags, in a stable order.
+        Assert.Equal([ReviewFlags.PerfectRateHigh, ReviewFlags.TimingSpreadLow],
+            ReviewFlags.ForJuggle(EvenTouches(40, 0, JuggleTouchKind.Perfect), JuggleConfig));
+        // Fewer than 30 kicking touches: no timing flag.
+        Assert.Empty(ReviewFlags.ForJuggle(EvenTouches(29, 9_000, JuggleTouchKind.Good), JuggleConfig));
+        // Whiffs do not count: 30 even kicks plus scattered whiffs is still flagged.
+        var withWhiffs = EvenTouches(30, 9_000, JuggleTouchKind.Good)
+            .Concat(Enumerable.Range(0, 20).Select(i => new JuggleTouchResult(40_000 + i * 500, 0, 1, i * 3_000, JuggleTouchKind.Whiff, 0, 0)))
+            .ToList();
+        Assert.Contains(ReviewFlags.TimingSpreadLow, ReviewFlags.ForJuggle(withWhiffs, JuggleConfig));
     }
 
     private sealed record JuggleRun(Guid SessionId, long Seed, StreetJuggleConfig Config, string RulesetId);

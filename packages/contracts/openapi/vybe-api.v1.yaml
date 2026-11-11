@@ -4075,8 +4075,10 @@ components:
         Anti-automation signal (spec §17 decision 4): perfect_rate_high = more than 60 % perfect shots in a run
         of 30 or more shots; gap_variance_low = standard deviation of the shot gaps under 25 ms; aim_variance_low
         = standard deviation of aim and power both under 10 (20 or more shots); daily_cap_streak = the 20th
-        reward-eligible run of a day after 6 days with 20 or more.
-      enum: [perfect_rate_high, gap_variance_low, aim_variance_low, daily_cap_streak]
+        reward-eligible run of a day after 6 days with 20 or more; timing_spread_low (Street Juggle) = the standard
+        deviation of the signed touch error (ball height minus kick height, divided by the good band) under 0.08
+        over 30 or more kicking touches.
+      enum: [perfect_rate_high, gap_variance_low, aim_variance_low, daily_cap_streak, timing_spread_low]
     FlaggedRun:
       type: object
       required: [sessionId, player, flags, score, eventCount, startedAt, submittedAt, runMs, rewardCoins, challengeId]

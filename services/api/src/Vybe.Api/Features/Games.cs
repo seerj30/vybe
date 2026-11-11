@@ -125,7 +125,7 @@ public static class Games
             var result = StreetJuggleSimulator.Evaluate(Input(touches));
             return result.Outcome == Outcome.Verified
                 ? new RunVerdict(config, false, Outcome.Verified, null, touches.Count, result.Score!.Value, result.MaxStreak!.Value,
-                    ReviewFlags.ForJuggle(result.Touches!))
+                    ReviewFlags.ForJuggle(result.Touches!, config))
                 : new RunVerdict(config, false, result.Outcome, result.Reason, touches.Count, 0, 0, []);
         }
     }
