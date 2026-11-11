@@ -199,9 +199,11 @@ the gaps vary for bots too. Flags only, no automatic action (decision 4).
   and switch users; results go to an `aria-live` region; color is never the only signal (a gold ball
   also has a star shape). "Reduce motion" (and `prefers-reduced-motion`) removes the ball trail,
   screen shake and the avatar dash animation.
-- The run pauses visually when the tab is hidden, but the server clock does not stop. A hidden tab
-  shows "Paused: the run clock continues" on return. A run cannot pause on the server, because
-  `submit_deadline` is fixed at start (open question 3).
+- Tab hidden: a practice run pauses (its clock moves by the hidden time). An online run cannot pause,
+  because the server clock runs and `submit_deadline` is fixed at start; on return the game catches
+  up and says "The run clock kept running while the tab was hidden" (open question 3).
+- The figure fits its column; its kicking foot rises to the touch height, so the kick meets the ball
+  where the rules judge it. The game chunk is about 10 kB (gzip) plus the shared rules chunk.
 
 ## 7. Tests
 
@@ -217,6 +219,8 @@ the gaps vary for bots too. Flags only, no automatic action (decision 4).
     XP; the hub wallet shows the coins.
   - S2: a run with fewer than 5 touches is verified and says why it pays no coins.
   - S3: the picker shows both games, and `/arcade/street-juggle` needs a player.
+  - A tampered trace (lane 3) is refused with "a touch was out of range" and pays nothing.
+  - The spot buttons and the keyboard record touches in practice.
 
 ## 8. Open questions (product)
 
