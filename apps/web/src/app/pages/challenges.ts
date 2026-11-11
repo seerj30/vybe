@@ -16,6 +16,7 @@ import {
   sideOf,
   STATUS_LABELS,
 } from "../challenges/challenge-view";
+import { gameInfo } from "../games/games";
 import { PlayerStore } from "../player/player-store";
 import { playerName } from "../profiles/player-name";
 import { Generations } from "../challenges/generations";
@@ -96,7 +97,7 @@ const PAGE_SIZE = 20;
         Finish a verified run, then challenge a friend with it. The friend plays the same court and the higher score wins.
       </p>
       <div class="actions top">
-        <a class="button" routerLink="/arcade/street-hoops">Play a run to challenge</a>
+        <a class="button" routerLink="/arcade">Play a run to challenge</a>
         <button type="button" class="button secondary" [disabled]="refreshing()" (click)="refresh()">Refresh</button>
       </div>
 
@@ -144,10 +145,10 @@ const PAGE_SIZE = 20;
                   <a class="button" [routerLink]="['/challenge', token]">Open invite</a>
                 }
                 @if (row.challenge.status === "accepted" && row.side === "recipient" && row.myScore === null) {
-                  <a class="button" routerLink="/arcade/street-hoops" [queryParams]="{ challenge: row.challenge.challengeId }">Play your run</a>
+                  <a class="button" [routerLink]="gameRoute(row.challenge.gameId)" [queryParams]="{ challenge: row.challenge.challengeId }">Play your run</a>
                 }
                 @if (row.challenge.status === "completed" && row.canRematch) {
-                  <a class="button secondary" routerLink="/arcade/street-hoops" [queryParams]="{ rematchOf: row.challenge.challengeId }">
+                  <a class="button secondary" [routerLink]="gameRoute(row.challenge.gameId)" [queryParams]="{ rematchOf: row.challenge.challengeId }">
                     Rematch<span class="visually-hidden"> {{ row.opponent ? name(row.opponent) : "" }}</span>
                   </a>
                 }
@@ -187,6 +188,7 @@ const PAGE_SIZE = 20;
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class Challenges {
+  protected readonly gameRoute = (gameId: string): string => gameInfo(gameId).route;
   /** Query parameters from the gameplay screen: the verified creator run, and an optional rematch or recipient. */
   readonly session = input<string | undefined>();
   readonly rematchOf = input<string | undefined>();

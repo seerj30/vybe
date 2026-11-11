@@ -995,7 +995,51 @@ paths:
         Creates a session in state `created`. No seed is returned yet. Any other
         `created`/`active` session of the caller becomes `expired`.
         With `challengeId`, only the bound recipient of an `accepted` challenge may call it,
-        before `complete_deadline`; the session uses the creator run's seed and ruleset.
+        before `complete_deadline`; the session uses the creator run's seed and ruleset. The
+        challenge must be a Street Hoops challenge; another game's challenge answers 404
+        `challenge_unavailable`.
+      x-problem-codes:
+        "403": [account_suspended]
+        "404": [challenge_unavailable]
+        "409": [challenge_session_exists]
+        "410": [challenge_expired]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionCreateRequest"
+      responses:
+        "201":
+          description: Session created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionCreated"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "410":
+          $ref: "#/components/responses/Gone"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /games/street-juggle/sessions:
+    post:
+      tags: [gameplay]
+      operationId: createStreetJuggleSession
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+      summary: Create a Street Juggle session
+      description: |
+        Same rules as `createStreetHoopsSession`, for Street Juggle (docs/design/p1-second-game.md).
+        With `challengeId`, the challenge must be a Street Juggle challenge; another game's
+        challenge answers 404 `challenge_unavailable`.
       x-problem-codes:
         "403": [account_suspended]
         "404": [challenge_unavailable]
@@ -2903,7 +2947,143 @@ components:
           description: Base coins need `score` at least this value; XP and quests do not.
           type: integer
           minimum: 0
-    Ruleset:
+    StreetJuggleConfig:
+      type: object
+      description: |
+        Street Juggle ruleset config (docs/design/p1-second-game.md §2.2). All values are integers.
+        Heights use 1/100,000 of the play height; speeds and gravity are per 10 ms tick.
+      additionalProperties: false
+      required:
+        - streamId
+        - durationMs
+        - graceMs
+        - earlyToleranceMs
+        - tickMs
+        - lanes
+        - serveY
+        - kickY
+        - goodDy
+        - perfectDy
+        - gravityStart
+        - gravityStep
+        - levelMs
+        - launchMin
+        - launchMax
+        - respawnMs
+        - whiffLockMs
+        - goodPoints
+        - perfectPoints
+        - starPercent
+        - starPoints
+        - streakStart
+        - streakStep
+        - streakMax
+        - minGapMs
+        - maxEvents
+        - minEventsForRewards
+        - minRunMsForRewards
+        - minScoreForCoins
+      properties:
+        streamId:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 4294967295
+        durationMs:
+          type: integer
+          minimum: 1
+        graceMs:
+          type: integer
+          minimum: 0
+        earlyToleranceMs:
+          type: integer
+          minimum: 0
+        tickMs:
+          type: integer
+          minimum: 1
+        lanes:
+          type: integer
+          minimum: 1
+        serveY:
+          type: integer
+          minimum: 1
+        kickY:
+          type: integer
+          minimum: 1
+        goodDy:
+          type: integer
+          minimum: 0
+        perfectDy:
+          type: integer
+          minimum: 0
+        gravityStart:
+          type: integer
+          minimum: 1
+        gravityStep:
+          type: integer
+          minimum: 0
+        levelMs:
+          type: integer
+          minimum: 1
+        launchMin:
+          type: integer
+          minimum: 1
+        launchMax:
+          type: integer
+          minimum: 1
+        respawnMs:
+          type: integer
+          minimum: 0
+        whiffLockMs:
+          type: integer
+          minimum: 0
+        goodPoints:
+          type: integer
+          minimum: 0
+        perfectPoints:
+          type: integer
+          minimum: 0
+        starPercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+        starPoints:
+          type: integer
+          minimum: 0
+        streakStart:
+          type: integer
+          minimum: 1
+        streakStep:
+          type: integer
+          minimum: 0
+        streakMax:
+          type: integer
+          minimum: 0
+        minGapMs:
+          type: integer
+          minimum: 1
+        maxEvents:
+          type: integer
+          minimum: 0
+        minEventsForRewards:
+          description: Minimum touches for rewards, quests and challenges (API rule).
+          type: integer
+          minimum: 0
+        minRunMsForRewards:
+          description: |
+            A verified run is reward-eligible only when `submittedAt − startedAt` (server clock) is
+            at least this value. An API rule, not a simulator check.
+          type: integer
+          minimum: 0
+        minScoreForCoins:
+          description: Base coins need `score` at least this value; XP and quests do not.
+          type: integer
+          minimum: 0
+    RulesetChecksum:
+      type: string
+      pattern: "^[0-9a-f]{64}$"
+      description: Lowercase hex SHA-256 of the RFC 8785 canonical JSON of `config`.
+    StreetHoopsRuleset:
       type: object
       required: [id, gameId, version, config, checksum]
       properties:
@@ -2911,15 +3091,40 @@ components:
           $ref: "#/components/schemas/RulesetId"
         gameId:
           type: string
+          const: street-hoops
         version:
           type: integer
           minimum: 1
         config:
           $ref: "#/components/schemas/StreetHoopsConfig"
         checksum:
+          $ref: "#/components/schemas/RulesetChecksum"
+    StreetJuggleRuleset:
+      type: object
+      required: [id, gameId, version, config, checksum]
+      properties:
+        id:
+          $ref: "#/components/schemas/RulesetId"
+        gameId:
           type: string
-          pattern: "^[0-9a-f]{64}$"
-          description: Lowercase hex SHA-256 of the RFC 8785 canonical JSON of `config`.
+          const: street-juggle
+        version:
+          type: integer
+          minimum: 1
+        config:
+          $ref: "#/components/schemas/StreetJuggleConfig"
+        checksum:
+          $ref: "#/components/schemas/RulesetChecksum"
+    Ruleset:
+      description: A ruleset; `gameId` selects the config type.
+      oneOf:
+        - $ref: "#/components/schemas/StreetHoopsRuleset"
+        - $ref: "#/components/schemas/StreetJuggleRuleset"
+      discriminator:
+        propertyName: gameId
+        mapping:
+          street-hoops: "#/components/schemas/StreetHoopsRuleset"
+          street-juggle: "#/components/schemas/StreetJuggleRuleset"
     GameSessionStatus:
       type: string
       enum: [created, active, submitted, verified, rejected, expired]
@@ -2975,8 +3180,9 @@ components:
       type: object
       required: [rulesetId, events]
       description: |
-        Each `events` item should be `{ "tMs": int, "aimX": int, "power": int }` (spec §7 units).
-        Items are free-form here on purpose: the server validates raw tokens and answers
+        Each `events` item should be `{ "tMs": int, "aimX": int, "power": int }` for Street Hoops
+        (spec §7 units) or `{ "tMs": int, "lane": int }` for Street Juggle (design p1-second-game §2.1);
+        the session's game decides. Items are free-form here on purpose: the server validates raw tokens and answers
         `rejected` / `invalid_event` instead of 400. `clientReportedScore` is diagnostic only.
       properties:
         rulesetId:

@@ -1,0 +1,113 @@
+{
+  "name": "touch-while-waiting",
+  "description": "Touches while the ball waits for its serve are whiffs.",
+  "input": {
+    "config": {
+      "streamId": 77,
+      "durationMs": 60000,
+      "graceMs": 5000,
+      "earlyToleranceMs": 2000,
+      "tickMs": 10,
+      "lanes": 3,
+      "serveY": 90000,
+      "kickY": 28000,
+      "goodDy": 18000,
+      "perfectDy": 5000,
+      "gravityStart": 18,
+      "gravityStep": 3,
+      "levelMs": 12000,
+      "launchMin": 1300,
+      "launchMax": 1700,
+      "respawnMs": 1000,
+      "whiffLockMs": 450,
+      "goodPoints": 100,
+      "perfectPoints": 150,
+      "starPercent": 15,
+      "starPoints": 100,
+      "streakStart": 3,
+      "streakStep": 25,
+      "streakMax": 100,
+      "minGapMs": 150,
+      "maxEvents": 400,
+      "minEventsForRewards": 5,
+      "minRunMsForRewards": 58000,
+      "minScoreForCoins": 500
+    },
+    "rulesetId": "street-juggle-v1",
+    "seed": 8,
+    "session": {
+      "status": "active",
+      "startedAtMs": 1000,
+      "submitDeadlineMs": 66000
+    },
+    "submission": {
+      "rulesetId": "street-juggle-v1",
+      "submittedAtMs": 61500,
+      "events": [
+        {
+          "tMs": 0,
+          "lane": 1
+        },
+        {
+          "tMs": 2500,
+          "lane": 0
+        },
+        {
+          "tMs": 3400,
+          "lane": 2
+        },
+        {
+          "tMs": 3550,
+          "lane": 1
+        }
+      ]
+    }
+  },
+  "expected": {
+    "outcome": "verified",
+    "score": 0,
+    "eventCount": 4,
+    "maxStreak": 0,
+    "kickCount": 0,
+    "perfectCount": 0,
+    "dropCount": 32,
+    "touches": [
+      {
+        "tMs": 0,
+        "lane": 1,
+        "ballLane": 0,
+        "ballY": 90000,
+        "result": "whiff",
+        "points": 0,
+        "streak": 0
+      },
+      {
+        "tMs": 2500,
+        "lane": 0,
+        "ballLane": 1,
+        "ballY": 67050,
+        "result": "whiff",
+        "points": 0,
+        "streak": 0
+      },
+      {
+        "tMs": 3400,
+        "lane": 2,
+        "ballLane": -1,
+        "ballY": 0,
+        "result": "whiff",
+        "points": 0,
+        "streak": 0
+      },
+      {
+        "tMs": 3550,
+        "lane": 1,
+        "ballLane": -1,
+        "ballY": 0,
+        "result": "whiff",
+        "points": 0,
+        "streak": 0
+      }
+    ]
+  }
+}

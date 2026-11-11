@@ -4,18 +4,16 @@ import type { Schemas } from "@vybe/contracts";
 import { FRIENDS_API, type LeaderboardScope } from "../api/friends-api";
 import { errorMessage } from "../api/messages";
 import { Generations } from "../challenges/generations";
+import { GAMES, gameInfo } from "../games/games";
 import { previousWeek, weekRange } from "../friends/friend-view";
 import { PlayerStore } from "../player/player-store";
 import { playerName } from "../profiles/player-name";
 
 type Load = { kind: "loading" } | { kind: "failed"; message: string } | { kind: "ready"; board: Schemas["WeeklyLeaderboard"] };
 
-/** The only game with a board now; stream P's game adds a picker here. */
-const GAME_ID = "street-hoops";
-
 /**
- * `/leaderboard` (P1, docs/design/p1-friends-leaderboard.md): the weekly Street Hoops board, global or friends,
- * this week or last week, with the caller's own rank. Query parameters `scope` and `week` keep the view in the URL.
+ * `/leaderboard` (P1, docs/design/p1-friends-leaderboard.md): the weekly board of one game, global or friends,
+ * this week or last week, with the caller's own rank. Query parameters `game`, `scope` and `week` keep the view in the URL.
  */
 @Component({
   selector: "vybe-leaderboard",
@@ -23,12 +21,18 @@ const GAME_ID = "street-hoops";
   template: `
     <section class="page">
       <h1>Leaderboard</h1>
-      <p class="muted">Street Hoops · best verified score per player this week (Monday to Sunday, UTC). Full-length runs without a challenge count.</p>
+      <p class="muted">{{ activeGame().name }} · best verified score per player this week (Monday to Sunday, UTC). Full-length runs without a challenge count.</p>
 
+      <nav class="tabs" aria-label="Game">
+        @for (g of games; track g.id) {
+          <a routerLink="/leaderboard" [queryParams]="{ game: g.id, scope: activeScope(), week: week() ?? null }" [class.active]="activeGame().id === g.id"
+            [attr.aria-current]="activeGame().id === g.id ? 'page' : null">{{ g.name }}</a>
+        }
+      </nav>
       <nav class="tabs" aria-label="Leaderboard">
-        <a routerLink="/leaderboard" [queryParams]="{ scope: 'global', week: week() ?? null }" [class.active]="activeScope() === 'global'"
+        <a routerLink="/leaderboard" [queryParams]="{ game: activeGame().id, scope: 'global', week: week() ?? null }" [class.active]="activeScope() === 'global'"
           [attr.aria-current]="activeScope() === 'global' ? 'page' : null">Global</a>
-        <a routerLink="/leaderboard" [queryParams]="{ scope: 'friends', week: week() ?? null }" [class.active]="activeScope() === 'friends'"
+        <a routerLink="/leaderboard" [queryParams]="{ game: activeGame().id, scope: 'friends', week: week() ?? null }" [class.active]="activeScope() === 'friends'"
           [attr.aria-current]="activeScope() === 'friends' ? 'page' : null">Friends</a>
       </nav>
 
@@ -46,9 +50,9 @@ const GAME_ID = "street-hoops";
           <div class="week">
             <h2>{{ week() ? "Week" : "This week" }}: {{ range(b) }}</h2>
             @if (week()) {
-              <a routerLink="/leaderboard" [queryParams]="{ scope: activeScope() }">This week</a>
+              <a routerLink="/leaderboard" [queryParams]="{ game: activeGame().id, scope: activeScope() }">This week</a>
             } @else if (b.weekStart > firstWeekStart) {
-              <a routerLink="/leaderboard" [queryParams]="{ scope: activeScope(), week: lastWeek(b) }">Last week</a>
+              <a routerLink="/leaderboard" [queryParams]="{ game: activeGame().id, scope: activeScope(), week: lastWeek(b) }">Last week</a>
             }
           </div>
 
@@ -65,7 +69,7 @@ const GAME_ID = "street-hoops";
                 </p>
               }
             } @else {
-              <p>You have no score this week. <a routerLink="/arcade/street-hoops">Play Street Hoops</a></p>
+              <p>You have no score this week. <a [routerLink]="activeGame().route">Play {{ activeGame().name }}</a></p>
             }
           </div>
 
@@ -128,6 +132,7 @@ const GAME_ID = "street-hoops";
 })
 export class Leaderboard {
   /** Query parameters (route input binding). */
+  readonly game = input<string | undefined>();
   readonly scope = input<string | undefined>();
   readonly week = input<string | undefined>();
 
@@ -138,10 +143,14 @@ export class Leaderboard {
   /** The API serves weeks from 2026-W01 (Monday 2025-12-29). */
   protected readonly firstWeekStart = "2025-12-29";
   protected readonly state = signal<Load>({ kind: "loading" });
+  protected readonly games = GAMES;
+  /** An unknown or missing `game` shows the first game. */
+  protected readonly activeGame = computed(() => gameInfo(this.game() ?? ""));
   protected readonly activeScope = computed<LeaderboardScope>(() => (this.scope() === "friends" ? "friends" : "global"));
 
   constructor() {
     effect(() => {
+      this.activeGame();
       this.activeScope();
       this.week();
       untracked(() => void this.load());
@@ -154,7 +163,7 @@ export class Leaderboard {
     const week = this.week();
     let state: Load;
     try {
-      const board = await this.friendsApi.weeklyLeaderboard(GAME_ID, { scope: this.activeScope(), ...(week ? { week } : {}) });
+      const board = await this.friendsApi.weeklyLeaderboard(this.activeGame().id, { scope: this.activeScope(), ...(week ? { week } : {}) });
       state = { kind: "ready", board };
     } catch (error: unknown) {
       state = { kind: "failed", message: errorMessage(error) };

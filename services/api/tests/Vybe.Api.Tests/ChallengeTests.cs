@@ -477,7 +477,7 @@ public sealed class ChallengeTests(ApiFactory api)
 
     private static async Task<string> HandleAsync(Player player) => (await player.MeAsync()).GetProperty("handle").GetString()!;
 
-    private static async Task<HttpResponseMessage> CreateAsync(Player player, Guid sessionId, string? recipientHandle = null, Guid? key = null)
+    internal static async Task<HttpResponseMessage> CreateAsync(Player player, Guid sessionId, string? recipientHandle = null, Guid? key = null)
     {
         object body = recipientHandle is null ? new { creatorSessionId = sessionId } : new { creatorSessionId = sessionId, recipientHandle };
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/challenges") { Content = JsonContent.Create(body) };

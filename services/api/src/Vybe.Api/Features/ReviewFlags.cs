@@ -23,6 +23,9 @@ public static class ReviewFlags
     public const int DailyCapRuns = Rewards.QuarterCoinRuns;
     public const int DailyCapStreakDays = 7;
 
+    /// <summary>Street Juggle: a skilled human is near 75 % perfect touches (design p1-second-game §2.6, §4).</summary>
+    public const double JugglePerfectRateMax = 0.90;
+
     /// <summary>Per-run flags from the canonical shots, in a stable order. Population standard deviation.</summary>
     public static List<string> ForRun(IReadOnlyList<ShotResult> shots)
     {
@@ -50,6 +53,19 @@ public static class ReviewFlags
         }
 
         return flags;
+    }
+
+    /// <summary>
+    /// Street Juggle flags: <see cref="PerfectRateHigh"/> only. The seeded flights make touch gaps vary for bots
+    /// too, so the Street Hoops variance flags do not apply (design p1-second-game §4).
+    /// </summary>
+    public static List<string> ForJuggle(IReadOnlyList<JuggleTouchResult> touches)
+    {
+        ArgumentNullException.ThrowIfNull(touches);
+        return touches.Count >= PerfectRateMinShots
+            && (double)touches.Count(t => t.Result == JuggleTouchKind.Perfect) / touches.Count > JugglePerfectRateMax
+            ? [PerfectRateHigh]
+            : [];
     }
 
     /// <summary>

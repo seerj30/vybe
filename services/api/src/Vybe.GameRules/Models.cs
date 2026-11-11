@@ -1,7 +1,7 @@
 namespace Vybe.GameRules;
 
 /// <summary>Street Hoops ruleset config (spec v1.3 §7). All values are integers.</summary>
-public sealed record StreetHoopsConfig
+public sealed record StreetHoopsConfig : IRewardConfig
 {
     public required long StreamId { get; init; }
     public required int DurationMs { get; init; }
@@ -30,6 +30,9 @@ public sealed record StreetHoopsConfig
 
     /// <summary>Base coins need score ≥ this value (API reward rule).</summary>
     public required int MinScoreForCoins { get; init; }
+
+    /// <summary>Street Hoops counts shots: the event floor is <see cref="MinShotsForRewards"/>.</summary>
+    int IRewardConfig.MinEventsForRewards => MinShotsForRewards;
 }
 
 /// <summary>Fixed input units (§7).</summary>
