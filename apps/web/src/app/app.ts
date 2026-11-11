@@ -9,7 +9,7 @@ import { PlayerStore } from "./player/player-store";
 interface NavItem {
   path: string;
   label: string;
-  /** Hidden in the phone bottom nav (only six items fit 375 px); the hub links to it. */
+  /** Hidden in the phone bottom nav (only five items fit 375 px); the hub wallet card links to it. */
   desktopOnly?: boolean;
 }
 
@@ -18,7 +18,7 @@ const NAV: readonly NavItem[] = [
   { path: "/arcade", label: "Arcade" },
   { path: "/challenges", label: "Challenges" },
   { path: "/shop", label: "Shop" },
-  { path: "/wardrobe", label: "Wardrobe" },
+  { path: "/wardrobe", label: "Wardrobe", desktopOnly: true },
   { path: "/room", label: "My Room", desktopOnly: true },
   { path: "/wallet", label: "Wallet", desktopOnly: true },
   { path: "/settings", label: "Settings" },

@@ -89,8 +89,8 @@ main:focus {
     font-size: 13px;
   }
 
-  /* Six items fill a 375 px phone width (Wallet and My Room are desktop only; the hub links to both);
-     the hub and the wallet show the balance. */
+  /* Five items fill a 375 px phone width (Wardrobe, My Room and Wallet are desktop only; the hub wallet card
+     links to all three); the hub and the wallet show the balance. */
   .coins {
     display: none;
   }
