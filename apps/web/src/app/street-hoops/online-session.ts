@@ -1,12 +1,12 @@
 import type { Schemas } from "@vybe/contracts";
-import type { ShotEvent, StreetHoopsConfig } from "@vybe/game-rules";
+import type { StreetHoopsConfig } from "@vybe/game-rules";
 import { type ApiClient, newIdempotencyKey } from "../api/api-client";
 import { type RulesetFile, verifyRuleset } from "./ruleset";
 
 /** A started API session: the client clock starts at 0 when `startSession` answers. */
-export interface OnlineRun {
+export interface OnlineRun<C = StreetHoopsConfig> {
   sessionId: string;
-  ruleset: RulesetFile;
+  ruleset: RulesetFile<C>;
   seed: number;
   /** One key for this run's submission, reused on every retry (spec §2 J1). */
   submitKey: string;
@@ -20,29 +20,46 @@ export type RunOutcome =
 const POLL_ATTEMPTS = 10;
 const POLL_INTERVAL_MS = 1000;
 
+/** The game an `OnlineSessions` plays: its `gameId` and its create-session call. */
+export interface SessionGame {
+  gameId: Schemas["Ruleset"]["gameId"];
+  create(api: ApiClient, body: Schemas["SessionCreateRequest"]): Promise<Schemas["SessionCreated"]>;
+}
+
+export const STREET_HOOPS_SESSIONS: SessionGame = {
+  gameId: "street-hoops",
+  create: (api, body) => api.createStreetHoopsSession(body),
+};
+
+const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
 /**
- * Street Hoops on API sessions (spec §5 gameplay, §7): create → verify ruleset → start → submit.
+ * A game on API sessions (spec §5 gameplay, §7): create → verify ruleset → start → submit.
  * The local simulator gives instant feedback; only the server outcome counts.
+ * `C` is the game's config type; `verify` checks the checksum and the config before the client uses it.
  */
-export class OnlineSessions {
-  private readonly rulesets = new Map<string, RulesetFile>();
+export class OnlineSessions<C = StreetHoopsConfig> {
+  private readonly rulesets = new Map<string, RulesetFile<C>>();
 
   constructor(
     private readonly api: ApiClient,
-    private readonly verify: (file: RulesetFile) => Promise<RulesetFile> = verifyRuleset,
-    private readonly sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    private readonly verify: (file: RulesetFile<C>) => Promise<RulesetFile<C>> = verifyRuleset as unknown as (
+      file: RulesetFile<C>,
+    ) => Promise<RulesetFile<C>>,
+    private readonly sleep: (ms: number) => Promise<void> = sleepMs,
+    private readonly game: SessionGame = STREET_HOOPS_SESSIONS,
   ) {}
 
   /** With `challengeId`, the recipient run of an accepted challenge (the creator run's seed and ruleset). */
-  async prepare(challengeId?: string): Promise<OnlineRun> {
-    const created = await this.api.createStreetHoopsSession(challengeId === undefined ? {} : { challengeId });
+  async prepare(challengeId?: string): Promise<OnlineRun<C>> {
+    const created = await this.game.create(this.api, challengeId === undefined ? {} : { challengeId });
     const ruleset = await this.ruleset(created.rulesetId, created.rulesetChecksum);
     const started = await this.api.startSession(created.sessionId);
     return { sessionId: created.sessionId, ruleset, seed: started.seed, submitKey: newIdempotencyKey() };
   }
 
   /** The final outcome, or null while the server is still verifying (call `reconcile` later). */
-  async submit(run: OnlineRun, events: readonly ShotEvent[], clientScore: number): Promise<RunOutcome | null> {
+  async submit(run: OnlineRun<C>, events: readonly object[], clientScore: number): Promise<RunOutcome | null> {
     const body = { rulesetId: run.ruleset.id, events: [...events], clientReportedScore: clientScore };
     const response = await this.api.submitSession(run.sessionId, body, run.submitKey);
     if (response.status !== "submitted") return outcomeOf(response);
@@ -59,14 +76,19 @@ export class OnlineSessions {
     return sessionOutcome(await this.api.getSession(sessionId));
   }
 
-  private async ruleset(id: string, checksum: string): Promise<RulesetFile> {
+  private async ruleset(id: string, checksum: string): Promise<RulesetFile<C>> {
     const cached = this.rulesets.get(id);
     if (cached !== undefined && cached.checksum === checksum) return cached;
     const ruleset = await this.api.getRuleset(id);
     if (ruleset.checksum !== checksum) {
       throw new Error(`Ruleset ${id} checksum does not match the session`);
     }
-    const verified = await this.verify({ id: ruleset.id, config: ruleset.config, checksum: ruleset.checksum });
+    if (ruleset.gameId !== this.game.gameId) {
+      throw new Error(`Ruleset ${id} is for ${ruleset.gameId}, not ${this.game.gameId}`);
+    }
+    // The gameId pins the config type; `verify` then checks the checksum and the config invariants.
+    const config = ruleset.config as unknown as C;
+    const verified = await this.verify({ id: ruleset.id, config, checksum: ruleset.checksum });
     this.rulesets.set(id, verified);
     return verified;
   }

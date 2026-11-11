@@ -1,0 +1,685 @@
+{
+  "name": "epoch-ms-times",
+  "description": "Production-size epoch-millisecond times (above int32).",
+  "input": {
+    "config": {
+      "streamId": 77,
+      "durationMs": 60000,
+      "graceMs": 5000,
+      "earlyToleranceMs": 2000,
+      "tickMs": 10,
+      "lanes": 3,
+      "serveY": 90000,
+      "kickY": 28000,
+      "goodDy": 18000,
+      "perfectDy": 5000,
+      "gravityStart": 18,
+      "gravityStep": 3,
+      "levelMs": 12000,
+      "launchMin": 1300,
+      "launchMax": 1700,
+      "respawnMs": 1000,
+      "whiffLockMs": 450,
+      "goodPoints": 100,
+      "perfectPoints": 150,
+      "starPercent": 15,
+      "starPoints": 100,
+      "streakStart": 3,
+      "streakStep": 25,
+      "streakMax": 100,
+      "minGapMs": 150,
+      "maxEvents": 400,
+      "minEventsForRewards": 5,
+      "minRunMsForRewards": 58000,
+      "minScoreForCoins": 500
+    },
+    "rulesetId": "street-juggle-v1",
+    "seed": 31,
+    "session": {
+      "status": "active",
+      "startedAtMs": 1760000000000,
+      "submitDeadlineMs": 1760000065000
+    },
+    "submission": {
+      "rulesetId": "street-juggle-v1",
+      "submittedAtMs": 1760000060500,
+      "events": [
+        {
+          "tMs": 820,
+          "lane": 2
+        },
+        {
+          "tMs": 2270,
+          "lane": 0
+        },
+        {
+          "tMs": 3780,
+          "lane": 0
+        },
+        {
+          "tMs": 5390,
+          "lane": 0
+        },
+        {
+          "tMs": 7150,
+          "lane": 1
+        },
+        {
+          "tMs": 8750,
+          "lane": 2
+        },
+        {
+          "tMs": 10450,
+          "lane": 1
+        },
+        {
+          "tMs": 11960,
+          "lane": 2
+        },
+        {
+          "tMs": 13500,
+          "lane": 2
+        },
+        {
+          "tMs": 15100,
+          "lane": 1
+        },
+        {
+          "tMs": 16480,
+          "lane": 1
+        },
+        {
+          "tMs": 18030,
+          "lane": 2
+        },
+        {
+          "tMs": 19570,
+          "lane": 2
+        },
+        {
+          "tMs": 21150,
+          "lane": 1
+        },
+        {
+          "tMs": 22750,
+          "lane": 1
+        },
+        {
+          "tMs": 24210,
+          "lane": 1
+        },
+        {
+          "tMs": 25530,
+          "lane": 0
+        },
+        {
+          "tMs": 26930,
+          "lane": 1
+        },
+        {
+          "tMs": 28070,
+          "lane": 1
+        },
+        {
+          "tMs": 29330,
+          "lane": 1
+        },
+        {
+          "tMs": 30580,
+          "lane": 1
+        },
+        {
+          "tMs": 31780,
+          "lane": 1
+        },
+        {
+          "tMs": 32860,
+          "lane": 1
+        },
+        {
+          "tMs": 33950,
+          "lane": 2
+        },
+        {
+          "tMs": 35230,
+          "lane": 0
+        },
+        {
+          "tMs": 36400,
+          "lane": 1
+        },
+        {
+          "tMs": 37540,
+          "lane": 1
+        },
+        {
+          "tMs": 38750,
+          "lane": 2
+        },
+        {
+          "tMs": 39780,
+          "lane": 0
+        },
+        {
+          "tMs": 40760,
+          "lane": 2
+        },
+        {
+          "tMs": 41720,
+          "lane": 2
+        },
+        {
+          "tMs": 42830,
+          "lane": 2
+        },
+        {
+          "tMs": 44040,
+          "lane": 2
+        },
+        {
+          "tMs": 45140,
+          "lane": 2
+        },
+        {
+          "tMs": 46230,
+          "lane": 0
+        },
+        {
+          "tMs": 47230,
+          "lane": 2
+        },
+        {
+          "tMs": 48240,
+          "lane": 0
+        },
+        {
+          "tMs": 49210,
+          "lane": 1
+        },
+        {
+          "tMs": 50320,
+          "lane": 2
+        },
+        {
+          "tMs": 51390,
+          "lane": 2
+        },
+        {
+          "tMs": 52440,
+          "lane": 1
+        },
+        {
+          "tMs": 53480,
+          "lane": 0
+        },
+        {
+          "tMs": 54470,
+          "lane": 2
+        },
+        {
+          "tMs": 55470,
+          "lane": 2
+        },
+        {
+          "tMs": 56420,
+          "lane": 0
+        },
+        {
+          "tMs": 57460,
+          "lane": 0
+        },
+        {
+          "tMs": 58470,
+          "lane": 1
+        },
+        {
+          "tMs": 59570,
+          "lane": 2
+        }
+      ]
+    }
+  },
+  "expected": {
+    "outcome": "verified",
+    "score": 12650,
+    "eventCount": 48,
+    "maxStreak": 48,
+    "kickCount": 48,
+    "perfectCount": 48,
+    "dropCount": 0,
+    "touches": [
+      {
+        "tMs": 820,
+        "lane": 2,
+        "ballLane": 2,
+        "ballY": 28746,
+        "result": "perfect",
+        "points": 150,
+        "streak": 1
+      },
+      {
+        "tMs": 2270,
+        "lane": 0,
+        "ballLane": 0,
+        "ballY": 27441,
+        "result": "perfect",
+        "points": 150,
+        "streak": 2
+      },
+      {
+        "tMs": 3780,
+        "lane": 0,
+        "ballLane": 0,
+        "ballY": 28045,
+        "result": "perfect",
+        "points": 275,
+        "streak": 3
+      },
+      {
+        "tMs": 5390,
+        "lane": 0,
+        "ballLane": 0,
+        "ballY": 28206,
+        "result": "perfect",
+        "points": 200,
+        "streak": 4
+      },
+      {
+        "tMs": 7150,
+        "lane": 1,
+        "ballLane": 1,
+        "ballY": 27854,
+        "result": "perfect",
+        "points": 225,
+        "streak": 5
+      },
+      {
+        "tMs": 8750,
+        "lane": 2,
+        "ballLane": 2,
+        "ballY": 28174,
+        "result": "perfect",
+        "points": 250,
+        "streak": 6
+      },
+      {
+        "tMs": 10450,
+        "lane": 1,
+        "ballLane": 1,
+        "ballY": 27834,
+        "result": "perfect",
+        "points": 250,
+        "streak": 7
+      },
+      {
+        "tMs": 11960,
+        "lane": 2,
+        "ballLane": 2,
+        "ballY": 28438,
+        "result": "perfect",
+        "points": 250,
+        "streak": 8
+      },
+      {
+        "tMs": 13500,
+        "lane": 2,
+        "ballLane": 2,
+        "ballY": 27727,
+        "result": "perfect",
+        "points": 250,
+        "streak": 9
+      },
+      {
+        "tMs": 15100,
+        "lane": 1,
+        "ballLane": 1,
+        "ballY": 27807,
+        "result": "perfect",
+        "points": 250,
+        "streak": 10
+      },
+      {
+        "tMs": 16480,
+        "lane": 1,
+        "ballLane": 1,
+        "ballY": 28152,
+        "result": "perfect",
+        "points": 250,
+        "streak": 11
+      },
+      {
+        "tMs": 18030,
+        "lane": 2,
+        "ballLane": 2,
+        "ballY": 27377,
+        "result": "perfect",
+        "points": 250,
+        "streak": 12
+      },
+      {
+        "tMs": 19570,
+        "lane": 2,
+        "ballLane": 2,
+        "ballY": 27762,
+        "result": "perfect",
+        "points": 250,
+        "streak": 13
+      },
+      {
+        "tMs": 21150,
+        "lane": 1,
+        "ballLane": 1,
+        "ballY": 28631,
+        "result": "perfect",
+        "points": 250,
+        "streak": 14
+      },
+      {
+        "tMs": 22750,
+        "lane": 1,
+        "ballLane": 1,
+        "ballY": 27751,
+        "result": "perfect",
+        "points": 250,
+        "streak": 15
+      },
+      {
+        "tMs": 24210,
+        "lane": 1,
+        "ballLane": 1,
+        "ballY": 27861,
+        "result": "perfect",
+        "points": 350,
+        "streak": 16
+      },
+      {
+        "tMs": 25530,
+        "lane": 0,
+        "ballLane": 0,
+        "ballY": 28257,
+        "result": "perfect",
+        "points": 350,
+        "streak": 17
+      },
+      {
+        "tMs": 26930,
+        "lane": 1,
+        "ballLane": 1,
+        "ballY": 28397,
+        "result": "perfect",
+        "points": 250,
+        "streak": 18
+      },
+      {
+        "tMs": 28070,
+        "lane": 1,
+        "ballLane": 1,
+        "ballY": 27941,
+        "result": "perfect",
+        "points": 250,
+        "streak": 19
+      },
+      {
+        "tMs": 29330,
+        "lane": 1,
+        "ballLane": 1,
+        "ballY": 28067,
+        "result": "perfect",
+        "points": 350,
+        "streak": 20
+      },
+      {
+        "tMs": 30580,
+        "lane": 1,
+        "ballLane": 1,
+        "ballY": 28692,
+        "result": "perfect",
+        "points": 250,
+        "streak": 21
+      },
+      {
+        "tMs": 31780,
+        "lane": 1,
+        "ballLane": 1,
+        "ballY": 28692,
+        "result": "perfect",
+        "points": 250,
+        "streak": 22
+      },
+      {
+        "tMs": 32860,
+        "lane": 1,
+        "ballLane": 1,
+        "ballY": 28368,
+        "result": "perfect",
+        "points": 250,
+        "streak": 23
+      },
+      {
+        "tMs": 33950,
+        "lane": 2,
+        "ballLane": 2,
+        "ballY": 27387,
+        "result": "perfect",
+        "points": 250,
+        "streak": 24
+      },
+      {
+        "tMs": 35230,
+        "lane": 0,
+        "ballLane": 0,
+        "ballY": 28283,
+        "result": "perfect",
+        "points": 250,
+        "streak": 25
+      },
+      {
+        "tMs": 36400,
+        "lane": 1,
+        "ballLane": 1,
+        "ballY": 28280,
+        "result": "perfect",
+        "points": 250,
+        "streak": 26
+      },
+      {
+        "tMs": 37540,
+        "lane": 1,
+        "ballLane": 1,
+        "ballY": 27653,
+        "result": "perfect",
+        "points": 250,
+        "streak": 27
+      },
+      {
+        "tMs": 38750,
+        "lane": 2,
+        "ballLane": 2,
+        "ballY": 28500,
+        "result": "perfect",
+        "points": 350,
+        "streak": 28
+      },
+      {
+        "tMs": 39780,
+        "lane": 0,
+        "ballLane": 0,
+        "ballY": 27573,
+        "result": "perfect",
+        "points": 250,
+        "streak": 29
+      },
+      {
+        "tMs": 40760,
+        "lane": 2,
+        "ballLane": 2,
+        "ballY": 28308,
+        "result": "perfect",
+        "points": 250,
+        "streak": 30
+      },
+      {
+        "tMs": 41720,
+        "lane": 2,
+        "ballLane": 2,
+        "ballY": 27972,
+        "result": "perfect",
+        "points": 250,
+        "streak": 31
+      },
+      {
+        "tMs": 42830,
+        "lane": 2,
+        "ballLane": 2,
+        "ballY": 28416,
+        "result": "perfect",
+        "points": 250,
+        "streak": 32
+      },
+      {
+        "tMs": 44040,
+        "lane": 2,
+        "ballLane": 2,
+        "ballY": 28416,
+        "result": "perfect",
+        "points": 350,
+        "streak": 33
+      },
+      {
+        "tMs": 45140,
+        "lane": 2,
+        "ballLane": 2,
+        "ballY": 28251,
+        "result": "perfect",
+        "points": 350,
+        "streak": 34
+      },
+      {
+        "tMs": 46230,
+        "lane": 0,
+        "ballLane": 0,
+        "ballY": 28360,
+        "result": "perfect",
+        "points": 250,
+        "streak": 35
+      },
+      {
+        "tMs": 47230,
+        "lane": 2,
+        "ballLane": 2,
+        "ballY": 27610,
+        "result": "perfect",
+        "points": 350,
+        "streak": 36
+      },
+      {
+        "tMs": 48240,
+        "lane": 0,
+        "ballLane": 0,
+        "ballY": 27316,
+        "result": "perfect",
+        "points": 250,
+        "streak": 37
+      },
+      {
+        "tMs": 49210,
+        "lane": 1,
+        "ballLane": 1,
+        "ballY": 27995,
+        "result": "perfect",
+        "points": 250,
+        "streak": 38
+      },
+      {
+        "tMs": 50320,
+        "lane": 2,
+        "ballLane": 2,
+        "ballY": 27995,
+        "result": "perfect",
+        "points": 250,
+        "streak": 39
+      },
+      {
+        "tMs": 51390,
+        "lane": 2,
+        "ballLane": 2,
+        "ballY": 28744,
+        "result": "perfect",
+        "points": 250,
+        "streak": 40
+      },
+      {
+        "tMs": 52440,
+        "lane": 1,
+        "ballLane": 1,
+        "ballY": 27694,
+        "result": "perfect",
+        "points": 250,
+        "streak": 41
+      },
+      {
+        "tMs": 53480,
+        "lane": 0,
+        "ballLane": 0,
+        "ballY": 28734,
+        "result": "perfect",
+        "points": 250,
+        "streak": 42
+      },
+      {
+        "tMs": 54470,
+        "lane": 2,
+        "ballLane": 2,
+        "ballY": 28140,
+        "result": "perfect",
+        "points": 250,
+        "streak": 43
+      },
+      {
+        "tMs": 55470,
+        "lane": 2,
+        "ballLane": 2,
+        "ballY": 28340,
+        "result": "perfect",
+        "points": 250,
+        "streak": 44
+      },
+      {
+        "tMs": 56420,
+        "lane": 0,
+        "ballLane": 0,
+        "ballY": 27675,
+        "result": "perfect",
+        "points": 250,
+        "streak": 45
+      },
+      {
+        "tMs": 57460,
+        "lane": 0,
+        "ballLane": 0,
+        "ballY": 27467,
+        "result": "perfect",
+        "points": 350,
+        "streak": 46
+      },
+      {
+        "tMs": 58470,
+        "lane": 1,
+        "ballLane": 1,
+        "ballY": 28073,
+        "result": "perfect",
+        "points": 250,
+        "streak": 47
+      },
+      {
+        "tMs": 59570,
+        "lane": 2,
+        "ballLane": 2,
+        "ballY": 27193,
+        "result": "perfect",
+        "points": 350,
+        "streak": 48
+      }
+    ]
+  }
+}

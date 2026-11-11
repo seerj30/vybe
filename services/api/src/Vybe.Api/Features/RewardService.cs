@@ -20,7 +20,7 @@ public static class RewardService
     public sealed record RunReward(RewardsResponse Rewards, int? RunNumber);
 
     public static async Task<RunReward> GrantForRunAsync(
-        VybeDbContext db, GameSession session, StreetHoopsConfig config, int score, int eventCount, int maxStreak, DateTime now,
+        VybeDbContext db, GameSession session, IRewardConfig config, int score, int eventCount, int maxStreak, DateTime now,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(db);

@@ -39,6 +39,19 @@ export const routes: Routes = [
     data: { layout: "fullscreen", mode: "practice" },
   },
   {
+    path: "practice/street-juggle",
+    loadComponent: () => import("./street-juggle/street-juggle").then((m) => m.StreetJuggle),
+    title: "Street Juggle practice · VYBE",
+    data: { layout: "fullscreen", mode: "practice" },
+  },
+  {
+    path: "arcade/street-juggle",
+    canActivate: [requirePlayer],
+    loadComponent: () => import("./street-juggle/street-juggle").then((m) => m.StreetJuggle),
+    title: "Street Juggle · VYBE",
+    data: { layout: "fullscreen", mode: "online" },
+  },
+  {
     path: "arcade/street-hoops",
     canActivate: [requirePlayer],
     loadComponent: () => import("./street-hoops/street-hoops").then((m) => m.StreetHoops),

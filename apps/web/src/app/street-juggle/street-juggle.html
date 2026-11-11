@@ -1,0 +1,159 @@
+<div class="stage" #stage tabindex="-1">
+  <canvas
+    #street
+    aria-label="Street Juggle. A ball falls on one of three spots. Touch the spot when the ball is in the yellow band."
+    (contextmenu)="$event.preventDefault()"
+  ></canvas>
+
+  @if (phase() === "running") {
+    <div class="spots" role="group" aria-label="Spots">
+      @for (lane of lanes(); track lane) {
+        <button
+          type="button"
+          class="spot"
+          [attr.aria-label]="'Touch the ' + (laneNames[lane] ?? lane) + ' spot'"
+          (pointerdown)="onSpotPointerDown($event, lane)"
+          (click)="onSpotClick($event, lane)"
+          (contextmenu)="$event.preventDefault()"
+        ></button>
+      }
+    </div>
+  }
+
+  <header class="hud">
+    <div class="hud-item"><span class="hud-label">Time</span><span class="hud-value">{{ secondsLeft() }}</span></div>
+    <div class="hud-item"><span class="hud-label">Score</span><span class="hud-value">{{ score() }}</span></div>
+    <div class="hud-item"><span class="hud-label">Streak</span><span class="hud-value">{{ streak() }}</span></div>
+    <label class="motion-toggle">
+      <input type="checkbox" [checked]="reducedMotion()" (change)="reducedMotion.set(inputChecked($event))" />
+      Reduce motion
+    </label>
+  </header>
+
+  <p class="result" aria-live="polite" [attr.data-result]="lastTouch()?.result">
+    {{ notice() ?? lastTouchLabel() }}
+  </p>
+
+  @if (phase() !== "running") {
+    <section class="overlay" aria-labelledby="title">
+      <h1 id="title">Street Juggle</h1>
+      @switch (phase()) {
+        @case ("loading") {
+          <p>Loading and checking the ruleset…</p>
+        }
+        @case ("preparing") {
+          <p role="status">Starting your run…</p>
+        }
+        @case ("submitting") {
+          <p role="status">Checking your run with VYBE…</p>
+        }
+        @case ("error") {
+          <p class="error" role="alert">{{ error() }}</p>
+        }
+        @default {
+          @if (outcome(); as o) {
+            @switch (o.status) {
+              @case ("verified") {
+                <p class="verified" role="status">Run verified by VYBE</p>
+                <dl class="summary">
+                  <div><dt>Score</dt><dd>{{ o.score }}</dd></div>
+                  <div><dt>V-Coins</dt><dd>+{{ o.rewards.coins }}</dd></div>
+                  <div><dt>XP</dt><dd>+{{ o.rewards.xp }}</dd></div>
+                  <div><dt>Level</dt><dd>{{ o.rewards.levelAfter }}</dd></div>
+                </dl>
+                @if (o.rewards.noCoinsReason; as reason) {
+                  @if (ruleset(); as r) {
+                    <p class="help">{{ noCoinsText(reason, r.config) }}</p>
+                  }
+                }
+              }
+              @case ("rejected") {
+                <p class="error" role="alert">VYBE did not count this run: {{ rejectionText(o.reason) }}. No rewards.</p>
+              }
+              @case ("expired") {
+                <p class="error" role="alert">This run expired before VYBE received it. No rewards.</p>
+              }
+            }
+          } @else if (summary(); as s) {
+            @if (mode() === "online") {
+              <p class="help">Your score, not verified yet:</p>
+            }
+            <dl class="summary">
+              <div><dt>Score</dt><dd>{{ s.score }}</dd></div>
+              <div><dt>Kicks</dt><dd>{{ s.kickCount }}</dd></div>
+              <div><dt>Max streak</dt><dd>{{ s.maxStreak }}</dd></div>
+              <div><dt>Drops</dt><dd>{{ s.dropCount }}</dd></div>
+            </dl>
+          }
+          @if (onlineError(); as message) {
+            <p class="error" role="alert">{{ message }}</p>
+          }
+          <p class="help">
+            Keep the ball up. Touch the spot under the ball when it is in the yellow band: tap the left, centre or right
+            of the street, or press <kbd>←</kbd> <kbd>↓</kbd> <kbd>→</kbd> (or <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd>).
+            A touch on the wrong spot puts you off balance for a moment. Gold balls with a star give a bonus.
+          </p>
+          @if (canRetrySubmit()) {
+            <button type="button" class="start" (click)="retrySubmit()">Retry sending the run</button>
+          }
+          @if (challengeParams(); as params) {
+            <a class="start" routerLink="/challenges" [queryParams]="params">
+              {{ params["rematchOf"] ? "Send the rematch" : params["to"] ? "Challenge " + params["to"] + " with this run" : "Challenge a friend with this run" }}
+            </a>
+          }
+          @if (challenge() === undefined) {
+            <button type="button" class="start" (click)="start()" [disabled]="!canStart()">
+              {{ summary() ? "Play again" : "Start 60 s run" }}
+            </button>
+          } @else if (outcome() || summary()) {
+            <a class="start" routerLink="/challenges">See the challenge result</a>
+          } @else {
+            <p class="help">Challenge run: you get one run with the same balls as your opponent.</p>
+            <button type="button" class="start" (click)="start()" [disabled]="!canStart()">Start challenge run</button>
+          }
+          @if (mode() === "online") {
+            <a class="leave" routerLink="/arcade">Back to the arcade</a>
+          } @else {
+            <a class="leave" routerLink="/">Leave practice</a>
+          }
+        }
+      }
+    </section>
+  }
+</div>
+
+@if (devMode && mode() === "practice") {
+  <details class="tuning" [open]="panelOpen">
+    <summary>Tuning (dev)</summary>
+    @if (ruleset(); as r) {
+      <p class="note">{{ r.id }} · checksum verified · changes apply on the next run</p>
+      <div class="fields">
+        @for (key of tunableKeys; track key) {
+          <label>
+            <span>{{ key }}</span>
+            <input
+              type="number"
+              step="1"
+              inputmode="numeric"
+              [placeholder]="r.config[key]"
+              [value]="overrides()[key] ?? ''"
+              (input)="setOverride(key, $event)"
+            />
+          </label>
+        }
+        <label>
+          <span>seed (blank = random)</span>
+          <input type="text" inputmode="numeric" [value]="seedInput()" (input)="seedInput.set(inputValue($event))" />
+        </label>
+      </div>
+      @if (effective().problem; as problem) {
+        <p class="error" role="alert">{{ problem }}</p>
+      }
+      @if (seedProblem(); as problem) {
+        <p class="error" role="alert">{{ problem }}</p>
+      }
+      <p class="note">Last seed: {{ lastSeed() ?? "–" }}</p>
+      <button type="button" (click)="overrides.set({}); seedInput.set('')">Reset to fixture</button>
+    }
+  </details>
+}
