@@ -247,9 +247,13 @@ export class StreetJuggle implements OnInit {
     }
   }
 
-  /** A spot button: pointer down touches at once (no click delay). */
+  /**
+   * A spot button: pointer down touches at once (no click delay). Every finger counts: two-thumb play keeps one
+   * thumb down while the other taps, and that second touch is not primary. The cadence gate in touch() stops
+   * double fires.
+   */
   protected onSpotPointerDown(event: PointerEvent, lane: number): void {
-    if (!event.isPrimary) return;
+    if (!event.isPrimary && event.pointerType !== "touch") return;
     event.preventDefault();
     this.touch(lane);
   }
