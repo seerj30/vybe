@@ -13,7 +13,11 @@ public enum ProfileVisibility { Players, Private }
 /// <summary>Spec §17 decision 1: the self-declared age band of the age gate (the birth year is never stored).</summary>
 public enum AgeBand { Adult }
 
-public enum ItemSlot { Hair, Top, Bottom, Shoes, Accessory, Emote }
+/// <summary>
+/// Avatar slots (hair to emote) and the My Room slots (docs/design/p1-my-room.md): <c>furniture</c> and
+/// <c>wall_decor</c> are placed in the room, <c>room_wall</c> and <c>room_floor</c> are room finishes.
+/// </summary>
+public enum ItemSlot { Hair, Top, Bottom, Shoes, Accessory, Emote, Furniture, WallDecor, RoomWall, RoomFloor }
 
 public enum Rarity { Common, Rare, Epic }
 

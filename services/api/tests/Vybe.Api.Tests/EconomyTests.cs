@@ -112,8 +112,9 @@ public sealed class EconomyTests(ApiFactory api)
         }
         while (cursor is not null);
 
-        var priced = new ContentCatalog(new ContentOptions { Root = ApiFactory.RepoRoot }).Catalog.Items.Count(i => !i.Starter);
-        Assert.Equal(priced, seen.Count); // every catalog item except the free starters
+        var content = new ContentCatalog(new ContentOptions { Root = ApiFactory.RepoRoot });
+        var priced = content.Catalog.Items.Count(i => !i.Starter) + content.Room.Items.Length;
+        Assert.Equal(priced, seen.Count); // every catalog item except the free starters, and every room item
         Assert.Equal(seen.Count, seen.Distinct().Count());
         await Contract.AssertProblemAsync(
             await anonymous.GetAsync("/api/v1/catalog/items?slot=cape"), HttpStatusCode.UnprocessableEntity, "validation_failed");

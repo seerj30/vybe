@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import math
 import os
 import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from vybe_art import body, catalog, geom, rig  # noqa: E402
+from vybe_art import body, catalog, geom, rig, room  # noqa: E402
 
 
 def outward(mesh: geom.Mesh) -> float:
@@ -60,6 +61,46 @@ class GeometryTests(unittest.TestCase):
         for b in rig.BONES:
             self.assertTrue(b.parent is None or b.parent in names, b.name)
             names.add(b.name)
+
+
+
+class RoomGeometryTests(unittest.TestCase):
+    def bounds(self, m: geom.Mesh) -> tuple:
+        xs, ys, zs = zip(*m.verts)
+        return min(xs), max(xs), min(ys), max(ys), min(zs), max(zs)
+
+    def test_room_items_stay_inside_their_footprint(self) -> None:
+        for a in room.ROOM_ASSETS:
+            if a.footprint is None:
+                continue
+            x0, x1, y0, y1, z0, z1 = self.bounds(a.build())
+            w = a.footprint[0] * room.CELL / 2 + 0.02
+            self.assertTrue(-w <= x0 and x1 <= w, a.id)
+            if a.slot == "furniture":
+                d = a.footprint[1] * room.CELL / 2 + 0.02
+                self.assertTrue(-d <= y0 and y1 <= d and z0 >= -0.02 and z1 <= 2.4, a.id)
+            else:
+                self.assertTrue(-0.3 <= y0 and y1 <= 0.02 and z0 >= -0.02 and z1 <= a.footprint[1] * room.CELL + 0.02, a.id)
+
+    def test_every_room_item_has_a_known_asset_and_a_unique_sku(self) -> None:
+        skus = [i.sku for i in room.ROOM_ITEMS] + [i.sku for i in catalog.ITEMS]
+        self.assertEqual(len(skus), len(set(skus)))
+        for item in room.ROOM_ITEMS:
+            self.assertIn(item.asset, room.ROOM_ASSET_BY_ID, item.sku)
+
+    def test_rotation_swaps_the_footprint_and_keeps_the_center_on_its_cells(self) -> None:
+        self.assertEqual(room.rotated((4, 2), 90), (2, 4))
+        self.assertEqual(room.rotated((4, 2), 180), (4, 2))
+        (x, y, _z), r = room.place_floor(0, 0, (4, 2), 90)
+        self.assertAlmostEqual(x, -2 + 0.5)  # 2 cells wide after the turn
+        self.assertAlmostEqual(y, 2 - 1.0)  # 4 cells deep, from the back wall
+        self.assertAlmostEqual(r, math.pi / 2)
+
+    def test_left_wall_items_face_into_the_room(self) -> None:
+        (x, y, z), r = room.place_wall("wall_left", 0, 2, (2, 2))
+        self.assertEqual((x, z), (-room.HALF, 1.0))
+        self.assertAlmostEqual(y, room.HALF - 0.5)  # column 0 starts at the back
+        self.assertAlmostEqual(r, math.pi / 2)
 
 
 if __name__ == "__main__":

@@ -49,6 +49,11 @@ public static class PlayerDataExport
                 .ToListAsync(cancellationToken),
             outfits = (await db.SavedOutfits.AsNoTracking().Where(o => o.PlayerId == playerId).OrderBy(o => o.Slot).ToListAsync(cancellationToken))
                 .Select(o => new { o.Id, o.Name, equipped = Equipped.FromJson(o.EquippedJson), o.CreatedAt, o.UpdatedAt }),
+            room = await db.PlayerRooms.AsNoTracking().Where(r => r.PlayerId == playerId)
+                .Select(r => new { r.WallItemId, r.FloorItemId, r.LayoutJson, r.UpdatedAt })
+                .SingleOrDefaultAsync(cancellationToken) is { } room
+                ? new { room.WallItemId, room.FloorItemId, items = RoomLayout.Parse(room.LayoutJson), room.UpdatedAt }
+                : null,
             wallet = new { wallet.Balance },
             ledger = await db.WalletTransactions.AsNoTracking().Where(t => t.PlayerId == playerId).OrderBy(t => t.CreatedAt)
                 .Select(t => new { t.Id, t.Delta, t.BalanceAfter, t.Reason, t.ReferenceType, t.ReferenceId, t.CreatedAt })

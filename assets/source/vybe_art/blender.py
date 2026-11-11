@@ -122,6 +122,27 @@ def mesh_object(
     return obj
 
 
+def static_object(mesh: Mesh, materials: Dict[str, Material], name: Optional[str] = None) -> bpy.types.Object:
+    """A plain (not skinned) object from a geom.Mesh: room items have no rig."""
+    me = bpy.data.meshes.new(name or mesh.name)
+    me.from_pydata(mesh.verts, [], mesh.faces)
+    names = mesh.materials()
+    for n in names:
+        me.materials.append(material(materials[n]))
+    index = {n: i for i, n in enumerate(names)}
+    for poly, mat_name in zip(me.polygons, mesh.mats):
+        poly.material_index = index[mat_name]
+        poly.use_smooth = False
+    obj = bpy.data.objects.new(name or mesh.name, me)
+    bpy.context.scene.collection.objects.link(obj)
+    return obj
+
+
+def place(obj: bpy.types.Object, location: Sequence[float], z_rotation: float) -> None:
+    obj.location = location
+    obj.rotation_euler = (0.0, 0.0, z_rotation)
+
+
 # ---------------------------------------------------------------- animation
 
 
@@ -261,11 +282,13 @@ def recolor(obj: bpy.types.Object, colors: Dict[str, str]) -> None:
             slot.material = copy
 
 
-def render_thumbnail(path: str, objects: Iterable[bpy.types.Object], size: int = 256, yaw: float = -28.0) -> None:
+def render_thumbnail(path: str, objects: Iterable[bpy.types.Object], size: int = 256, yaw: float = -28.0,
+                     pitch: float = -12.0, line: float = 1.4) -> None:
     """Orthographic three-quarter view of the given (posed) objects on a transparent background."""
     objs = list(objects)
+    bpy.context.view_layer.update()
     depsgraph = bpy.context.evaluated_depsgraph_get()
-    rot = Matrix.Rotation(math.radians(yaw), 4, "Z") @ Matrix.Rotation(math.radians(-12), 4, "X")
+    rot = Matrix.Rotation(math.radians(yaw), 4, "Z") @ Matrix.Rotation(math.radians(pitch), 4, "X")
     inv = rot.inverted()
     lo = Vector((1e9, 1e9, 1e9))
     hi = Vector((-1e9, -1e9, -1e9))
@@ -307,7 +330,7 @@ def render_thumbnail(path: str, objects: Iterable[bpy.types.Object], size: int =
     scene.render.threads = 1
     scene.render.use_freestyle = True
     scene.render.line_thickness_mode = "ABSOLUTE"
-    scene.render.line_thickness = 1.4
+    scene.render.line_thickness = line
     lineset = scene.view_layers[0].freestyle_settings.linesets
     if len(lineset) == 0:
         lineset.new("outline")

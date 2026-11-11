@@ -35,6 +35,8 @@ tags:
     description: Inventory, equipment and saved outfits.
   - name: wallet
     description: V-Coin ledger.
+  - name: rooms
+    description: My Room layouts (docs/design/p1-my-room.md).
   - name: gameplay
     description: Rulesets and game sessions.
   - name: challenges
@@ -693,6 +695,15 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/ItemSlot"
+        - name: category
+          in: query
+          required: false
+          description: |
+            `room`: room items (slots `furniture`, `wall_decor`, `room_wall`, `room_floor`).
+            `avatar`: every other slot. Combines with `slot`.
+          schema:
+            type: string
+            enum: [avatar, room]
         - $ref: "#/components/parameters/Cursor"
         - name: limit
           in: query
@@ -781,7 +792,9 @@ paths:
       summary: Equip or unequip one slot
       description: |
         `itemId: null` unequips the slot. `attachIndex` (0 or 1) is required when
-        `slot = accessory` and forbidden otherwise (422 `validation_failed`).
+        `slot = accessory` and forbidden otherwise (422 `validation_failed`). A room slot
+        (`furniture`, `wall_decor`, `room_wall`, `room_floor`) is never worn: 422 `validation_failed`
+        (room items are placed with `PUT /me/room`).
       x-problem-codes:
         "403": [item_not_owned]
         "409": [revision_conflict]
@@ -936,6 +949,110 @@ paths:
           $ref: "#/components/responses/Problem"
 
   # ------------------------------------------------------------------ wallet
+  # ------------------------------------------------------------------ rooms
+  /me/room:
+    get:
+      tags: [rooms]
+      operationId: getMyRoom
+      summary: Get the own room
+      description: A player who never saved a room gets the empty default room (revision 0).
+      responses:
+        "200":
+          description: The room.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+    put:
+      tags: [rooms]
+      operationId: saveMyRoom
+      summary: Save the whole room layout
+      description: |
+        Replaces the finishes and all placements, all or nothing. The server checks ownership,
+        slots, surfaces, bounds, overlaps and the item limit with the footprints of the room
+        manifest (docs/design/p1-my-room.md); it never trusts the client layout.
+        Idempotent: a layout equal to the stored room returns it unchanged, also with an old
+        `expectedRevision`. Another layout with an old revision gets 409 `revision_conflict`.
+        Problems about one item carry `itemId`.
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+      x-problem-codes:
+        "403": [item_not_owned, account_suspended]
+        "409": [revision_conflict]
+        "422": [validation_failed, room_item_limit, incompatible_item, item_inactive, placement_out_of_bounds, placement_overlap]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoomLayoutRequest"
+      responses:
+        "200":
+          description: The room now stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableContent"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /profiles/{handle}/room:
+    get:
+      tags: [rooms]
+      operationId: getProfileRoom
+      summary: Get another player's room
+      description: |
+        The visibility rules of `getProfile` (spec §17 decision 6): anonymous callers, unknown,
+        deleting or deleted handles and private profiles of other players get the same 404
+        `not_found`. A block in either direction gives the empty default room (not a 404), so
+        the answer does not tell the caller about the block. `revision` is always 0 and
+        `updatedAt` always null here: they belong to the owner (`getMyRoom`), and without them an
+        emptied room, a never-decorated room and a room that a block hides look the same.
+        Every response carries `Cache-Control: private, no-store` and `X-Robots-Tag: noindex`.
+      security:
+        - {}
+        - bearerAuth: []
+        - guestCookie: []
+      parameters:
+        - $ref: "#/components/parameters/HandlePath"
+      responses:
+        "200":
+          description: The room (or the empty default room).
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlPrivate"
+            X-Robots-Tag:
+              $ref: "#/components/headers/RobotsNoIndex"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
+        "404":
+          description: Not found, not visible to the caller, or an anonymous caller.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlPrivate"
+            X-Robots-Tag:
+              $ref: "#/components/headers/RobotsNoIndex"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
   /me/wallet/transactions:
     get:
       tags: [wallet]
@@ -2154,6 +2271,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Uuid"
+        itemId:
+          description: The refused item of a room save (`item_not_owned`, `incompatible_item`, `item_inactive`, `placement_*`).
+          $ref: "#/components/schemas/Uuid"
     FieldError:
       type: object
       required: [field, code]
@@ -2215,6 +2335,10 @@ components:
         - item_already_equipped
         - outfit_limit_reached
         - outfit_items_invalid
+        # rooms
+        - room_item_limit
+        - placement_out_of_bounds
+        - placement_overlap
         # gameplay
         - session_expired
         # challenges
@@ -2642,7 +2766,10 @@ components:
     # ---------------------------------------------------------------- catalog
     ItemSlot:
       type: string
-      enum: [hair, top, bottom, shoes, accessory, emote]
+      description: |
+        Avatar slots (`hair` to `emote`) and room slots: `furniture` (floor), `wall_decor` (walls),
+        `room_wall` and `room_floor` (finishes). Room items are never worn.
+      enum: [hair, top, bottom, shoes, accessory, emote, furniture, wall_decor, room_wall, room_floor]
     Rarity:
       type: string
       enum: [common, rare, epic]
@@ -2811,6 +2938,97 @@ components:
           $ref: "#/components/schemas/Revision"
 
     # ---------------------------------------------------------------- wallet
+    RoomSurface:
+      type: string
+      enum: [floor, wall_back, wall_left]
+    RoomRotation:
+      type: integer
+      description: Degrees around the vertical axis; wall items always 0.
+      enum: [0, 90, 180, 270]
+    RoomCell:
+      type: integer
+      description: Grid cell of the footprint corner with the smallest x and y (floor 8 × 8, wall 8 columns × 5 rows).
+      minimum: 0
+      maximum: 7
+    RoomItemRef:
+      type: object
+      required: [itemId, sku]
+      properties:
+        itemId:
+          $ref: "#/components/schemas/Uuid"
+        sku:
+          type: string
+    RoomPlacement:
+      type: object
+      required: [itemId, sku, surface, x, y, rotation]
+      properties:
+        itemId:
+          $ref: "#/components/schemas/Uuid"
+        sku:
+          type: string
+          description: Finds the art in assets/manifests/room.v1.json.
+        surface:
+          $ref: "#/components/schemas/RoomSurface"
+        x:
+          $ref: "#/components/schemas/RoomCell"
+        y:
+          $ref: "#/components/schemas/RoomCell"
+        rotation:
+          $ref: "#/components/schemas/RoomRotation"
+    Room:
+      type: object
+      required: [revision, wallItem, floorItem, items, updatedAt]
+      properties:
+        revision:
+          $ref: "#/components/schemas/Revision"
+        wallItem:
+          description: Wall finish; null = the default walls.
+          oneOf:
+            - $ref: "#/components/schemas/RoomItemRef"
+            - type: "null"
+        floorItem:
+          description: Floor finish; null = the default floor.
+          oneOf:
+            - $ref: "#/components/schemas/RoomItemRef"
+            - type: "null"
+        items:
+          type: array
+          maxItems: 40
+          items:
+            $ref: "#/components/schemas/RoomPlacement"
+        updatedAt:
+          $ref: "#/components/schemas/NullableTimestamp"
+    RoomPlacementInput:
+      type: object
+      required: [itemId, surface, x, y, rotation]
+      additionalProperties: false
+      properties:
+        itemId:
+          $ref: "#/components/schemas/Uuid"
+        surface:
+          $ref: "#/components/schemas/RoomSurface"
+        x:
+          type: integer
+        y:
+          type: integer
+        rotation:
+          $ref: "#/components/schemas/RoomRotation"
+    RoomLayoutRequest:
+      type: object
+      required: [expectedRevision, wallItemId, floorItemId, items]
+      additionalProperties: false
+      properties:
+        expectedRevision:
+          $ref: "#/components/schemas/Revision"
+        wallItemId:
+          $ref: "#/components/schemas/NullableUuid"
+        floorItemId:
+          $ref: "#/components/schemas/NullableUuid"
+        items:
+          type: array
+          description: At most 40 (more → 422 `room_item_limit`); each item once.
+          items:
+            $ref: "#/components/schemas/RoomPlacementInput"
     LedgerReason:
       type: string
       enum: [game_reward, quest_reward, purchase, level_reward, challenge_reward, admin_adjustment]

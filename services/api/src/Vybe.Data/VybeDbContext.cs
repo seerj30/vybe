@@ -16,6 +16,7 @@ public sealed class VybeDbContext(DbContextOptions<VybeDbContext> options) : DbC
     public DbSet<CatalogItem> CatalogItems => Set<CatalogItem>();
     public DbSet<PlayerInventoryItem> PlayerInventory => Set<PlayerInventoryItem>();
     public DbSet<SavedOutfit> SavedOutfits => Set<SavedOutfit>();
+    public DbSet<PlayerRoom> PlayerRooms => Set<PlayerRoom>();
     public DbSet<Wallet> Wallets => Set<Wallet>();
     public DbSet<WalletTransaction> WalletTransactions => Set<WalletTransaction>();
     public DbSet<GameRuleset> GameRulesets => Set<GameRuleset>();

@@ -87,7 +87,9 @@ export class ApiClient {
     return this.data("PUT", "/me/avatar", { body });
   }
 
-  listCatalog(query: { slot?: Schemas["ItemSlot"]; cursor?: string; limit?: number } = {}): Promise<Schemas["CatalogPage"]> {
+  listCatalog(
+    query: { slot?: Schemas["ItemSlot"]; category?: "avatar" | "room"; cursor?: string; limit?: number } = {},
+  ): Promise<Schemas["CatalogPage"]> {
     return this.data("GET", "/catalog/items", { query });
   }
 
@@ -101,6 +103,19 @@ export class ApiClient {
 
   equip(body: Schemas["EquipRequest"]): Promise<Schemas["EquipmentUpdated"]> {
     return this.data("POST", "/me/equipment", { body });
+  }
+
+  getMyRoom(): Promise<Schemas["Room"]> {
+    return this.data("GET", "/me/room");
+  }
+
+  /** Replaces the whole room (docs/design/p1-my-room.md); a retry of the same layout is safe. */
+  saveMyRoom(body: Schemas["RoomLayoutRequest"]): Promise<Schemas["Room"]> {
+    return this.data("PUT", "/me/room", { body });
+  }
+
+  getProfileRoom(handle: string): Promise<Schemas["Room"]> {
+    return this.data("GET", `/profiles/${segment(handle)}/room`);
   }
 
   listWalletTransactions(query: { cursor?: string; limit?: number } = {}): Promise<Schemas["LedgerPage"]> {

@@ -23,7 +23,9 @@ import publish  # noqa: E402
 REPO = os.path.dirname(os.path.dirname(HERE))
 
 
-class CheckerTests(unittest.TestCase):
+class ManifestCase(unittest.TestCase):
+    """A copy of the manifests (and a link to the published files) that a test can change."""
+
     def setUp(self) -> None:
         self.tmp = tempfile.mkdtemp(prefix="vybe-assets-")
         os.makedirs(os.path.join(self.tmp, "assets"))
@@ -51,6 +53,9 @@ class CheckerTests(unittest.TestCase):
         errors = self.errors()
         self.assertTrue(any(fragment in e for e in errors), f"no error with {fragment!r} in {errors}")
 
+
+
+class CheckerTests(ManifestCase):
     def test_repository_assets_pass(self) -> None:
         self.assertEqual(check_assets.Checker(REPO).run(), [])
 
@@ -110,6 +115,73 @@ class CheckerTests(unittest.TestCase):
     def test_mutable_url_fails(self) -> None:
         self.edit("catalog.v1.json", lambda d: self.item(d, "shoes_runners").update(assetUrl="/assets/3d/items/runners.glb"))
         self.assert_error("is not an immutable")
+
+
+class RoomCheckerTests(ManifestCase):
+    """My Room manifest (docs/design/p1-my-room.md)."""
+
+    def room_item(self, doc: Dict[str, Any], sku: str) -> Dict[str, Any]:
+        return next(i for i in doc["items"] if i["sku"] == sku)
+
+    def edit_room(self, change: Callable[[Dict[str, Any]], None]) -> None:
+        self.edit("room.v1.json", change)
+
+    def test_footprint_smaller_than_the_mesh_fails(self) -> None:
+        self.edit_room(lambda d: self.room_item(d, "furn_sofa")["footprint"].update(w=2))
+        self.assert_error("furn_sofa: mesh x")
+
+    def test_wall_item_higher_than_its_rows_fails(self) -> None:
+        self.edit_room(lambda d: self.room_item(d, "decor_hoops_poster")["footprint"].update(h=1))
+        self.assert_error("decor_hoops_poster: mesh y")
+
+    def test_wrong_surface_fails(self) -> None:
+        self.edit_room(lambda d: self.room_item(d, "decor_wall_clock").update(surfaces=["floor"]))
+        self.assert_error("decor_wall_clock: surfaces ['floor'] must be")
+
+    def test_furniture_needs_a_layer(self) -> None:
+        self.edit_room(lambda d: self.room_item(d, "furn_round_rug").pop("layer"))
+        self.assert_error("furn_round_rug: a furniture item needs layer")
+
+    def test_finish_must_replace_its_shell_node(self) -> None:
+        self.edit_room(lambda d: self.room_item(d, "walls_brick").update(replaces="floor"))
+        self.assert_error("walls_brick: a room_wall finish must replace the shell node walls")
+
+    def test_room_price_outside_band_fails(self) -> None:
+        self.edit_room(lambda d: self.room_item(d, "furn_hoops_arcade").update(price=900))
+        self.assert_error("furn_hoops_arcade: epic price 900")
+
+    def test_room_sku_must_not_repeat_an_avatar_sku(self) -> None:
+        self.edit_room(lambda d: self.room_item(d, "furn_beanbag").update(sku="top_court_jersey"))
+        self.assert_error("duplicate sku (room and avatar skus share one catalog)")
+
+    def test_item_budget_fails(self) -> None:
+        self.edit_room(lambda d: d["budgets"].update(itemTriangles=100, itemDrawCalls=2))
+        self.assert_error("a room item may have 100")
+        self.assert_error("draw calls; a room item may have 2")
+
+    def test_worst_case_room_budget_fails(self) -> None:
+        self.edit_room(lambda d: d["budgets"].update(roomTriangles=1000, roomDrawCalls=10, roomDownloadBytes=1000))
+        self.assert_error("worst-case room has")
+        self.assert_error("worst-case room needs")
+        self.assert_error("worst-case room download")
+
+    def test_shell_budget_and_wrong_counts_fail(self) -> None:
+        def change(d: Dict[str, Any]) -> None:
+            d["budgets"]["shellDownloadBytes"] = 100
+            self.room_item(d, "furn_desk")["drawCalls"] += 1
+
+        self.edit_room(change)
+        self.assert_error("shell download")
+        self.assert_error("furn_desk: triangles, drawCalls or textureBytes do not match")
+
+    def test_mutable_room_url_fails(self) -> None:
+        self.edit_room(lambda d: self.room_item(d, "furn_bed").update(assetUrl="/assets/3d/room/bed.glb"))
+        self.assert_error("is not an immutable")
+
+    def test_missing_room_manifest_fails(self) -> None:
+        os.remove(os.path.join(self.tmp, "assets", "manifests", "room.v1.json"))
+        with self.assertRaises(FileNotFoundError):
+            self.errors()
 
 
 class GlbTests(unittest.TestCase):
