@@ -42,8 +42,11 @@ test("touch: a tap in the 3D room moves the selected item there", async ({ page 
   await page.getByRole("button", { name: "Place Beanbag" }).click();
   await expect(placedList(page).getByRole("button", { name: /Beanbag: floor, column 1, row 1/ })).toBeVisible();
 
-  // The lower middle of the view is the front half of the floor.
-  const box = await roomViewport(page).locator("canvas").boundingBox();
+  // The lower middle of the view is the front half of the floor. The "Place" click scrolls the page to its button,
+  // which can move the canvas off the top of the screen; a tap outside the viewport hits nothing.
+  const canvas = roomViewport(page).locator("canvas");
+  await canvas.scrollIntoViewIfNeeded();
+  const box = await canvas.boundingBox();
   if (box === null) throw new Error("The room canvas has no layout box");
   await page.touchscreen.tap(box.x + box.width * 0.5, box.y + box.height * 0.72);
   await expect(placedList(page).getByRole("button", { name: /Beanbag: floor, column/ })).not.toHaveAccessibleName(/column 1, row 1/);
