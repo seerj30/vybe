@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../api/api-client";
 import { FakeHub } from "./fake-hub";
-import { type Clock, type HubLike, PlazaClient, type PlazaEvents, type PlazaStatus, TicketRefused, ticketSource } from "./plaza-client";
+import { type Clock, type HubLike, JOIN_TIMEOUT_MS, PlazaClient, type PlazaEvents, type PlazaStatus, TicketRefused, ticketSource } from "./plaza-client";
 import { MANIFEST_VERSION, type Welcome } from "./protocol";
 
 const look = {
@@ -169,6 +169,42 @@ describe("plaza client", () => {
     expect(hubs).toHaveLength(3);
     expect(kinds().at(-1)).toBe("joined");
     expect(welcomes).toHaveLength(2);
+  });
+
+  it("drops snapshot positions outside the Welcome bounds", async () => {
+    const { client, hubs, log } = setup([{ join: () => Promise.resolve({ ...WELCOME, bounds: { minX: -500, maxX: 500, minZ: -500, maxZ: 500 } }) }]);
+    client.connect();
+    await flush();
+    hubs[0]!.push("snapshot", 1, [0, 400, 0, 0, 0, 1, 900, 0, 0, 0]);
+    expect(log).toEqual(["snapshot 1 1"]);
+  });
+
+  it("a drop during Join starts one retry, at once", async () => {
+    let rejectJoin: (error: Error) => void = () => undefined;
+    const { client, hubs, kinds, clock } = setup([{ join: () => new Promise((_, reject) => (rejectJoin = reject)) }, {}]);
+    client.connect();
+    await flush();
+    hubs[0]!.close?.(new Error("lost"));
+    rejectJoin(new Error("connection closed"));
+    await flush();
+    expect(kinds()).toEqual(["connecting", "reconnecting"]);
+    await clock.advance(0);
+    expect(hubs).toHaveLength(2);
+    expect(kinds().at(-1)).toBe("joined");
+  });
+
+  it("a Join without an answer times out and reconnects", async () => {
+    const { client, hubs, kinds, clock } = setup([{ join: () => new Promise(() => undefined) }, {}]);
+    client.connect();
+    await flush();
+    await clock.advance(JOIN_TIMEOUT_MS - 1);
+    expect(kinds()).toEqual(["connecting"]);
+    await clock.advance(1);
+    expect(hubs[0]!.stopped).toBe(true);
+    expect(kinds().at(-1)).toBe("reconnecting");
+    await clock.advance(0);
+    expect(hubs).toHaveLength(2);
+    expect(kinds().at(-1)).toBe("joined");
   });
 
   it("gives up after 5 minutes and shows a retry", async () => {

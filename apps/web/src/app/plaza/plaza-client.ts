@@ -1,6 +1,8 @@
 import { ApiError } from "../api/api-client";
 import { errorMessage } from "../api/messages";
 import {
+  type Bounds,
+  DEFAULT_BOUNDS,
   type HubErrorCode,
   type JoinErrorCode,
   type KickReason,
@@ -38,6 +40,16 @@ export interface HubLike {
 }
 
 export type HubFactory = () => HubLike;
+
+/** `Join` without an answer for this long: drop the connection and reconnect (§8 backoff). */
+export const JOIN_TIMEOUT_MS = 12_000;
+
+class JoinTimeout extends Error {
+  constructor() {
+    super("join_timeout");
+    this.name = "JoinTimeout";
+  }
+}
 
 export type PlazaStatus =
   | { kind: "connecting" }
@@ -107,6 +119,8 @@ export class PlazaClient {
   private attempt = 0;
   private lostAt: number | null = null;
   private disposed = false;
+  /** The instance bounds of the last Welcome: snapshot positions outside them are dropped. */
+  private bounds: Bounds = DEFAULT_BOUNDS;
 
   constructor(
     private readonly factory: HubFactory,
@@ -190,7 +204,7 @@ export class PlazaClient {
     }
     let welcome: Welcome | null;
     try {
-      welcome = parseWelcome(await hub.invoke("Join"));
+      welcome = parseWelcome(await this.withTimeout(hub.invoke("Join"), JOIN_TIMEOUT_MS));
     } catch (error: unknown) {
       if (generation !== this.generation) return;
       this.joinFailed(hub, joinErrorCode(error));
@@ -214,7 +228,7 @@ export class PlazaClient {
         if (generation === this.generation && !this.disposed) handler(...args);
       });
     on("snapshot", (tick, avatars) => {
-      const snapshot = decodeSnapshot(tick, avatars);
+      const snapshot = decodeSnapshot(tick, avatars, this.bounds);
       if (snapshot !== null) this.events.snapshot(snapshot);
     });
     on("joined", (raw) => {
@@ -250,7 +264,9 @@ export class PlazaClient {
     hub.onclose(() => {
       if (generation !== this.generation || this.disposed) return;
       this.hub = null;
-      // Lost without a kick (§8): automatic reconnect with backoff.
+      // Lost without a kick (§8): automatic reconnect with backoff. A new generation: a `Join` still waiting on
+      // this connection must not start a second retry when it rejects.
+      this.generation++;
       if (this.status.kind === "joined" || this.status.kind === "connecting") {
         this.lostAt = this.clock.now();
         this.attempt = 0;
@@ -261,7 +277,10 @@ export class PlazaClient {
 
   /** Checks the versions (§12); a mismatch stops the client and asks for a reload. */
   private accept(welcome: Welcome): boolean {
-    if (welcome.protocolVersion === PROTOCOL_VERSION && welcome.manifestVersion === MANIFEST_VERSION) return true;
+    if (welcome.protocolVersion === PROTOCOL_VERSION && welcome.manifestVersion === MANIFEST_VERSION) {
+      this.bounds = welcome.bounds;
+      return true;
+    }
     this.generation++;
     const hub = this.hub;
     this.hub = null;
@@ -345,6 +364,23 @@ export class PlazaClient {
     if (hub === null || this.status.kind !== "joined") return;
     // A failed send means the socket is closing; `onclose` starts the reconnect, so nothing to do here.
     void hub.send(method, ...args).catch(() => undefined);
+  }
+
+  /** Rejects with `JoinTimeout` when `promise` does not settle in `ms` (the clock's timer, so tests control it). */
+  private withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = this.clock.setTimeout(() => reject(new JoinTimeout()), ms);
+      promise.then(
+        (value) => {
+          this.clock.clearTimeout(timer);
+          resolve(value);
+        },
+        (error: unknown) => {
+          this.clock.clearTimeout(timer);
+          reject(error);
+        },
+      );
+    });
   }
 
   private stopHub(hub: HubLike): void {

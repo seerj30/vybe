@@ -1,12 +1,13 @@
 import { HttpTransportType, HubConnectionBuilder, LogLevel } from "@microsoft/signalr";
 import { MessagePackHubProtocol } from "@microsoft/signalr-protocol-msgpack";
+import type { Schemas } from "@vybe/contracts";
 import type { ApiClient } from "../api/api-client";
 import type { HubFactory, HubLike } from "./plaza-client";
 import { HUB_URL } from "./protocol";
 
 /** `POST /api/v1/spaces/tickets` (protocol §2): a one-time hub ticket through the typed client (cookie, CSRF). */
 export async function createSpaceTicket(api: ApiClient): Promise<string> {
-  const { data } = await api.request<{ ticket: string; expiresAt: string }>("POST", "/spaces/tickets");
+  const { data } = await api.request<Schemas["SpaceTicket"]>("POST", "/spaces/tickets");
   if (typeof data?.ticket !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(data.ticket)) throw new Error("unexpected ticket");
   return data.ticket;
 }

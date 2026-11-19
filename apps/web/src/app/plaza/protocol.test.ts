@@ -80,6 +80,11 @@ describe("welcome and member parsing", () => {
     expect(parseWelcome(null)).toBeNull();
   });
 
+  it("refuses a welcome without the own member", () => {
+    expect(parseWelcome({ ...welcome, slot: 7 })).toBeNull();
+    expect(parseWelcome({ ...welcome, members: welcome.members.filter((m) => m.slot !== 2) })).toBeNull();
+  });
+
   it("refuses looks with markup or wrong shapes", () => {
     expect(parseLook(look)).not.toBeNull();
     expect(parseLook({ ...look, skinToneId: "<img>" })).toBeNull();

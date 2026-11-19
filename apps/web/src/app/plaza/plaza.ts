@@ -13,7 +13,7 @@ import {
 import { ActivatedRoute, Router, RouterLink } from "@angular/router";
 import { API } from "../api/api";
 import { AVATAR_3D, itemAsset } from "../avatar/asset-manifest";
-import { MoveSender, STOP, directionOf, intentFromJoystick, intentFromKeys } from "./input";
+import { type Intent, MoveSender, STOP, directionOf, intentFromJoystick, intentFromKeys } from "./input";
 import { Interpolator, type Pose, Predictor } from "./interpolation";
 import { type HubFactory, PlazaClient, type PlazaEvents, type PlazaStatus, TicketRefused, ticketSource } from "./plaza-client";
 import { avatarLook } from "./plaza-look";
@@ -65,6 +65,8 @@ const FEED_LIMIT = 40;
 const ECHO_MS = 3_000;
 const JOYSTICK_RADIUS = 44;
 const TOAST_MS = 4_000;
+/** The connection code (a lazy chunk) did not load: "Try again" loads it again. */
+const LOAD_FAILED: PlazaStatus = { kind: "failed", message: "The plaza did not load. Check your connection and try again.", retry: true, leave: false };
 
 const WEBGL_TEXT = "3D is not available on this device, so the plaza shows as a list.";
 const LOST_TEXT = "The 3D view stopped, so the plaza shows as a list until it restarts.";
@@ -84,6 +86,7 @@ const LOST_TEXT = "The 3D view stopped, so the plaza shows as a list until it re
     "[attr.data-avatars]": "stats()?.avatars",
     "[attr.data-draw-calls]": "stats()?.drawCalls",
     "[attr.data-triangles]": "stats()?.triangles",
+    "[attr.data-moving]": "moving()",
     "(window:keydown)": "keyDown($event)",
     "(window:keyup)": "keyUp($event)",
     "(window:blur)": "releaseKeys()",
@@ -180,6 +183,7 @@ const LOST_TEXT = "The 3D view stopped, so the plaza shows as a list until it re
             (pointermove)="stickMove($event)"
             (pointerup)="stickEnd($event)"
             (pointercancel)="stickEnd($event)"
+            (lostpointercapture)="stickEnd($event)"
           >
             <span class="knob" [style.transform]="knobTransform()"></span>
           </div>
@@ -365,6 +369,8 @@ export class Plaza {
   private readonly cooling = signal<ReadonlySet<Expression>>(new Set());
   protected readonly touch = signal(false);
   protected readonly knob = signal({ x: 0, y: 0 });
+  /** True while the last intent sent to the server moves the avatar (also a test hook: `data-moving`). */
+  protected readonly moving = signal(false);
   protected readonly stats = signal<PlazaStats | null>(null, {
     equal: (a, b) => a?.drawCalls === b?.drawCalls && a?.triangles === b?.triangles && a?.avatars === b?.avatars,
   });
@@ -399,7 +405,10 @@ export class Plaza {
   private readonly reducedMotion = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
   private readonly interpolator = new Interpolator();
   private readonly predictor = new Predictor(DEFAULT_BOUNDS, DEFAULT_SPEED_CM_PER_S);
-  private readonly sender = new MoveSender((dx, dz) => this.client?.move(dx, dz));
+  private readonly sender = new MoveSender((dx, dz) => {
+    this.moving.set(dx !== 0 || dz !== 0);
+    this.client?.move(dx, dz);
+  });
   private readonly held = new Set<NonNullable<ReturnType<typeof directionOf>>>();
   private readonly failedItems = new Map<number, Set<string>>();
   private readonly echoes: { kind: Expression; id: string; at: number }[] = [];
@@ -411,6 +420,7 @@ export class Plaza {
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
   private stickPointer: number | null = null;
   private stickCenter = { x: 0, y: 0 };
+  private stickIntent: Intent | null = null;
   private feedKey = 0;
   private destroyed = false;
 
@@ -432,10 +442,22 @@ export class Plaza {
   private async start(): Promise<void> {
     await this.mountRenderer();
     if (this.destroyed) return;
-    const factory = await this.hubFactory();
+    this.inputTimer = setInterval(() => this.sender.tick(performance.now()), 25);
+    await this.openClient();
+  }
+
+  /** Loads the connection code (a lazy chunk) and connects. A failed load shows "Try again", never a spinner. */
+  private async openClient(): Promise<void> {
+    this.status.set({ kind: "connecting" });
+    let factory: Awaited<ReturnType<Plaza["hubFactory"]>>;
+    try {
+      factory = await this.hubFactory();
+    } catch {
+      if (!this.destroyed) this.status.set(LOAD_FAILED);
+      return;
+    }
     if (this.destroyed) return;
     this.client = new PlazaClient(factory.create, this.events, undefined, factory.ticketError);
-    this.inputTimer = setInterval(() => this.sender.tick(performance.now()), 25);
     this.client.connect();
   }
 
@@ -454,6 +476,8 @@ export class Plaza {
         onTags: (tags) => this.placeTags(tags),
         onStats: (stats) => this.stats.set(stats),
         onContextLost: () => {
+          // The joystick goes away with the scene: its pointerup never comes, so stop here.
+          this.haltInput();
           this.fallbackReason.set("lost");
           this.mode.set("fallback");
         },
@@ -470,7 +494,10 @@ export class Plaza {
     }
   }
 
-  /** The real hub, or the dev fake hub with `?fake=1` (dev builds only; it never ships in a production chunk). */
+  /**
+   * The real hub, or the dev fake hub with `?fake=1`. The fake hub is a separate chunk that a production build
+   * also emits, but only `isDevMode()` imports it: nobody can reach it in production.
+   */
   private async hubFactory(): Promise<{ create: HubFactory; ticketError: () => unknown }> {
     const query = this.route.snapshot.queryParamMap;
     if (isDevMode() && query.get("fake") === "1") {
@@ -521,8 +548,13 @@ export class Plaza {
   private readonly events: PlazaEvents = {
     status: (status) => {
       this.status.set(status);
-      if (status.kind !== "joined") this.sender.disable(performance.now(), false);
-      else if (!document.hidden) this.sender.enable();
+      if (status.kind !== "joined") {
+        this.sender.disable(performance.now(), false);
+        this.moving.set(false); // the server stops an avatar without a connection
+      } else if (!document.hidden) {
+        this.sender.enable();
+        this.applyInput(); // keys still held (or the stick) after a reconnect move again
+      }
       if (status.kind === "kicked" && status.rule.action.kind === "leave") void this.router.navigate(["/"]);
       if (status.kind === "kicked" && status.retryAt !== null) {
         const wait = status.retryAt - Date.now();
@@ -535,6 +567,8 @@ export class Plaza {
     welcome: (welcome, moved) => this.welcome(welcome, moved),
     snapshot: (snapshot) => this.snapshot(snapshot),
     joined: (member) => {
+      // A `joined` for an occupied slot replaces that member (§5: reconnect, new look or privacy).
+      this.failedItems.delete(member.slot);
       this.memberMap.update((map) => new Map(map).set(member.slot, member));
       this.showAvatar(member);
     },
@@ -578,6 +612,7 @@ export class Plaza {
     this.predictor.reset();
     this.predictor.configure(welcome.bounds, welcome.speedCmPerS);
     this.sender.reset();
+    this.applyInput();
     this.renderer?.clear();
     this.failedItems.clear();
     for (const slot of this.bubbleTimers.keys()) this.clearBubble(slot);
@@ -651,7 +686,10 @@ export class Plaza {
     if (!this.canSend(kind) || this.ownSlot() === null) return false;
     this.cooling.update((set) => new Set(set).add(kind));
     this.later(() => this.cooling.update((set) => without(set, kind)), EXPRESSION_COOLDOWN_MS);
-    this.echoes.push({ kind, id, at: performance.now() });
+    const now = performance.now();
+    // Keep only echoes that can still come (the server may not echo at all).
+    const fresh = this.echoes.filter((e) => now - e.at < ECHO_MS);
+    this.echoes.splice(0, this.echoes.length, ...fresh, { kind, id, at: now });
     this.panel.set(null);
     return true;
   }
@@ -753,6 +791,8 @@ export class Plaza {
     }
     const direction = directionOf(event.code);
     if (direction === undefined || event.ctrlKey || event.metaKey || event.altKey || this.mode() !== "3d") return;
+    // An open panel keeps the arrow keys for its own controls.
+    if (this.panel() !== null) return;
     event.preventDefault();
     if (event.repeat && this.held.has(direction)) return;
     this.held.add(direction);
@@ -765,10 +805,21 @@ export class Plaza {
     this.sender.set(intentFromKeys(this.held), performance.now());
   }
 
-  /** Window blur: keys released outside the page never send keyup, so stop. */
+  /** Window blur: keys and touches released outside the page never send keyup or pointerup, so stop. */
   protected releaseKeys(): void {
+    this.haltInput();
+  }
+
+  /** Stops the avatar: no keys held, the stick back in the center, `Move(0, 0)` on the next send slot. */
+  private haltInput(): void {
     this.held.clear();
-    if (this.stickPointer === null) this.sender.set(STOP, performance.now());
+    this.stickReset();
+    this.sender.set(STOP, performance.now());
+  }
+
+  /** Sends the intent of the input that is down now (stick first, then keys). */
+  private applyInput(): void {
+    this.sender.set(this.stickIntent ?? intentFromKeys(this.held), performance.now());
   }
 
   /** Hidden tab: `Move(0, 0)`, no more input, and no rendering until it shows again (protocol §4). */
@@ -804,18 +855,20 @@ export class Plaza {
       y = (y / length) * JOYSTICK_RADIUS;
     }
     this.knob.set({ x, y });
-    this.sender.set(intentFromJoystick(x, y, JOYSTICK_RADIUS), performance.now());
+    this.stickIntent = intentFromJoystick(x, y, JOYSTICK_RADIUS);
+    this.sender.set(this.stickIntent, performance.now());
   }
 
   protected stickEnd(event: PointerEvent): void {
     if (event.pointerId !== this.stickPointer) return;
-    (event.currentTarget as HTMLElement).releasePointerCapture?.(event.pointerId);
-    this.stickReset();
+    this.stickReset(); // first: releasing the capture fires `lostpointercapture`, which comes back here
+    (event.currentTarget as HTMLElement | null)?.releasePointerCapture?.(event.pointerId);
     this.sender.set(intentFromKeys(this.held), performance.now());
   }
 
   private stickReset(): void {
     this.stickPointer = null;
+    this.stickIntent = null;
     this.knob.set({ x: 0, y: 0 });
   }
 
@@ -826,7 +879,8 @@ export class Plaza {
   }
 
   protected retry(): void {
-    this.client?.connect();
+    if (this.client === null) void this.openClient();
+    else this.client.connect();
   }
 
   protected reload(): void {

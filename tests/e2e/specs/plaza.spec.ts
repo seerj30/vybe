@@ -20,7 +20,7 @@ async function shot(page: Page, name: string): Promise<void> {
   if (SHOTS !== undefined) await page.screenshot({ path: `${SHOTS}/${name}.png` });
 }
 
-test("plaza (fake hub): 16 avatars inside the draw-call budget, quick-chat, stickers and the member list", async ({ page }) => {
+test("plaza (fake hub): 16 avatars inside the draw-call budget, and the member list", async ({ page }) => {
   await newPlayer(page);
   await page.getByTestId("plaza-link").click();
   await expect(page).toHaveURL(/\/plaza$/);
@@ -38,16 +38,37 @@ test("plaza (fake hub): 16 avatars inside the draw-call budget, quick-chat, stic
   // No text input anywhere (P2-3).
   await expect(page.locator("input, textarea, [contenteditable]")).toHaveCount(0);
 
+  await page.getByTestId("people-button").click();
+  const list = page.getByTestId("member-list");
+  await expect(list.getByRole("listitem")).toHaveCount(16);
+  await expect(list.getByRole("link", { name: "Profile, report or block" }).first()).toHaveAttribute("href", /^\/profile\/[a-z0-9_]+$/);
+  await expect(list.getByText("Private profile").first()).toBeVisible();
+  await page.getByTestId("people-button").click();
+  await shot(page, "plaza-desktop");
+});
+
+test("plaza (fake hub): quick-chat with its cooldown, stickers, emotes and keyboard movement", async ({ page }) => {
+  await newPlayer(page);
+  await openFakePlaza(page, "bots=2&still=1");
+  await expect(plaza(page)).toHaveAttribute("data-mode", "3d", { timeout: 30_000 });
+
   await page.getByRole("button", { name: "Chat", exact: true }).click();
   const panel = page.getByRole("dialog", { name: "Quick chat" });
-  await panel.getByRole("button", { name: "Good game!" }).click();
-  await expect(panel).toHaveCount(0);
+  // One phrase per 2 s (protocol §7): the buttons wait, so the server never drops one. Send and open the panel
+  // again in one page task, so a slow test machine cannot pass the 2 s between the two steps.
+  const disabledAfterSend = await page.evaluate(async () => {
+    const frame = () => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+    const button = (name: string) => Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((b) => b.textContent?.trim() === name);
+    button("Good game!")!.click();
+    await frame();
+    button("Chat")!.click();
+    await frame();
+    return button("Hi!")!.disabled;
+  });
+  expect(disabledAfterSend).toBe(true);
   await expect(page.getByTestId("bubble").filter({ hasText: "Good game!" })).toBeVisible();
   await expect(page.getByRole("log", { name: "Plaza events" })).toContainText("You: Good game!");
-  // One phrase per 2 s (protocol §7): the buttons wait, so the server never drops one.
-  await page.getByRole("button", { name: "Chat", exact: true }).click();
-  await expect(page.getByRole("dialog", { name: "Quick chat" }).getByRole("button", { name: "Hi!" })).toBeDisabled();
-  await expect(page.getByRole("dialog", { name: "Quick chat" }).getByRole("button", { name: "Hi!" })).toBeEnabled({ timeout: 4_000 });
+  await expect(panel.getByRole("button", { name: "Hi!" })).toBeEnabled({ timeout: 5_000 });
   await page.keyboard.press("Escape");
 
   await page.getByRole("button", { name: "Stickers" }).click();
@@ -57,19 +78,14 @@ test("plaza (fake hub): 16 avatars inside the draw-call budget, quick-chat, stic
   await page.getByRole("button", { name: "Emotes" }).click();
   await expect(page.getByRole("dialog", { name: "Emotes" })).toContainText("You have no emotes yet.");
 
-  await page.getByTestId("people-button").click();
-  const list = page.getByTestId("member-list");
-  await expect(list.getByRole("listitem")).toHaveCount(16);
-  await expect(list.getByRole("link", { name: "Profile, report or block" }).first()).toHaveAttribute("href", /^\/profile\/[a-z0-9_]+$/);
-  await expect(list.getByText("Private profile").first()).toBeVisible();
-  await page.getByTestId("people-button").click();
+  await page.keyboard.press("Escape");
 
-  // Keyboard movement sends intents; the own avatar walks (no error, the scene keeps rendering).
+  // Keyboard movement sends a moving intent; releasing the key sends the stop.
   await page.keyboard.down("KeyW");
-  await page.waitForTimeout(600);
+  await expect(plaza(page)).toHaveAttribute("data-moving", "true");
   await page.keyboard.up("KeyW");
+  await expect(plaza(page)).toHaveAttribute("data-moving", "false");
   await expect(plaza(page)).toHaveAttribute("data-status", "joined");
-  await shot(page, "plaza-desktop");
 });
 
 test("plaza (fake hub) on a phone: joystick and stacked buttons at 375 px", async ({ browser }) => {
@@ -89,6 +105,54 @@ test("plaza (fake hub) on a phone: joystick and stacked buttons at 375 px", asyn
   } finally {
     await context.close();
   }
+});
+
+test("plaza (fake hub) on a phone: losing the 3D view during a joystick drag stops the avatar", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true });
+  const page = await context.newPage();
+  try {
+    await newPlayer(page);
+    await openFakePlaza(page, "bots=1&still=1");
+    await expect(plaza(page)).toHaveAttribute("data-mode", "3d", { timeout: 30_000 });
+    const box = (await page.getByTestId("joystick").boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2, box.y - 20);
+    await expect(plaza(page)).toHaveAttribute("data-moving", "true");
+    // The GPU drops the context while the finger is still down: the joystick goes away, no pointerup comes.
+    await page.evaluate(() => {
+      const gl = document.querySelector<HTMLCanvasElement>("vybe-plaza canvas")!.getContext("webgl2") ?? document.querySelector("canvas")!.getContext("webgl");
+      gl!.getExtension("WEBGL_lose_context")!.loseContext();
+    });
+    await expect(plaza(page)).toHaveAttribute("data-mode", "fallback");
+    await expect(plaza(page)).toHaveAttribute("data-moving", "false");
+    await page.mouse.up();
+  } finally {
+    await context.close();
+  }
+});
+
+test("plaza: a failed load of the connection code shows Try again, not a spinner", async ({ page }) => {
+  await newPlayer(page);
+  // Fail the lazy chunk with the SignalR client once (found by content: chunk names change with every build).
+  let failed = false;
+  await page.route(/\.js(\?|$)/, async (route) => {
+    const response = await route.fetch();
+    const body = await response.text();
+    if (!failed && body.includes("skipNegotiation") && body.includes("MessagePackHubProtocol")) {
+      failed = true;
+      await route.abort("failed");
+      return;
+    }
+    await route.fulfill({ response, body });
+  });
+  await page.goto("/plaza");
+  await expect(page.getByText("The plaza did not load. Check your connection and try again.")).toBeVisible({ timeout: 20_000 });
+  expect(failed).toBe(true);
+  await expect(plaza(page)).toHaveAttribute("data-status", "failed");
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByText("The plaza did not load. Check your connection and try again.")).toHaveCount(0);
+  await expect(plaza(page)).not.toHaveAttribute("data-status", "failed");
 });
 
 test("plaza (fake hub) without WebGL: members and events as lists", async ({ page }) => {
@@ -136,10 +200,15 @@ test("plaza (real hub): two guests see each other, quick-chat arrives, and a blo
   try {
     const instance = await plaza(a.page).getAttribute("data-instance");
     await expect(plaza(b.page)).toHaveAttribute("data-instance", instance!);
-    // Both avatars render on both screens (a name tag shows from the first snapshot entry).
-    for (const page of [a.page, b.page]) {
-      await expect(plaza(page)).toHaveAttribute("data-avatars", "2", { timeout: 20_000 });
-      await expect(page.getByTestId("name-tag")).toHaveCount(2);
+    // Both avatars render on both screens (a name tag shows from the first snapshot entry). Other tests' players
+    // (and their 30 s slot reservations) can share the instance, so check the two names, not a count.
+    const tag = (page: Page, name: string) => page.getByTestId("name-tag").filter({ hasText: new RegExp(`^\\s*${name}\\s*$`) });
+    for (const [page, other] of [
+      [a.page, b.handle],
+      [b.page, a.handle],
+    ] as const) {
+      await expect(tag(page, "You")).toHaveCount(1, { timeout: 20_000 });
+      await expect(tag(page, other)).toHaveCount(1, { timeout: 20_000 });
     }
     await a.page.getByTestId("people-button").click();
     await expect(a.page.getByTestId("member-list")).toContainText(b.handle);

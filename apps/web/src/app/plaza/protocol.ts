@@ -1,3 +1,4 @@
+import type { SpaceErrorCode, SpaceJoinError, SpaceKickReason, SpaceLook, SpaceMember, SpaceWelcome } from "@vybe/contracts/spaces";
 import quickchat from "../../../../../assets/manifests/quickchat.v1.json";
 
 /**
@@ -23,42 +24,10 @@ export interface Bounds {
   maxZ: number;
 }
 
-export interface Equipped {
-  hair: string | null;
-  top: string | null;
-  bottom: string | null;
-  shoes: string | null;
-  emote: string | null;
-  accessories: (string | null)[];
-}
-
-/** §5 Look: avatar presets and equipped item SKUs. */
-export interface Look {
-  bodyPresetId: string;
-  skinToneId: string;
-  facePresetId: string;
-  hairPresetId: string;
-  hairColorId: string;
-  equipped: Equipped;
-}
-
-export interface Member {
-  slot: number;
-  /** Null for a private profile (decision 6): the client shows a generic name. */
-  handle: string | null;
-  look: Look;
-}
-
-export interface Welcome {
-  protocolVersion: number;
-  manifestVersion: number;
-  instanceId: number;
-  slot: number;
-  tickHz: number;
-  bounds: Bounds;
-  speedCmPerS: number;
-  members: Member[];
-}
+/** §5 Look, Member and Welcome: the shared hub contract (`@vybe/contracts/spaces`). */
+export type Look = SpaceLook;
+export type Member = SpaceMember;
+export type Welcome = SpaceWelcome;
 
 /** 0 idle, 1 walking, 2 away (connection lost, slot reserved). */
 export type AvatarState = 0 | 1 | 2;
@@ -76,20 +45,9 @@ export interface Snapshot {
   avatars: AvatarSample[];
 }
 
-export type KickReason =
-  | "server_shutdown"
-  | "replaced"
-  | "idle"
-  | "not_joined"
-  | "rate_limited"
-  | "invalid_input"
-  | "suspended"
-  | "account_unavailable"
-  | "spaces_full"
-  | "slow_client";
-
-export type HubErrorCode = "rate_limited" | "invalid_input" | "not_joined";
-export type JoinErrorCode = "spaces_full" | "already_joined" | "rate_limited" | "account_unavailable";
+export type KickReason = SpaceKickReason;
+export type HubErrorCode = SpaceErrorCode;
+export type JoinErrorCode = SpaceJoinError;
 
 const KICK_REASONS: ReadonlySet<string> = new Set<KickReason>([
   "server_shutdown",
@@ -246,6 +204,8 @@ export function parseWelcome(value: unknown): Welcome | null {
     slots.add(member.slot);
     members.push(member);
   }
+  // The own member must be there: without it the own avatar never shows.
+  if (!slots.has(slot)) return null;
   return { protocolVersion, manifestVersion, instanceId, slot, tickHz, bounds, speedCmPerS: speed, members };
 }
 
