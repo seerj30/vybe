@@ -74,11 +74,11 @@ Fill one row per decision. A decision without a signed row is still open.
 
 | # | Option chosen | Changes to the recommendation | Signed by | Date |
 |---|---|---|---|---|
-| P2-1 | | | | |
-| P2-2 | | | | |
-| P2-3 | | | | |
-| P2-4 | | | | |
-| P2-5 | | | | |
-| P2-6 | | | | |
-| P2-7 | | | | |
-| P2-8 | | | | |
+| P2-1 | Public plaza, instances of max. 16 avatars; friend room visits if time allows | none (all recommendations) | product owner (Sergiu Molnar) | 2026-11-19 |
+| P2-2 | SignalR in the existing API, binary protocol, one instance | none (all recommendations) | product owner (Sergiu Molnar) | 2026-11-19 |
+| P2-3 | No free text: preset quick-chat, emotes, stickers | none (all recommendations) | product owner (Sergiu Molnar) | 2026-11-19 |
+| P2-4 | None now; gifts between linked friends after the decision 5 review | none (all recommendations) | product owner (Sergiu Molnar) | 2026-11-19 |
+| P2-5 | None in P2; later a one-time supporter pack through a merchant of record | none (all recommendations) | product owner (Sergiu Molnar) | 2026-11-19 |
+| P2-6 | Send 05 to counsel; choose a legal form with an accountant | none (all recommendations) | product owner (Sergiu Molnar) | 2026-11-19 |
+| P2-7 | Name a second moderator before any free text | none (all recommendations) | product owner (Sergiu Molnar) | 2026-11-19 |
+| P2-8 | Start the beta with real players first | none (all recommendations) | product owner (Sergiu Molnar) | 2026-11-19 |
