@@ -18,6 +18,12 @@ public sealed class SpaceHub(SpaceManager spaces, VybeDbContext db, TimeProvider
     /// <summary>Profile reads (5 small queries) at the same time, for all connections: joins cannot flood the pool.</summary>
     private static readonly SemaphoreSlim ProfileReads = new(8);
 
+    /// <summary>
+    /// <c>Report</c> and <c>Block</c> writes at the same time, for all connections: each is a transaction with row
+    /// locks, so many connections cannot take the database pool from the HTTP API.
+    /// </summary>
+    private static readonly SemaphoreSlim SafetyWrites = new(8);
+
     public override Task OnConnectedAsync()
     {
         var playerId = Guid.Parse(Context.User!.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -65,6 +71,66 @@ public sealed class SpaceHub(SpaceManager spaces, VybeDbContext db, TimeProvider
     public void QuickChat(string? id) => spaces.QuickChat(Context.ConnectionId, id);
 
     public void Sticker(string? id) => spaces.Sticker(Context.ConnectionId, id);
+
+    /// <summary>
+    /// Blocks the member in <paramref name="slot"/> (protocol doc §9), also a player with a private profile: the same
+    /// block as <c>POST /me/blocks</c>. The server then moves the caller to another instance.
+    /// </summary>
+    public async Task Block(int slot, int key)
+    {
+        var (caller, target) = spaces.SafetyTarget(Context.ConnectionId, "block", slot, key);
+        await SafetyWriteAsync(() => SafetyEndpoints.BlockPlayerAsync(db, spaces, caller, target, clock.UtcNowForDb(), Context.ConnectionAborted));
+    }
+
+    /// <summary>
+    /// Reports the member in <paramref name="slot"/> with a fixed reason (no free text): the same report as
+    /// <c>POST /reports</c>. A repeat while the report is open is accepted again; over the daily limit: <c>rate_limited</c>.
+    /// </summary>
+    public async Task Report(int slot, int key, string? reason)
+    {
+        if (!ReportReasons.TryGetValue(reason ?? "", out var parsed))
+        {
+            spaces.InvalidInput(Context.ConnectionId);
+            throw new HubException(KickReasons.InvalidInput);
+        }
+
+        var (caller, target) = spaces.SafetyTarget(Context.ConnectionId, "report", slot, key);
+        Guid? report = null;
+        await SafetyWriteAsync(async () =>
+            report = await SafetyEndpoints.ReportPlayerAsync(db, caller, target, parsed, null, clock.UtcNowForDb(), Context.ConnectionAborted));
+        _ = report ?? throw new HubException(KickReasons.RateLimited);
+    }
+
+    /// <summary>Runs a safety write inside <see cref="SafetyWrites"/>; API problems become hub error codes.</summary>
+    private async Task SafetyWriteAsync(Func<Task> write)
+    {
+        if (!await SafetyWrites.WaitAsync(TimeSpan.FromSeconds(2), Context.ConnectionAborted))
+        {
+            throw new HubException(KickReasons.RateLimited);
+        }
+
+        try
+        {
+            await write();
+        }
+        catch (ApiProblemException problem) when (problem.Status is 404 or 422)
+        {
+            throw new HubException(SafetyErrors.NotFound); // the member was deleted meanwhile (or is the caller)
+        }
+        finally
+        {
+            SafetyWrites.Release();
+        }
+    }
+
+    /// <summary>The <c>ReportReason</c> names of the HTTP API.</summary>
+    private static readonly Dictionary<string, ReportReason> ReportReasons = new(StringComparer.Ordinal)
+    {
+        ["offensive_name"] = ReportReason.OffensiveName,
+        ["cheating"] = ReportReason.Cheating,
+        ["harassment"] = ReportReason.Harassment,
+        ["other"] = ReportReason.Other,
+    };
 
     private async Task<SpaceProfile?> LoadProfileAsync(Guid playerId)
     {

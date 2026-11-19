@@ -1,6 +1,8 @@
 import { type Browser, type Page, test } from "@playwright/test";
 import { expect, newPlayer } from "./app.ts";
 import { me } from "./social.ts";
+import pg from "pg";
+import { DATABASE_URL, playerId } from "./db.ts";
 
 /**
  * P2 plaza (docs/design/p2-spaces-protocol.md). The first tests use the dev fake hub (`/plaza?fake=1`, dev builds
@@ -41,8 +43,11 @@ test("plaza (fake hub): 16 avatars inside the draw-call budget, and the member l
   await page.getByTestId("people-button").click();
   const list = page.getByTestId("member-list");
   await expect(list.getByRole("listitem")).toHaveCount(16);
-  await expect(list.getByRole("link", { name: "Profile, report or block" }).first()).toHaveAttribute("href", /^\/profile\/[a-z0-9_]+$/);
-  await expect(list.getByText("Private profile").first()).toBeVisible();
+  await expect(list.getByRole("link", { name: "Profile" }).first()).toHaveAttribute("href", /^\/profile\/[a-z0-9_]+$/);
+  // Every other member can be reported and blocked, also one with a private profile (no profile link).
+  await expect(list.getByTestId("report-member")).toHaveCount(15);
+  await expect(list.getByTestId("block-member")).toHaveCount(15);
+  await expect(list.getByRole("listitem").filter({ hasText: /^\s*Player/ }).first().getByRole("link")).toHaveCount(0);
   await page.getByTestId("people-button").click();
   await shot(page, "plaza-desktop");
 });
@@ -182,64 +187,117 @@ async function hubAvailable(page: Page): Promise<boolean> {
   return response.status() !== 404 && response.status() !== 405;
 }
 
-async function guestInPlaza(browser: Browser): Promise<{ page: Page; handle: string }> {
+async function guestInPlaza(browser: Browser, profile: "players" | "private" = "players"): Promise<{ page: Page; handle: string }> {
   const context = await browser.newContext();
   const page = await context.newPage();
   await newPlayer(page);
   const { handle } = await me(page.request);
+  if (profile === "private") {
+    const response = await page.request.patch("/api/v1/me/privacy", { data: { profileVisibility: "private" }, headers: { "x-requested-with": "vybe-web" } });
+    expect(response.ok()).toBe(true);
+  }
   await page.goto("/plaza");
   await expect(plaza(page)).toHaveAttribute("data-status", "joined", { timeout: 20_000 });
   return { page, handle };
 }
 
-test("plaza (real hub): two guests see each other, quick-chat arrives, and a block separates them", async ({ page, browser }) => {
-  test.setTimeout(120_000); // three new players and a block round trip
-  await newPlayer(page);
-  test.skip(!(await hubAvailable(page)), "Waits for the stream V hub (POST /api/v1/spaces/tickets).");
-  // Each hub test opens its own pair of players; they join the fullest instance, so run one test only.
-  const a = await guestInPlaza(browser);
-  const b = await guestInPlaza(browser);
-  try {
-    const instance = await plaza(a.page).getAttribute("data-instance");
-    await expect(plaza(b.page)).toHaveAttribute("data-instance", instance!);
-    // Both avatars render on both screens (a name tag shows from the first snapshot entry). Other tests' players
-    // (and their 30 s slot reservations) can share the instance, so check the two names, not a count.
-    const tag = (page: Page, name: string) => page.getByTestId("name-tag").filter({ hasText: new RegExp(`^\\s*${name}\\s*$`) });
-    for (const [page, other] of [
-      [a.page, b.handle],
-      [b.page, a.handle],
-    ] as const) {
-      await expect(tag(page, "You")).toHaveCount(1, { timeout: 20_000 });
-      await expect(tag(page, other)).toHaveCount(1, { timeout: 20_000 });
+test.describe("plaza (real hub)", () => {
+  // The hub tests share plaza instances (players join the fullest one): run them one after the other.
+  test.describe.configure({ mode: "default" });
+
+  test("plaza (real hub): two guests see each other, quick-chat arrives, and a block separates them", async ({ page, browser }) => {
+    test.setTimeout(120_000); // three new players and a block round trip
+    await newPlayer(page);
+    test.skip(!(await hubAvailable(page)), "Waits for the stream V hub (POST /api/v1/spaces/tickets).");
+    // Each hub test opens its own pair of players; they join the fullest instance, so run one test only.
+    const a = await guestInPlaza(browser);
+    const b = await guestInPlaza(browser);
+    try {
+      const instance = await plaza(a.page).getAttribute("data-instance");
+      await expect(plaza(b.page)).toHaveAttribute("data-instance", instance!);
+      // Both avatars render on both screens (a name tag shows from the first snapshot entry). Other tests' players
+      // (and their 30 s slot reservations) can share the instance, so check the two names, not a count.
+      const tag = (page: Page, name: string) => page.getByTestId("name-tag").filter({ hasText: new RegExp(`^\\s*${name}\\s*$`) });
+      for (const [page, other] of [
+        [a.page, b.handle],
+        [b.page, a.handle],
+      ] as const) {
+        await expect(tag(page, "You")).toHaveCount(1, { timeout: 20_000 });
+        await expect(tag(page, other)).toHaveCount(1, { timeout: 20_000 });
+      }
+      await a.page.getByTestId("people-button").click();
+      await expect(a.page.getByTestId("member-list")).toContainText(b.handle);
+      await b.page.getByTestId("people-button").click();
+      await expect(b.page.getByTestId("member-list")).toContainText(a.handle);
+      await b.page.getByTestId("people-button").click();
+
+      await a.page.getByRole("button", { name: "Chat", exact: true }).click();
+      await a.page.getByRole("dialog", { name: "Quick chat" }).getByRole("button", { name: "Hi!" }).click();
+      await expect(b.page.getByRole("log", { name: "Plaza events" })).toContainText(`${a.handle}: Hi!`);
+
+      // A opens B's profile from the member list and blocks B; the hub moves A (the blocker) to another instance.
+      await a.page.getByTestId("people-button").click();
+      await a.page.getByTestId("member-list").getByRole("listitem").filter({ hasText: b.handle }).getByRole("link").click();
+      await expect(a.page).toHaveURL(new RegExp(`/profile/${b.handle}$`));
+      await a.page.getByRole("button", { name: `Block ${b.handle}` }).click();
+      await a.page.getByRole("button", { name: "Yes, block" }).click();
+      await expect(a.page.getByText(`You blocked ${b.handle}.`, { exact: true })).toBeVisible();
+
+      // A left the plaza for the profile; B sees A leave. A back in the plaza: never with B again.
+      await b.page.getByTestId("people-button").click();
+      await expect(b.page.getByTestId("member-list")).not.toContainText(a.handle, { timeout: 40_000 });
+      await a.page.goto("/plaza");
+      await expect(plaza(a.page)).toHaveAttribute("data-status", "joined", { timeout: 20_000 });
+      await expect(plaza(a.page)).not.toHaveAttribute("data-instance", instance!);
+      await a.page.getByTestId("people-button").click();
+      await expect(a.page.getByTestId("member-list")).not.toContainText(b.handle);
+    } finally {
+      await a.page.context().close();
+      await b.page.context().close();
     }
-    await a.page.getByTestId("people-button").click();
-    await expect(a.page.getByTestId("member-list")).toContainText(b.handle);
-    await b.page.getByTestId("people-button").click();
-    await expect(b.page.getByTestId("member-list")).toContainText(a.handle);
-    await b.page.getByTestId("people-button").click();
+  });
 
-    await a.page.getByRole("button", { name: "Chat", exact: true }).click();
-    await a.page.getByRole("dialog", { name: "Quick chat" }).getByRole("button", { name: "Hi!" }).click();
-    await expect(b.page.getByRole("log", { name: "Plaza events" })).toContainText(`${a.handle}: Hi!`);
+  test("plaza (real hub): a player with a private profile can be reported and blocked from the member list", async ({ page, browser }) => {
+    test.setTimeout(120_000);
+    await newPlayer(page);
+    test.skip(!(await hubAvailable(page)), "Waits for the stream V hub (POST /api/v1/spaces/tickets).");
+    const hidden = await guestInPlaza(browser, "private");
+    const reporter = await guestInPlaza(browser);
+    try {
+      const instance = await plaza(reporter.page).getAttribute("data-instance");
+      await expect(plaza(hidden.page)).toHaveAttribute("data-instance", instance!);
+      const slot = await plaza(hidden.page).getAttribute("data-slot");
+      await reporter.page.getByTestId("people-button").click();
+      const row = reporter.page.getByTestId("member-list").locator(`li[data-slot="${slot}"]`);
+      await expect(row).toContainText("Player");
+      await expect(row.getByRole("link")).toHaveCount(0); // no profile to open
 
-    // A opens B's profile from the member list and blocks B; the hub moves A (the blocker) to another instance.
-    await a.page.getByTestId("people-button").click();
-    await a.page.getByTestId("member-list").getByRole("listitem").filter({ hasText: b.handle }).getByRole("link").click();
-    await expect(a.page).toHaveURL(new RegExp(`/profile/${b.handle}$`));
-    await a.page.getByRole("button", { name: `Block ${b.handle}` }).click();
-    await a.page.getByRole("button", { name: "Yes, block" }).click();
-    await expect(a.page.getByText(`You blocked ${b.handle}.`, { exact: true })).toBeVisible();
+      await row.getByTestId("report-member").click();
+      await row.getByTestId("report-form").getByRole("button", { name: "Harassment" }).click();
+      await expect(reporter.page.getByText("Report sent. Thank you. A moderator will look at it.")).toBeVisible();
+      const [reporterId, hiddenId] = [await playerId(reporter.page), await playerId(hidden.page)];
+      const client = new pg.Client({ connectionString: DATABASE_URL });
+      await client.connect();
+      try {
+        const { rows } = await client.query<{ reason: string; details: string | null }>(
+          "SELECT reason::text, details FROM vybe.player_reports WHERE reporter_player_id = $1 AND target_player_id = $2",
+          [reporterId, hiddenId],
+        );
+        expect(rows).toEqual([{ reason: "harassment", details: null }]);
+      } finally {
+        await client.end();
+      }
 
-    // A left the plaza for the profile; B sees A leave. A back in the plaza: never with B again.
-    await b.page.getByTestId("people-button").click();
-    await expect(b.page.getByTestId("member-list")).not.toContainText(a.handle, { timeout: 40_000 });
-    await a.page.goto("/plaza");
-    await expect(plaza(a.page)).toHaveAttribute("data-status", "joined", { timeout: 20_000 });
-    await expect(plaza(a.page)).not.toHaveAttribute("data-instance", instance!);
-    await a.page.getByTestId("people-button").click();
-    await expect(a.page.getByTestId("member-list")).not.toContainText(b.handle);
-  } finally {
-    await a.page.context().close();
-    await b.page.context().close();
-  }
+      // Block: the hub moves the blocker to another instance; the hidden player sees only a leave.
+      await row.getByTestId("block-member").click();
+      await row.getByTestId("confirm-block").click();
+      await expect(reporter.page.getByText("Blocked Player. You will not meet again in the plaza.")).toBeVisible();
+      await expect(plaza(reporter.page)).not.toHaveAttribute("data-instance", instance!);
+      await hidden.page.getByTestId("people-button").click();
+      await expect(hidden.page.getByTestId("member-list")).not.toContainText(reporter.handle, { timeout: 20_000 });
+    } finally {
+      await hidden.page.context().close();
+      await reporter.page.context().close();
+    }
+  });
 });

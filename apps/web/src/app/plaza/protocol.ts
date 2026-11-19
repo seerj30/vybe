@@ -1,4 +1,4 @@
-import type { SpaceErrorCode, SpaceJoinError, SpaceKickReason, SpaceLook, SpaceMember, SpaceWelcome } from "@vybe/contracts/spaces";
+import type { SpaceErrorCode, SpaceJoinError, SpaceKickReason, SpaceLook, SpaceMember, SpaceSafetyError, SpaceWelcome } from "@vybe/contracts/spaces";
 import quickchat from "../../../../../assets/manifests/quickchat.v1.json";
 
 /**
@@ -166,11 +166,12 @@ export function parseLook(value: unknown): Look | null {
 export function parseMember(value: unknown): Member | null {
   if (!isObj(value)) return null;
   const slot = num(value["slot"]);
+  const key = num(value["key"]);
   const handle = value["handle"];
   const look = parseLook(value["look"]);
-  if (!isInt(slot, 0, MAX_AVATARS - 1) || look === null) return null;
+  if (!isInt(slot, 0, MAX_AVATARS - 1) || !isInt(key, 1, 2 ** 31 - 1) || look === null) return null;
   if (handle !== null && handle !== undefined && !isId(handle, 32)) return null;
-  return { slot, handle: typeof handle === "string" ? handle : null, look };
+  return { slot, key, handle: typeof handle === "string" ? handle : null, look };
 }
 
 function parseBounds(value: unknown): Bounds | null {
@@ -250,6 +251,14 @@ export function parseErrorCode(value: unknown): HubErrorCode | null {
 export function joinErrorCode(error: unknown): JoinErrorCode | null {
   const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
   return JOIN_ERRORS.find((code) => new RegExp(`(^|\\W)${code}$`).test(message.trim())) ?? null;
+}
+
+const SAFETY_ERRORS: readonly SpaceSafetyError[] = ["not_found", "rate_limited", "invalid_input", "not_joined"];
+
+/** The code of a failed `Report` or `Block` (the HubException message ends with it), or null for another failure. */
+export function safetyErrorCode(error: unknown): SpaceSafetyError | null {
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  return SAFETY_ERRORS.find((code) => new RegExp(`(^|\\W)${code}$`).test(message.trim())) ?? null;
 }
 
 /** Heading 0–255 to radians: θ = h × 2π / 256; facing (sin θ, cos θ), `rotation.y = θ` for a +z model. */

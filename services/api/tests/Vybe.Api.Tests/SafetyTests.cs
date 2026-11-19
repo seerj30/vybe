@@ -57,6 +57,37 @@ public sealed class SafetyTests(ApiFactory api)
     }
 
     [Fact]
+    public async Task BlockList_HidesAPrivatePlayer_AndUnblocksByRef()
+    {
+        var blocker = await Player.CreateGuestAsync(api);
+        var hidden = await Player.CreateGuestAsync(api);
+        await BlockOkAsync(blocker, await HandleAsync(hidden));
+        Assert.Equal(HttpStatusCode.OK, (await hidden.Http.PatchAsJsonAsync("/api/v1/me/privacy", new { profileVisibility = "private" })).StatusCode);
+
+        // Decision 6: a block (also one placed from the plaza, by slot) must not show who a private player is.
+        var response = await blocker.Http.GetAsync("/api/v1/me/blocks");
+        var page = await Contract.AssertAsync(response, HttpStatusCode.OK, "BlockedPlayerPage");
+        var entry = Assert.Single(page.GetProperty("items").EnumerateArray());
+        Assert.Equal(JsonValueKind.Null, entry.GetProperty("handle").ValueKind);
+        Assert.Equal(JsonValueKind.Null, entry.GetProperty("displayName").ValueKind);
+        var reference = entry.GetProperty("ref").GetString()!;
+
+        // Unblocking by handle does not match the hidden block (the answer and the list confirm no guessed handle).
+        var hiddenHandle = await HandleAsync(hidden);
+        Assert.Equal(HttpStatusCode.NoContent, (await blocker.Http.DeleteAsync($"/api/v1/me/blocks/{hiddenHandle}")).StatusCode);
+        Assert.Single((await ListAsync(blocker, string.Empty)).GetProperty("items").EnumerateArray());
+
+        // A reference matches only the caller's own blocks; a bad one is refused.
+        Assert.Equal(HttpStatusCode.NoContent, (await hidden.Http.DeleteAsync($"/api/v1/me/blocks/ref/{reference}")).StatusCode);
+        Assert.Single((await ListAsync(blocker, string.Empty)).GetProperty("items").EnumerateArray());
+        await Contract.AssertProblemAsync(await blocker.Http.DeleteAsync("/api/v1/me/blocks/ref/not-a-ref"), HttpStatusCode.UnprocessableEntity, "validation_failed");
+
+        Assert.Equal(HttpStatusCode.NoContent, (await blocker.Http.DeleteAsync($"/api/v1/me/blocks/ref/{reference}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await blocker.Http.DeleteAsync($"/api/v1/me/blocks/ref/{reference}")).StatusCode); // idempotent
+        Assert.Empty((await ListAsync(blocker, string.Empty)).GetProperty("items").EnumerateArray());
+    }
+
+    [Fact]
     public async Task ListBlocks_PagesNewestFirst()
     {
         var blocker = await Player.CreateGuestAsync(api);
@@ -80,6 +111,37 @@ public sealed class SafetyTests(ApiFactory api)
         while (cursor is not null);
 
         Assert.Equal(Enumerable.Reverse(handles), seen);
+    }
+
+    [Fact]
+    public async Task ListBlocks_PagesBlocksWithTheSameTime_WithoutPlayerIdsInTheCursor()
+    {
+        var blocker = await Player.CreateGuestAsync(api);
+        var handles = new HashSet<string>();
+        for (var i = 0; i < 5; i++)
+        {
+            var target = await Player.CreateGuestAsync(api);
+            handles.Add(await HandleAsync(target));
+            await BlockOkAsync(blocker, handles.Last()); // the test clock stands still: all five share one time
+        }
+
+        var seen = new List<string>();
+        string? cursor = null;
+        do
+        {
+            var page = await ListAsync(blocker, cursor is null ? "?limit=2" : $"?limit=2&cursor={cursor}");
+            seen.AddRange(page.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("handle").GetString()!));
+            cursor = page.GetProperty("nextCursor").GetString();
+            if (cursor is not null)
+            {
+                var decoded = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(cursor.Replace('-', '+').Replace('_', '/').PadRight((cursor.Length + 3) / 4 * 4, '=')));
+                Assert.DoesNotContain('-', decoded); // "ticks|count", no player id
+            }
+        }
+        while (cursor is not null);
+
+        Assert.Equal(5, seen.Count);
+        Assert.Equal(handles.Order(), seen.Order());
     }
 
     [Fact]

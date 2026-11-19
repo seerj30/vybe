@@ -68,5 +68,7 @@ describe("bearer token hook", () => {
     const { api, calls } = client("t", () => new Response(null, { status: 204 }));
     await accounts(api).unblock("a/b");
     expect(calls[0]?.url).toBe("/api/v1/me/blocks/a%2Fb");
+    await accounts(api).unblockByRef("x/y");
+    expect(calls[1]?.url).toBe("/api/v1/me/blocks/ref/x%2Fy");
   });
 });

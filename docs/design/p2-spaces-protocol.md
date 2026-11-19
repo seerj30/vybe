@@ -105,6 +105,8 @@ binding and counts as invalid input (§7). Names are case-insensitive in SignalR
 | `QuickChat(id)` | phrase id, ≤ 32 chars | send | Id from `phrases` in `assets/manifests/quickchat.v1.json`. Broadcast as `quickChat` |
 | `Sticker(id)` | sticker id, ≤ 32 chars | send | Id from `stickers` in the same manifest. Broadcast as `sticker` |
 | `RefreshLook()` | — | send | Server reads the player's current avatar and outfit from the database and broadcasts `look` |
+| `Report(slot, key, reason)` | member slot and key (§5); `offensive_name`, `cheating`, `harassment` or `other` | invoke | The same report as `POST /reports`, without details (no free text). A repeat while the report is open is accepted again. `HubException`: `not_found` (the member left, the key is old, or the slot is the caller's), `rate_limited` (1 per s, or the 10 reports per day), `invalid_input` |
+| `Block(slot, key)` | member slot and key | invoke | The same block as `POST /me/blocks`, also for a private profile; then the live block of §9 (the caller moves). Same errors as `Report` |
 
 **Move rules (server).**
 
@@ -165,6 +167,7 @@ interface Welcome {
 }
 interface Member {
   slot: number;
+  key: number;               // new for each placement in the instance (slots are reused); not a player id
   handle: string | null;     // null when the player's profile is private (decision 6): show a generic name
   look: Look;
 }
@@ -176,7 +179,9 @@ interface Look {             // the GET /profiles avatar shape, with item SKUs i
 ```
 
 - `displayName` is never sent (free text).
-- A `handle` lets the client open `/profile/:handle` (report, block, friend request) with the existing HTTP flows.
+- A `handle` lets the client open `/profile/:handle` (friend request, report, block) with the existing HTTP flows.
+  `Report` and `Block` (§4) work for every member, also without a handle: the server maps slot and key to the player
+  and never sends a player id. A reconnect to the reserved slot keeps the key.
 - Positions come only in `snapshot`; a client shows a `joined` member when its first snapshot entry arrives.
   Ignore snapshot entries for a slot without a member: `joined` and `snapshot` can arrive in either order.
 - A client that reads slowly gets only the newest snapshot (the server skips older ones that are still queued).
@@ -199,6 +204,7 @@ interface Look {             // the GET /profiles avatar shape, with item SKUs i
 | All client messages | token bucket 15/s, burst 15 | drop, `error("rate_limited")` |
 | `Emote`, `QuickChat`, `Sticker` | 1 per 2 s each | drop, `error("rate_limited")` |
 | `RefreshLook` | 1 per 5 s | drop, `error("rate_limited")` |
+| `Report`, `Block` | 1 per s (each is a database write); reports also 10 per day (`POST /reports` rule) | `HubException("rate_limited")` |
 | `Join` | 5 per minute | `HubException("rate_limited")` |
 | Dropped for rate | > 150 in 60 s | `kicked("rate_limited")` |
 | Invalid input (out of range, unknown id, emote not owned, wrong argument type) | drop, `error("invalid_input")`; > 20 in 60 s | `kicked("invalid_input")` |
@@ -256,7 +262,11 @@ suspended → `kicked("suspended")`; `deleting`/`deleted` → `kicked("account_u
   reservation that would put the pair together.
 - Unblock changes nothing in running instances; the next `Join` follows the new state.
 - A privacy change shows after `RefreshLook` (a `joined` that replaces the member) or at the next `Join`.
-- **Private profile** (decision 6): `handle` is `null`; the avatar is still visible with its look.
+- **Private profile** (decision 6): `handle` is `null`; the avatar is still visible with its look. `Report` and
+  `Block` (§4) still work. The caller's block list (`GET /me/blocks`) then shows no handle or display name for a
+  private player (so a block by slot cannot reveal who it was); `DELETE /me/blocks/ref/{reference}` unblocks it.
+- **Database load.** At most 8 `Report` or `Block` writes run at the same time for all connections; a call that
+  waits more than 2 s gets `rate_limited`.
 - Spaces give **no** coins, XP, items, quest progress or achievements.
 
 ## 10. Logs, metrics and retention (decision 8)
@@ -296,7 +306,7 @@ text. The privacy notice draft has a "presence in spaces" row and a space-events
 
 | # | Question | Default until answered |
 |---|---|---|
-| 1 | Report or block from the plaza for a player with a private profile (no handle)? | Not possible in P2; a later `Report(slot, reason)` hub method can map the slot to the player server-side |
+| 1 | Report or block from the plaza for a player with a private profile (no handle)? | **Done:** `Report(slot, key, reason)` and `Block(slot, key)` (§4) |
 | 2 | Join a friend's instance ("go to friend")? Shows presence to friends | Not in P2 (decision 8: presence is new personal data) |
 | 3 | Sticker art (12 icons) | Stream W draws them (flat 2D, `assets/` or `apps/web`), ids from the manifest |
 | 4 | Final limits (speed, bounds, rates, caps) | The *provisional* values here; the load test (`docs/runbooks/load-test.md`) may change caps |

@@ -52,6 +52,8 @@ public static class SpaceRules
     public const double MessageBurst = 15;
     public static readonly TimeSpan ExpressionInterval = TimeSpan.FromSeconds(2);
     public static readonly TimeSpan LookInterval = TimeSpan.FromSeconds(5);
+    /// <summary>At most one <c>Report</c> or <c>Block</c> per second and connection (each is a database write).</summary>
+    public static readonly TimeSpan SafetyActionInterval = TimeSpan.FromSeconds(1);
     public const int JoinsPerMinute = 5;
     public const int MaxDroppedPerMinute = 150;
     public const int MaxInvalidPerMinute = 20;

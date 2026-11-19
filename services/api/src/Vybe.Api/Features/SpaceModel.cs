@@ -31,9 +31,14 @@ public sealed record SpaceLook(
     [property: Key("hairColorId")] string HairColorId,
     [property: Key("equipped")] SpaceEquipped Equipped);
 
+/// <summary>
+/// <c>key</c>: a number for this avatar's time in the instance (new on every placement, counted per instance). Slots
+/// are reused, so <c>Report</c> and <c>Block</c> name the member by slot and key. It is not a player id.
+/// </summary>
 [MessagePackObject]
 public sealed record SpaceMember(
     [property: Key("slot")] int Slot,
+    [property: Key("key")] int MemberKey,
     [property: Key("handle")] string? Handle,
     [property: Key("look")] SpaceLook Look);
 
@@ -61,6 +66,13 @@ public static class SpaceEvents
     public const string Moved = "moved";
     public const string Error = "error";
     public const string Kicked = "kicked";
+}
+
+/// <summary><c>HubException</c> messages of <c>Report</c> and <c>Block</c> (besides the error codes).</summary>
+public static class SafetyErrors
+{
+    /// <summary>The member left the instance (or the slot is the caller's own).</summary>
+    public const string NotFound = "not_found";
 }
 
 /// <summary>Kick reasons (protocol doc §8).</summary>
@@ -185,6 +197,8 @@ internal sealed class SpaceClient
 
     public DateTimeOffset LastLook { get; set; } = DateTimeOffset.MinValue;
 
+    public DateTimeOffset LastSafetyAction { get; set; } = DateTimeOffset.MinValue;
+
     public MinuteWindow Dropped { get; } = new();
 
     public MinuteWindow Invalid { get; } = new();
@@ -232,9 +246,12 @@ internal sealed class SpaceClient
 }
 
 /// <summary>An avatar in an instance. Guarded by the <see cref="SpaceManager"/> lock.</summary>
-internal sealed class SpaceAvatar(Guid playerId, SpaceInstance instance, int slot, SpaceProfile profile)
+internal sealed class SpaceAvatar(Guid playerId, SpaceInstance instance, int slot, int key, SpaceProfile profile)
 {
     public Guid PlayerId { get; } = playerId;
+
+    /// <summary>The member key (<see cref="SpaceMember"/>); a reconnect to the reserved slot keeps it.</summary>
+    public int Key { get; } = key;
 
     public SpaceInstance Instance { get; set; } = instance;
 
@@ -271,7 +288,7 @@ internal sealed class SpaceAvatar(Guid playerId, SpaceInstance instance, int slo
 
     public DateTimeOffset AwaySince { get; set; }
 
-    public SpaceMember Member() => new(Slot, Handle, Look);
+    public SpaceMember Member() => new(Slot, Key, Handle, Look);
 }
 
 internal sealed class SpaceInstance(int id, DateTimeOffset now)
@@ -281,6 +298,9 @@ internal sealed class SpaceInstance(int id, DateTimeOffset now)
     public SpaceAvatar?[] Slots { get; } = new SpaceAvatar?[SpaceRules.InstanceCapacity];
 
     public DateTimeOffset EmptySince { get; set; } = now;
+
+    /// <summary>The key of the next placed avatar (<see cref="SpaceMember"/>).</summary>
+    public int NextKey { get; set; } = 1;
 
     public bool Changed { get; set; } = true;
 

@@ -1,3 +1,4 @@
+import type { SpaceReportReason } from "@vybe/contracts/spaces";
 import { ApiError } from "../api/api-client";
 import { errorMessage } from "../api/messages";
 import {
@@ -158,6 +159,16 @@ export class PlazaClient {
 
   sticker(id: string): void {
     this.sendIfJoined("Sticker", id);
+  }
+
+  /** Reports a member by slot and key (protocol doc §9). Rejects with the HubException; `safetyErrorCode` reads it. */
+  report(slot: number, key: number, reason: SpaceReportReason): Promise<void> {
+    return this.invokeIfJoined("Report", slot, key, reason);
+  }
+
+  /** Blocks a member by slot and key. On success the server moves this player to another instance (`moved`). */
+  block(slot: number, key: number): Promise<void> {
+    return this.invokeIfJoined("Block", slot, key);
   }
 
   /** Leaves the instance and closes the connection (page left). No reconnect after this. */
@@ -361,6 +372,12 @@ export class PlazaClient {
   private fail(error: ApiError): void {
     const leave = error.status === 401;
     this.setStatus({ kind: "failed", message: errorMessage(error), retry: !leave && error.code !== "account_suspended", leave });
+  }
+
+  private async invokeIfJoined(method: string, ...args: unknown[]): Promise<void> {
+    const hub = this.hub;
+    if (hub === null || this.status.kind !== "joined") throw new Error("not_joined");
+    await hub.invoke(method, ...args);
   }
 
   private sendIfJoined(method: string, ...args: unknown[]): void {

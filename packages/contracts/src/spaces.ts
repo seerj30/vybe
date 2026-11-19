@@ -16,6 +16,10 @@ export const SpaceMethods = {
   quickChat: "QuickChat",
   sticker: "Sticker",
   refreshLook: "RefreshLook",
+  /** `Report(slot, key, reason)`: a fixed `SpaceReportReason`, no free text (protocol doc §9). */
+  report: "Report",
+  /** `Block(slot, key)`: the server then moves the caller (`moved`). */
+  block: "Block",
 } as const;
 
 /** Server → client handlers (protocol doc §5). */
@@ -69,6 +73,12 @@ export type SpaceKickReason =
   | "spaces_full"
   | "slow_client";
 
+/** `HubException` messages of `Report` and `Block`: the member left (or is the caller), or an error code. */
+export type SpaceSafetyError = "not_found" | "rate_limited" | "invalid_input" | "not_joined";
+
+/** Report reasons: the `ReportReason` values of the HTTP API. */
+export type SpaceReportReason = "offensive_name" | "cheating" | "harassment" | "other";
+
 /** `HubException` messages of `Join`. */
 export type SpaceJoinError = "spaces_full" | "already_joined" | "rate_limited" | "account_unavailable";
 
@@ -93,6 +103,8 @@ export interface SpaceLook {
 
 export interface SpaceMember {
   slot: number;
+  /** New for each placement in the instance (slots are reused); `Report` and `Block` send slot and key. Not a player id. */
+  key: number;
   /** null for a private profile (decision 6): show a generic name. */
   handle: string | null;
   look: SpaceLook;

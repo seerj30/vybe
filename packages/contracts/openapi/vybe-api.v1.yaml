@@ -398,6 +398,33 @@ paths:
         default:
           $ref: "#/components/responses/Problem"
 
+  /me/blocks/ref/{reference}:
+    delete:
+      tags: [safety]
+      operationId: unblockPlayerByRef
+      summary: Remove a block by its reference
+      description: |
+        For a block whose handle is not shown (private profile). Matches only the caller's own blocks.
+        Idempotent. Does not restore cancelled challenges.
+      x-problem-codes:
+        "422": [validation_failed]
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+        - name: reference
+          in: path
+          required: true
+          description: The `ref` of a `BlockedPlayer`.
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]{1,64}$"
+      responses:
+        "204":
+          description: Block removed or not present.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+
   /reports:
     post:
       tags: [safety]
@@ -2659,14 +2686,23 @@ components:
           $ref: "#/components/schemas/HandleInput"
     BlockedPlayer:
       type: object
-      required: [handle, displayName, blockedAt]
+      description: |
+        `handle` and `displayName` are null when the blocked player's profile is private (decision 6): a block
+        from the plaza must not show who it was. Unblock such a block with `ref`.
+      required: [handle, displayName, blockedAt, ref]
       properties:
         handle:
-          $ref: "#/components/schemas/Handle"
+          oneOf:
+            - $ref: "#/components/schemas/Handle"
+            - type: "null"
         displayName:
           $ref: "#/components/schemas/DisplayName"
         blockedAt:
           $ref: "#/components/schemas/Timestamp"
+        ref:
+          type: string
+          description: Opaque reference to this block of the caller (`DELETE /me/blocks/ref/{reference}`).
+          pattern: "^[A-Za-z0-9_-]{1,64}$"
     BlockedPlayerPage:
       type: object
       required: [items, nextCursor]

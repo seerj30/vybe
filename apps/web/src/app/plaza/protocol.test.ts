@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeSnapshot, displayName, headingToAngle, joinErrorCode, MANIFEST_VERSION, parseKickReason, parseLook, parseWelcome, phraseText, PHRASES, STICKERS } from "./protocol";
+import { decodeSnapshot, displayName, headingToAngle, joinErrorCode, MANIFEST_VERSION, parseKickReason, parseLook, parseMember, parseWelcome, phraseText, PHRASES, safetyErrorCode, STICKERS } from "./protocol";
 
 const look = {
   bodyPresetId: "body_a",
@@ -19,8 +19,8 @@ const welcome = {
   bounds: { minX: -1600, maxX: 1600, minZ: -1600, maxZ: 1600 },
   speedCmPerS: 350,
   members: [
-    { slot: 2, handle: "ana_hoops", look },
-    { slot: 5, handle: null, look },
+    { slot: 2, key: 2, handle: "ana_hoops", look },
+    { slot: 5, key: 5, handle: null, look },
   ],
 };
 
@@ -69,7 +69,7 @@ describe("welcome and member parsing", () => {
   });
 
   it("skips a bad member and a duplicate slot, but keeps the plaza", () => {
-    const parsed = parseWelcome({ ...welcome, members: [...welcome.members, { slot: 5, handle: "dup", look }, { slot: 9, handle: "<b>", look }] });
+    const parsed = parseWelcome({ ...welcome, members: [...welcome.members, { slot: 5, key: 6, handle: "dup", look }, { slot: 9, key: 9, handle: "<b>", look }] });
     expect(parsed?.members.map((m) => m.slot)).toEqual([2, 5]);
   });
 
@@ -95,6 +95,22 @@ describe("welcome and member parsing", () => {
   it("names a private member with the generic name", () => {
     expect(displayName({ handle: null })).toBe("Player");
     expect(displayName({ handle: "milo" })).toBe("milo");
+  });
+});
+
+describe("member key and safety errors (protocol §9)", () => {
+  it("needs a positive integer key on every member", () => {
+    expect(parseMember({ slot: 1, key: 4, handle: null, look })).toEqual({ slot: 1, key: 4, handle: null, look });
+    expect(parseMember({ slot: 1, handle: null, look })).toBeNull();
+    expect(parseMember({ slot: 1, key: 0, handle: null, look })).toBeNull();
+    expect(parseMember({ slot: 1, key: 1.5, handle: null, look })).toBeNull();
+  });
+
+  it("reads the code at the end of a HubException message", () => {
+    expect(safetyErrorCode(new Error("An unexpected error occurred invoking 'Report' on the server. HubException: not_found"))).toBe("not_found");
+    expect(safetyErrorCode(new Error("HubException: rate_limited"))).toBe("rate_limited");
+    expect(safetyErrorCode(new Error("not_joined"))).toBe("not_joined");
+    expect(safetyErrorCode(new Error("socket closed"))).toBeNull();
   });
 });
 
