@@ -123,11 +123,14 @@ logs without request paths, deploys of reviewed commits by digest.
 
 ## Consequences
 
-- Hosting costs USD 0 (Oracle Always Free on a Pay As You Go account with a USD 1 budget alert, Supabase Free, GHCR
-  and Actions on a public repository; a domain before real players).
+- Hosting costs USD 0 (Oracle Always Free on a Free Tier account, Supabase Free, GHCR and Actions on a public
+  repository; a domain before real players).
 - The team operates the VM: OS updates, Docker updates, restore drills, disk space. Unattended upgrades reboot it
-  at most once a night. The Pay As You Go account is mandatory: it avoids the idle reclaim of Always Free instances
-  (runbook).
+  at most once a night.
+- Idle reclaim: Oracle can stop an Always Free instance of a Free Tier account after 7 quiet days. **Decision of the
+  product owner (2026-11-10): stay on Free Tier** and accept this risk; restart the VM in the console. Upgrade to Pay
+  As You Go (no charge for Always Free resources, no idle reclaim, USD 1 budget alert) before real beta players
+  (runbook, "Idle reclaim").
 - A deploy is one approved workflow run; a failed migration stops it before the VM changes; a bad image does not
   replace a healthy one.
 - A change to the server files needs the owner on the VM (`bootstrap.sh --files-only`) before the next deploy.

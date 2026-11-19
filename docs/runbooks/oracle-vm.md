@@ -192,7 +192,8 @@ Do the steps in this order. Keep each value in the password manager.
 ## First deploy
 
 1. Checklist. Do not start until every line is true:
-   - The Oracle account is **Pay As You Go** with the **USD 1 budget alert** (step 1).
+   - The Oracle account type is known (step 1): Free Tier (owner decision 2026-11-10, idle reclaim accepted), or
+     **Pay As You Go** with the **USD 1 budget alert**. Pay As You Go is required before real beta players.
    - The VM has the **reserved public IP** (steps 4–5); `VYBE_VM_HOST` and `VYBE_VM_HOST_KEY` use it.
    - Steps 6–13 are done; the Supabase Site URL and redirect URL are `https://<host>`.
    - The heartbeat and the uptime check exist (step 9), and the backup is set up (step 10).
@@ -337,8 +338,10 @@ room for one more 2 OCPU / 12 GB VM). Never restore into the production project 
 Oracle can reclaim (stop) Always Free instances that are idle for 7 days: CPU 95th percentile under 20 %,
 network under 20 %, and memory under 20 % (A1 shapes). A beta with few players can look idle.
 
-- **Mandatory:** the account is Pay As You Go (one-time setup step 1). Always Free resources stay free, and
-  Oracle does not reclaim idle instances of paid accounts. Keep the USD 1 budget alert.
+- **Now: Free Tier** (owner decision 2026-11-10, one-time setup step 1). The risk is accepted: after a quiet week
+  Oracle can stop the VM.
+- **Before real beta players: upgrade to Pay As You Go.** Always Free resources stay free, and Oracle does not
+  reclaim idle instances of paid accounts. Set the USD 1 budget alert at the upgrade.
 - Do not run load only to look busy: it uses the shared free capacity and Oracle can change the rule.
 - If Oracle stops the VM: start it in the console (Compute → Instances → Start). The containers start by
   themselves. The heartbeat and the uptime monitor show the outage.
