@@ -40,10 +40,13 @@
 | Email address and sign-in identity (registered players only) | Supabase Auth | To sign in and to keep the player across devices | Until you delete your account. VYBE deletes the sign-in identity after the anonymization | `[contract]` |
 | Guest session token (only a hash; the token is in a cookie) | VYBE database | To keep you signed in as a guest | Until the session ends (see §5) | `[contract; security]` |
 | V-Coin ledger (amounts, reasons, items, a pseudonymous player id) | VYBE database | Economy integrity, fraud checks, support corrections | No time limit, pseudonymized after deletion `[only if counsel accepts; otherwise a fixed period]` | `[legitimate interest / legal obligation]` |
-| Inventory, saved outfits, quests, daily counters | VYBE database | To run the game | Deleted or anonymized when the account is deleted | `[contract]` |
+| Inventory, saved outfits, My Room layout, quests, daily counters, achievement unlocks and their progress | VYBE database | To run the game | Deleted or anonymized when the account is deleted | `[contract]` |
 | Game sessions (scores, rewards, review flags) | VYBE database | Fair play, rewards | Kept pseudonymized with the ledger | `[legitimate interest]` |
 | Raw game input traces | VYBE database | Anti-cheat checks | 30 days | `[legitimate interest]` |
 | Challenges | VYBE database | Results for both players | Kept pseudonymized (the other player's history needs them) | `[legitimate interest]` |
+| Friend requests and friendships (the two players, status, dates) | VYBE database | To run the friend list, friend challenges and the friends leaderboard | A request or friendship goes when a player cancels, removes the friend or blocks. A declined request stays (it stops a repeat request). All rows go when either account is deleted; guest rows go with the guest (§5) | `[contract]` |
+| Friend request counters (requests sent per day) | VYBE database | Limits against spam | Deleted when the account is deleted `[counsel: a short fixed period is also possible]` | `[legitimate interest]` |
+| Weekly leaderboard scores (game, week, best verified score, the game session, time) | VYBE database | To show weekly leaderboards | Every week since 2026-W01 stays visible; deleted when the account is deleted `[counsel: keep all weeks or only the last N]` | `[contract]` |
 | Blocks | VYBE database | Safety | Deleted when either player is deleted | `[legitimate interest]` |
 | Reports (reason, free text) | VYBE database | Safety and moderation | Free text deleted on account deletion; resolved reports `[1 year]` | `[legitimate interest]` |
 | Moderation audit log | VYBE database | Accountability for staff actions | 90 days `[counsel may require longer]` | `[legitimate interest; legal claims]` |
@@ -69,6 +72,19 @@ V-Coins have no money value.
   that player a challenge from the profile. After a challenge, the other participant still sees the player name.
 - Search engines are told not to index profiles (`noindex`), and profile answers are not stored by shared caches.
 - A blocked player gets the same profile answer as everybody else, so a block stays private.
+- A profile also shows the unlocked achievement badges, without the unlock times.
+
+## 4a. Friends and leaderboards
+
+- Nobody can see another player's friend list. A player sees only the own friends and own requests.
+- A private player cannot get new friend requests, but can send them. Friends of a private player still see that
+  player in the friend list and on the friends leaderboard (a friendship is a choice of both players).
+- A block removes the friendship and the blocker's request. The blocked player is not told.
+- The global weekly leaderboard shows the top 100 per game: player name, display name, level and score. It does not
+  show private players, suspended players or players who are being deleted. Runs that the anti-cheat checks flag
+  are not on the board.
+- The friends leaderboard shows the player and the player's friends only.
+- Only signed-in players can see leaderboards. A player always sees the own rank.
 
 ## 5. Guest players
 
@@ -139,5 +155,6 @@ the policy version that the player confirmed.]`
 5. The backup retention period to state in §7.
 6. Whether "anonymize" (§7) meets the erasure duty for the pseudonymous ledger id.
 7. The cookie notice (§6).
-8. Presence in spaces (§3): whether other players seeing your avatar, player name and position in the plaza
+8. Weekly leaderboard scores (§3, §4a): keep every past week visible, or only the last N weeks.
+9. Presence in spaces (§3): whether other players seeing your avatar, player name and position in the plaza
    needs more than the contract basis, and whether the notice must name it before the first plaza visit.
