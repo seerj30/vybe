@@ -45,8 +45,36 @@
 :8080 {
 	encode zstd gzip
 
+	# Real-time spaces hub (docs/design/p2-spaces-protocol.md): a WebSocket upgrade on one exact path. Caddy 2.11 offers
+	# WebSockets on HTTP/1.1 only (no RFC 8441 on HTTP/2), and an upgraded connection leaves the server timeouts and the
+	# body cap behind (infra/oracle/test-stack.sh holds a hub socket for 65 s). No request_body cap here on purpose: a
+	# WebSocket over HTTP/2 would count all its frames as one body. The one-time ticket is in the query string; the access
+	# log stays off.
+	@spaces path /api/v1/spaces/hub
+	handle @spaces {
+		reverse_proxy {
+			dynamic a {
+				name {$VYBE_API_HOST}
+				port {$VYBE_API_PORT:8080}
+				refresh 5s
+			}
+			transport http {
+				dial_timeout 3s
+				response_header_timeout 30s
+			}
+			header_up X-Forwarded-For {client_ip}
+			header_up -Fly-Client-IP
+			fail_duration 30s
+			lb_try_duration 10s
+			lb_try_interval 250ms
+		}
+	}
+
 	# The API. Its own headers (strict CSP, no-store, HSTS on https) stay as the API sends them.
-	@api path /api /api/*
+	@api {
+		path /api /api/*
+		not path /api/v1/spaces/hub
+	}
 	handle @api {
 		# The API refuses bodies over 16 KB (RequestBody.MaxBytes); stop bigger ones here, with margin.
 		request_body {

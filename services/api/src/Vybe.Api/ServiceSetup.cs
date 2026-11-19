@@ -78,6 +78,7 @@ public static class ServiceSetup
 
         AddAuthentication(services, configuration, environment);
         AddRateLimits(services, configuration);
+        services.AddVybeSpaces(configuration);
         return services;
     }
 
@@ -89,6 +90,8 @@ public static class ServiceSetup
         app.UseExceptionHandler();
         app.Use(LimitRequestBodyAsync);
         app.UseMiddleware<CsrfMiddleware>();
+        app.UseWebSockets();
+        app.UseMiddleware<SpaceGate>(); // real-time spaces: WebSocket path, origin and caps before authentication
         app.UseAuthentication();
         app.UseRateLimiter();
         app.UseAuthorization();
@@ -110,6 +113,7 @@ public static class ServiceSetup
         FriendEndpoints.Map(api);
         LeaderboardEndpoints.Map(api);
         AchievementEndpoints.Map(api);
+        app.MapVybeSpaces(api);
         return app;
     }
 
@@ -145,6 +149,7 @@ public static class ServiceSetup
                         ? AuthSchemes.Supabase
                         : AuthSchemes.Guest)
             .AddScheme<AuthenticationSchemeOptions, GuestAuthenticationHandler>(AuthSchemes.Guest, null)
+            .AddScheme<AuthenticationSchemeOptions, SpaceTicketAuthenticationHandler>(SpaceTicketAuthenticationHandler.SchemeName, null)
             .AddJwtBearer(AuthSchemes.Supabase, options =>
             {
                 // Supabase Auth (spec §5, §11): issuer, audience, signature, algorithm and expiry are validated;

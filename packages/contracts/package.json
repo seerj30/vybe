@@ -7,7 +7,8 @@
     "node": ">=22.18"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./spaces": "./src/spaces.ts"
   },
   "scripts": {
     "lint": "redocly lint openapi/vybe-api.v1.yaml",
