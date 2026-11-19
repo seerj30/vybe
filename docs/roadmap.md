@@ -39,6 +39,7 @@ branch and opens PRs. The orchestrator session reviews, tests and merges them.
 | Street Juggle `timing_spread_low` review flag (anti-bot), Npgsql GSS off (no libgssapi log noise), body B art pass (stream S), flaky room touch test | #66, #67, #68, #69 |
 | Emotes cheer and jump: arms in a V, hands clear of the face | #70 |
 | Stream T: UI polish pass after the owner's phone test — dark dropdowns, signed and colored V-Coin changes, hub wallet card with recent changes, shared style tokens (`docs/design/ui-polish-audit.md`) | #71 |
+| P2 planning (stream U): options and recommendations for chat, real-time spaces, trading, monetization; counsel questions (not signed yet) | [`docs/p2/README.md`](p2/README.md) |
 
 ## P0 social beta gate (spec §16)
 

@@ -247,7 +247,7 @@ public sealed class RoomTests(ApiFactory api)
         foreach (var visitor in new[] { blocked, blocker })
         {
             var text = await (await visitor.Http.GetAsync($"/api/v1/profiles/{handle}/room")).Content.ReadAsStringAsync();
-            var room = JsonDocument.Parse(text).RootElement;
+            var room = JsonElement.Parse(text);
             Contract.Validate(room, "Room");
             Assert.Equal(JsonSerializer.Serialize(RoomResponse.Empty, Infrastructure.ApiJson.Options), text);
             Assert.Empty(room.GetProperty("items").EnumerateArray());
