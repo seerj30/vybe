@@ -208,8 +208,8 @@ public sealed partial class SpaceManager(
         {
             var client = Client(connectionId);
             client.Joining = false;
-            var blocks = WithLiveBlocks(client.PlayerId, profile.Blocks, now);
-            profile = profile with { Blocks = blocks };
+            profile = WithLiveBlocks(client.PlayerId, profile, now);
+            var blocks = profile.Blocks;
             client.LastInputAt = now;
 
             if (_reserved.Remove(client.PlayerId, out var reserved))
@@ -376,6 +376,7 @@ public sealed partial class SpaceManager(
             var b = AvatarOf(blocked);
             a?.Blocks.Add(blocked);
             b?.Blocks.Add(blocker);
+            b?.BlockedBy.Add(blocker);
             if (a is null || b is null || a.Instance != b.Instance)
             {
                 return;
@@ -390,7 +391,7 @@ public sealed partial class SpaceManager(
             var from = a.Instance;
             RemoveAvatar(a, now);
             client.Avatar = null;
-            var profile = new SpaceProfile(a.Handle, a.Look, a.OwnedEmotes, a.Blocks);
+            var profile = new SpaceProfile(a.Handle, a.Look, a.OwnedEmotes, a.Blocks, a.BlockedBy);
             if (Place(client, profile, now, exclude: from) is { } moved)
             {
                 client.TryEnqueue(new OutMessage(SpaceEvents.Moved, [Welcome(moved)]));
@@ -684,6 +685,7 @@ public sealed partial class SpaceManager(
         avatar.Look = profile.Look;
         avatar.OwnedEmotes = profile.OwnedEmotes;
         avatar.Blocks.UnionWith(profile.Blocks);
+        avatar.BlockedBy.UnionWith(profile.BlockedBy);
         avatar.Instance.Changed = true;
         client.Avatar = avatar;
         // A joined for an occupied slot replaces the member (handle or look may have changed while away).
@@ -699,11 +701,13 @@ public sealed partial class SpaceManager(
             .FirstOrDefault();
         if (instance is null)
         {
-            // The cap is about capacity. When instances with room exist and only blocks keep the player out, a new
-            // instance opens past the cap: else blocks from many accounts could keep one player out of every plaza.
-            // Avatars stay bounded by the connection cap.
-            var onlyBlocked = _instances.Values.Any(i => i != exclude && i.Count < SpaceRules.InstanceCapacity);
-            if (_instances.Count >= options.MaxInstances && !onlyBlocked)
+            // The cap is about capacity. When instances with free slots exist and only blocks that other players placed on
+            // this player keep them out, a new instance opens past the cap, up to twice the cap: else blocks from many
+            // accounts could keep one player out of every plaza. The joiner's own blocks never open extra instances.
+            var blockedByOthers = _instances.Values.Any(i => i != exclude && i.Count < SpaceRules.InstanceCapacity
+                && i.Avatars.Any(a => profile.BlockedBy.Contains(a.PlayerId)));
+            var limit = blockedByOthers ? options.MaxInstances * 2 : options.MaxInstances;
+            if (_instances.Count >= limit)
             {
                 return null;
             }
@@ -751,18 +755,29 @@ public sealed partial class SpaceManager(
         instance.Avatars.Any(a => a.PlayerId != playerId && (blocks.Contains(a.PlayerId) || a.Blocks.Contains(playerId)));
 
     /// <summary>Adds blocks that committed after the joiner's profile was read (a block during <c>Join</c>).</summary>
-    private HashSet<Guid> WithLiveBlocks(Guid playerId, IReadOnlySet<Guid> blocks, DateTimeOffset now)
+    private SpaceProfile WithLiveBlocks(Guid playerId, SpaceProfile profile, DateTimeOffset now)
     {
-        var all = new HashSet<Guid>(blocks);
-        foreach (var (a, b, at) in _liveBlocks)
+        var blocks = new HashSet<Guid>(profile.Blocks);
+        var blockedBy = new HashSet<Guid>(profile.BlockedBy);
+        foreach (var (blocker, blocked, at) in _liveBlocks)
         {
-            if (now - at <= LiveBlockLifetime && (a == playerId || b == playerId))
+            if (now - at > LiveBlockLifetime)
             {
-                all.Add(a == playerId ? b : a);
+                continue;
+            }
+
+            if (blocker == playerId)
+            {
+                blocks.Add(blocked);
+            }
+            else if (blocked == playerId)
+            {
+                blocks.Add(blocker);
+                blockedBy.Add(blocker);
             }
         }
 
-        return all;
+        return profile with { Blocks = blocks, BlockedBy = blockedBy };
     }
 
     private SpaceAvatar? AvatarOf(Guid playerId) =>

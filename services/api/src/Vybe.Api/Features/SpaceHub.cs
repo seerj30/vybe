@@ -122,7 +122,7 @@ public static class SpaceProfiles
             .ToListAsync(cancellationToken);
         var blocks = await db.PlayerBlocks.AsNoTracking()
             .Where(b => b.BlockerPlayerId == playerId || b.BlockedPlayerId == playerId)
-            .Select(b => b.BlockerPlayerId == playerId ? b.BlockedPlayerId : b.BlockerPlayerId)
+            .Select(b => new { b.BlockerPlayerId, b.BlockedPlayerId })
             .ToListAsync(cancellationToken);
 
         string? Sku(Guid? id) => id is { } value ? skus.GetValueOrDefault(value) : null;
@@ -135,6 +135,7 @@ public static class SpaceProfiles
             player.ProfileVisibility == ProfileVisibility.Private ? null : player.Handle,
             look,
             emotes.ToHashSet(StringComparer.Ordinal),
-            blocks.ToHashSet());
+            blocks.Select(b => b.BlockerPlayerId == playerId ? b.BlockedPlayerId : b.BlockerPlayerId).ToHashSet(),
+            blocks.Where(b => b.BlockedPlayerId == playerId).Select(b => b.BlockerPlayerId).ToHashSet());
     }
 }

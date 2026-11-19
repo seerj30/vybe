@@ -313,6 +313,31 @@ public sealed class SpaceTests(SpaceApiFactory api) : IClassFixture<SpaceApiFact
     }
 
     [Fact]
+    public async Task OwnBlocks_NeverOpenInstancesPastTheCap_BlocksByOthersDo()
+    {
+        // A and B block each other: two instances, the cap.
+        var a = await Player.CreateGuestAsync(api);
+        var b = await Player.CreateGuestAsync(api);
+        await BlockAsync(a, b);
+        await BlockAsync(b, a);
+        await JoinAsync(a);
+        await JoinAsync(b);
+
+        // C blocks both: its own blocks do not open a third instance.
+        var c = await Player.CreateGuestAsync(api);
+        await BlockAsync(c, a);
+        await BlockAsync(c, b);
+        var refused = await Assert.ThrowsAsync<HubException>(async () => await JoinAsync(c));
+        Assert.Contains(KickReasons.SpacesFull, refused.Message, StringComparison.Ordinal);
+
+        // D is blocked by both: a third instance opens, so blocks cannot lock D out.
+        var d = await Player.CreateGuestAsync(api);
+        await BlockAsync(a, d);
+        await BlockAsync(b, d);
+        await JoinAsync(d);
+    }
+
+    [Fact]
     public async Task Block_WhileTogether_MovesTheBlocker_TheBlockedSeesOnlyLeft()
     {
         var blocker = await Player.CreateGuestAsync(api);

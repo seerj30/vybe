@@ -78,8 +78,12 @@ public static class KickReasons
     public const string SlowClient = "slow_client";
 }
 
-/// <summary>What the database says about a joining player (read before the state lock is taken).</summary>
-public sealed record SpaceProfile(string? Handle, SpaceLook Look, IReadOnlySet<string> OwnedEmotes, IReadOnlySet<Guid> Blocks);
+/// <summary>
+/// What the database says about a joining player (read before the state lock is taken). <c>Blocks</c>: both
+/// directions (who may not share an instance); <c>BlockedBy</c>: players who blocked this one.
+/// </summary>
+public sealed record SpaceProfile(
+    string? Handle, SpaceLook Look, IReadOnlySet<string> OwnedEmotes, IReadOnlySet<Guid> Blocks, IReadOnlySet<Guid> BlockedBy);
 
 internal sealed record OutMessage(string Method, object?[] Args, bool IsSnapshot = false, string? KickReason = null);
 
@@ -244,6 +248,9 @@ internal sealed class SpaceAvatar(Guid playerId, SpaceInstance instance, int slo
 
     /// <summary>Players in a block with this one, both directions.</summary>
     public HashSet<Guid> Blocks { get; } = [.. profile.Blocks];
+
+    /// <summary>Players who blocked this one.</summary>
+    public HashSet<Guid> BlockedBy { get; } = [.. profile.BlockedBy];
 
     public double X { get; set; }
 
