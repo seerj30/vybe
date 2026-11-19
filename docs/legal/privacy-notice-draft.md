@@ -49,11 +49,15 @@
 | Moderation audit log | VYBE database | Accountability for staff actions | 90 days `[counsel may require longer]` | `[legitimate interest; legal claims]` |
 | Data export files | Private storage bucket | Your right of access | File: 24 hours; request record: 90 days | `[legal obligation]` |
 | Deletion requests (id, status, dates; no profile data) | VYBE database and a deletion log | Proof that a deletion was done; repeat after a backup restore | `[3 years — counsel to set]` | `[legal obligation (accountability)]` |
+| Presence in spaces (which plaza instance you are in, your avatar position and movement, your player name and avatar shown to the other players there) | API memory only (not in the database) | To run the shared plaza in real time | Until you leave the plaza or the API restarts | `[contract]` |
+| Space events in logs (pseudonymous player id, instance id, join, leave, kick reason, session length, count of refused messages; never positions, movement, quick-chat or emote use, or who was near whom) | Log and trace platform | Security, abuse checks, operations | 30 days (as operational logs) | `[legitimate interest]` |
 | Operational logs and traces (pseudonymous player id, no tokens, no email) | Log and trace platform | Security and operations | 30 days | `[legitimate interest]` |
 | Crash reports | Sentry (if turned on) | To fix errors | `[30–90 days, vendor setting]` | `[legitimate interest; consent if counsel requires it]` |
 | Product analytics | — | Not collected now. Only with consent in the future | — | `[consent]` |
 
 VYBE does not ask guests for an email address. VYBE has no free-text chat and no real-money purchases.
+In the plaza, players talk only with fixed quick-chat phrases, emotes and stickers. A player you block and you are
+never put in the same plaza instance.
 V-Coins have no money value.
 
 ## 4. Profiles
@@ -135,3 +139,5 @@ the policy version that the player confirmed.]`
 5. The backup retention period to state in §7.
 6. Whether "anonymize" (§7) meets the erasure duty for the pseudonymous ledger id.
 7. The cookie notice (§6).
+8. Presence in spaces (§3): whether other players seeing your avatar, player name and position in the plaza
+   needs more than the contract basis, and whether the notice must name it before the first plaza visit.
