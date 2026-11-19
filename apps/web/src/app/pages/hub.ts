@@ -79,6 +79,7 @@ const RECENT_CHANGES = 3;
               }
             </ul>
             <div class="actions">
+              <a class="button" routerLink="/plaza" data-testid="plaza-link">Go to the plaza</a>
               <a class="button secondary" routerLink="/arcade">Arcade</a>
               <a class="button secondary" routerLink="/challenges">My challenges</a>
             </div>

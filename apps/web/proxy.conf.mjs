@@ -9,6 +9,8 @@ export default {
   "/api": {
     target: `http://localhost:${apiPort}`,
     secure: false,
+    // The spaces hub (/api/v1/spaces/hub) is a WebSocket.
+    ws: true,
   },
   ...(authPort === undefined ? {} : { "/runtime-config.json": { target: `http://localhost:${authPort}`, secure: false, changeOrigin: true } }),
   // E2E over HTTPS (E2E_WEB_HTTPS=1): the fake Auth is reached on the app origin, so WebKit sees no mixed content.
