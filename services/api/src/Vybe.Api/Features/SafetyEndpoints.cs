@@ -50,6 +50,7 @@ public static class SafetyEndpoints
             throw Problem.ValidationFailed("/handle", "invalid", "handle is not a valid handle");
         }
 
+        // Decision 6 (accepted risk): a private player stays blockable by handle.
         var target = await PlayerHandles.FindAsync(db, request.Handle, cancellationToken) ?? throw Problem.Of(404, "not_found");
 
         await BlockPlayerAsync(db, spaces, playerId, target.Id, clock.UtcNowForDb(), cancellationToken);
@@ -94,10 +95,13 @@ public static class SafetyEndpoints
         var playerId = await current.GetIdAsync(cancellationToken);
         if (PlayerHandles.IsInput(handle))
         {
+            // A private player's block is not matched by handle (decision 6; unblock it by ref), so the answer and the
+            // list never confirm a guessed handle.
             var normalized = handle.ToLowerInvariant();
             await db.PlayerBlocks
                 .Where(b => b.BlockerPlayerId == playerId
-                    && db.Players.Any(p => p.Id == b.BlockedPlayerId && p.HandleNormalized == normalized))
+                    && db.Players.Any(p => p.Id == b.BlockedPlayerId && p.HandleNormalized == normalized
+                        && p.ProfileVisibility != ProfileVisibility.Private))
                 .ExecuteDeleteAsync(cancellationToken);
             await FriendEndpoints.ApplyUnblockAsync(db, playerId, handle, cancellationToken);
         }
@@ -112,29 +116,40 @@ public static class SafetyEndpoints
         var playerId = await current.GetIdAsync(cancellationToken);
         var take = Cursor.Limit(limit, 20);
         var query = db.PlayerBlocks.AsNoTracking().Where(b => b.BlockerPlayerId == playerId);
+        DateTime? lastCreated = null;
+        var skip = 0;
         if (Cursor.Decode(cursor) is { } decoded)
         {
+            // "ticks|n": the last time on the previous page and how many of its blocks had that time. No player id:
+            // the cursor of a private player's block must not identify the player.
             var parts = decoded.Split('|');
             if (parts.Length != 2 || !long.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var ticks)
-                || ticks > DateTime.MaxValue.Ticks || !Guid.TryParse(parts[1], out var lastId))
+                || ticks > DateTime.MaxValue.Ticks
+                || !int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var seen) || seen < 1)
             {
                 throw Problem.ValidationFailed("/cursor", "invalid_cursor", "cursor is not valid");
             }
 
-            var lastCreated = new DateTime(ticks, DateTimeKind.Utc);
-            query = query.Where(b => b.CreatedAt < lastCreated
-                || (b.CreatedAt == lastCreated && b.BlockedPlayerId.CompareTo(lastId) < 0));
+            lastCreated = new DateTime(ticks, DateTimeKind.Utc);
+            skip = seen;
+            query = query.Where(b => b.CreatedAt <= lastCreated);
         }
 
         var rows = await query
             .Join(db.Players, b => b.BlockedPlayerId, p => p.Id, (b, p) => new { b.BlockedPlayerId, b.CreatedAt, p.Handle, p.DisplayName, p.ProfileVisibility })
             .OrderByDescending(r => r.CreatedAt).ThenByDescending(r => r.BlockedPlayerId)
+            .Skip(skip) // the blocks with the cursor's time that the previous pages showed come first
             .Take(take + 1)
             .ToListAsync(cancellationToken);
         var page = rows.Take(take).ToList();
-        var next = rows.Count > take
-            ? Cursor.Encode($"{page[^1].CreatedAt.Ticks.ToString(CultureInfo.InvariantCulture)}|{page[^1].BlockedPlayerId}")
-            : null;
+        string? next = null;
+        if (rows.Count > take)
+        {
+            var last = page[^1].CreatedAt;
+            var seen = page.Count(r => r.CreatedAt == last) + (lastCreated == last ? skip : 0);
+            next = Cursor.Encode($"{last.Ticks.ToString(CultureInfo.InvariantCulture)}|{seen.ToString(CultureInfo.InvariantCulture)}");
+        }
+
         return new Page<BlockedPlayer>(
             page.Select(r => r.ProfileVisibility == ProfileVisibility.Private
                     ? new BlockedPlayer(null, null, r.CreatedAt, BlockRef(r.CreatedAt))

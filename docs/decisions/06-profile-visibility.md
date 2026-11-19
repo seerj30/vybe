@@ -69,3 +69,8 @@ Reasons:
 - **Accepted risk:** blocks and reports by handle still accept a private handle. Their answers (204, 202)
   tell a signed-in player that the handle exists. A private player must stay blockable and reportable,
   so this is accepted (ADR 0005).
+- **P2 plaza (2026-11-19):** players block and report plaza members by slot, also private ones. The block
+  list (`GET /me/blocks`) then shows no handle or display name for a private player; unblock is by `ref`, and
+  unblock by handle does not match such a block. **Residual risk (accepted with the rule above):** a player who
+  blocked a private avatar in the plaza can block a guessed handle again and see whether the list grows, which
+  links that avatar to the handle. The two players then never share a plaza again.
