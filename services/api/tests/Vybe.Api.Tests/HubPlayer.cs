@@ -13,7 +13,7 @@ namespace Vybe.Api.Tests;
 /// <summary>The API with the tick loop off (tests call <see cref="SpaceManager.Tick"/>) and small caps.</summary>
 public sealed class SpaceApiFactory : ApiFactory
 {
-    public const int MaxInstances = 3;
+    public const int MaxInstances = 2;
 
     public SpaceManager Spaces => Services.GetRequiredService<SpaceManager>();
 

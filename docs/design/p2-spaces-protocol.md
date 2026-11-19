@@ -86,7 +86,9 @@ new HubConnectionBuilder()
 1. A reconnect within 30 s (§8) goes back to its reserved slot, if the instance still exists and no block (§9) now
    separates it.
 2. Else the fullest instance with a free slot that contains no player in a block with the joiner (either direction).
-3. Else a new instance. At the instance cap: `Join` fails with `spaces_full`.
+3. Else a new instance. At the instance cap: `Join` fails with `spaces_full`, except when instances with free slots
+   exist and only blocks keep the player out: then a new instance opens past the cap (else many accounts that block
+   one player could keep that player out of every plaza). Avatars stay bounded by the connection cap.
 
 ## 4. Messages: client → server (hub methods)
 
@@ -252,8 +254,8 @@ suspended → `kicked("suspended")`; `deleting`/`deleted` → `kicked("account_u
   (spec §2 block privacy). This happens within 1 s of the block commit. A block also cancels a 30 s slot
   reservation that would put the pair together.
 - Unblock changes nothing in running instances; the next `Join` follows the new state.
-- **Private profile** (decision 6): `handle` is `null`; the avatar is still visible with its look. A profile change
-  counts at the next `Join`.
+- A privacy change shows after `RefreshLook` (a `joined` that replaces the member) or at the next `Join`.
+- **Private profile** (decision 6): `handle` is `null`; the avatar is still visible with its look.
 - Spaces give **no** coins, XP, items, quest progress or achievements.
 
 ## 10. Logs, metrics and retention (decision 8)
@@ -297,3 +299,4 @@ text. The privacy notice needs a "presence in spaces" row (P2 pack; orchestrator
 | 2 | Join a friend's instance ("go to friend")? Shows presence to friends | Not in P2 (decision 8: presence is new personal data) |
 | 3 | Sticker art (12 icons) | Stream W draws them (flat 2D, `assets/` or `apps/web`), ids from the manifest |
 | 4 | Final limits (speed, bounds, rates, caps) | The *provisional* values here; the load test (`docs/runbooks/load-test.md`) may change caps |
+| 5 | 20 connections per address: enough behind carrier-grade NAT (many players, one address)? | Keep 20; raise `Spaces:MaxConnectionsPerAddress` if real players hit it (the 429 is in the API metrics) |

@@ -126,7 +126,7 @@ public static class SpaceSetup
         var dispatcher = new HttpConnectionDispatcherOptions
         {
             Transports = HttpTransportType.WebSockets,
-            ApplicationMaxBufferSize = 8 * 1024,
+            ApplicationMaxBufferSize = 4 * 1024, // inbound: the byte meter sees a batch of at most this size
             TransportMaxBufferSize = 64 * 1024,
         };
         dispatcher.WebSockets.CloseTimeout = TimeSpan.FromSeconds(2);
@@ -226,8 +226,13 @@ public sealed partial class SpaceTicker(
             return;
         }
 
+        // Two loops: a slow database never stops the 10 Hz tick.
+        await Task.WhenAll(TickLoopAsync(stoppingToken), AccountLoopAsync(stoppingToken));
+    }
+
+    private async Task TickLoopAsync(CancellationToken stoppingToken)
+    {
         using var timer = new PeriodicTimer(SpaceRules.TickInterval, clock);
-        var nextCheck = clock.GetUtcNow() + SpaceRules.StatusCheckInterval;
         try
         {
             while (await timer.WaitForNextTickAsync(stoppingToken))
@@ -235,11 +240,29 @@ public sealed partial class SpaceTicker(
                 try
                 {
                     spaces.Tick();
-                    if (clock.GetUtcNow() >= nextCheck)
-                    {
-                        nextCheck = clock.GetUtcNow() + SpaceRules.StatusCheckInterval;
-                        await CheckAccountsAsync(stoppingToken);
-                    }
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    LogTickFailed(exception);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // shutdown
+        }
+    }
+
+    private async Task AccountLoopAsync(CancellationToken stoppingToken)
+    {
+        using var timer = new PeriodicTimer(SpaceRules.StatusCheckInterval, clock);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(stoppingToken))
+            {
+                try
+                {
+                    await CheckAccountsAsync(stoppingToken);
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
@@ -288,6 +311,6 @@ public sealed partial class SpaceTicker(
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Space tick failed")]
+    [LoggerMessage(Level = LogLevel.Error, Message = "Space tick or account check failed")]
     private partial void LogTickFailed(Exception exception);
 }

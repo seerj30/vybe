@@ -53,6 +53,8 @@ public static class Telemetry
                         options.Filter = context => !context.Request.Path.StartsWithSegments("/health", StringComparison.Ordinal)
                             && !context.Request.Path.StartsWithSegments(Features.SpaceHub.Path, StringComparison.OrdinalIgnoreCase);
                         options.EnrichWithHttpResponse = (activity, response) => ScrubServerSpan(activity, response.HttpContext);
+                        // No span per hub call (Move arrives 10 times per second per player).
+                        options.EnableAspNetCoreSignalRSupport = false;
                     })
                     // Outgoing URLs can carry a Supabase Auth user id (J4 deletion): redact it like a request path.
                     .AddHttpClientInstrumentation(options => options.EnrichWithHttpRequestMessage = (activity, request) =>

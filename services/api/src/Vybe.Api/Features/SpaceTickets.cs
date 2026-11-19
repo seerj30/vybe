@@ -23,6 +23,7 @@ public sealed class SpaceTickets(SpaceOptions options, TimeProvider clock)
     private readonly Lock _gate = new();
     private readonly Dictionary<string, (Guid PlayerId, DateTimeOffset ExpiresAt)> _tickets = new(StringComparer.Ordinal);
     private readonly Dictionary<Guid, Queue<DateTimeOffset>> _issued = [];
+    private DateTimeOffset _sweptAt = DateTimeOffset.MinValue;
 
     /// <summary>A new ticket, or null when the player asked for too many in the last minute.</summary>
     public SpaceTicket? Issue(Guid playerId)
@@ -31,9 +32,10 @@ public sealed class SpaceTickets(SpaceOptions options, TimeProvider clock)
         var token = GuestTokens.NewToken();
         lock (_gate)
         {
-            if (_tickets.Count >= MaxLiveTickets / 2)
+            if (_tickets.Count >= MaxLiveTickets / 2 || now - _sweptAt >= TimeSpan.FromMinutes(1))
             {
                 Sweep(now);
+                _sweptAt = now;
             }
 
             if (!_issued.TryGetValue(playerId, out var times))

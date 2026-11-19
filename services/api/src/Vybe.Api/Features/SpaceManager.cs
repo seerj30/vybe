@@ -314,9 +314,18 @@ public sealed partial class SpaceManager(
                 return;
             }
 
+            var handleChanged = avatar.Handle != profile.Handle; // a privacy change shows at once
+            avatar.Handle = profile.Handle;
             avatar.Look = profile.Look;
             avatar.OwnedEmotes = profile.OwnedEmotes;
-            Broadcast(avatar.Instance, SpaceEvents.Look, [avatar.Slot, avatar.Look]);
+            if (handleChanged)
+            {
+                Broadcast(avatar.Instance, SpaceEvents.Joined, [avatar.Member()]);
+            }
+            else
+            {
+                Broadcast(avatar.Instance, SpaceEvents.Look, [avatar.Slot, avatar.Look]);
+            }
         }
     }
 
@@ -690,7 +699,11 @@ public sealed partial class SpaceManager(
             .FirstOrDefault();
         if (instance is null)
         {
-            if (_instances.Count >= options.MaxInstances)
+            // The cap is about capacity. When instances with room exist and only blocks keep the player out, a new
+            // instance opens past the cap: else blocks from many accounts could keep one player out of every plaza.
+            // Avatars stay bounded by the connection cap.
+            var onlyBlocked = _instances.Values.Any(i => i != exclude && i.Count < SpaceRules.InstanceCapacity);
+            if (_instances.Count >= options.MaxInstances && !onlyBlocked)
             {
                 return null;
             }

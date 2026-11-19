@@ -4,7 +4,7 @@
 // How to run: docs/runbooks/load-test.md. Local targets only: the script stops for any other host.
 import http from 'k6/http';
 import { check, fail } from 'k6';
-import { WebSocket } from 'k6/websockets';
+import { WebSocket } from 'k6/experimental/websockets';
 import { Counter, Trend } from 'k6/metrics';
 
 const BASE_URL = (__ENV.BASE_URL || 'http://localhost:8080').replace(/\/$/, '');

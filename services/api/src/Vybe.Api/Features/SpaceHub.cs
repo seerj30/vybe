@@ -15,6 +15,9 @@ public sealed class SpaceHub(SpaceManager spaces, VybeDbContext db, TimeProvider
 {
     public const string Path = "/api/v1/spaces/hub";
 
+    /// <summary>Profile reads (5 small queries) at the same time, for all connections: joins cannot flood the pool.</summary>
+    private static readonly SemaphoreSlim ProfileReads = new(8);
+
     public override Task OnConnectedAsync()
     {
         var playerId = Guid.Parse(Context.User!.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -35,7 +38,7 @@ public sealed class SpaceHub(SpaceManager spaces, VybeDbContext db, TimeProvider
         SpaceProfile? profile;
         try
         {
-            profile = await SpaceProfiles.LoadAsync(db, playerId, clock.UtcNowForDb(), Context.ConnectionAborted);
+            profile = await LoadProfileAsync(playerId);
         }
         catch
         {
@@ -63,10 +66,27 @@ public sealed class SpaceHub(SpaceManager spaces, VybeDbContext db, TimeProvider
 
     public void Sticker(string? id) => spaces.Sticker(Context.ConnectionId, id);
 
+    private async Task<SpaceProfile?> LoadProfileAsync(Guid playerId)
+    {
+        if (!await ProfileReads.WaitAsync(TimeSpan.FromSeconds(5), Context.ConnectionAborted))
+        {
+            throw new HubException(KickReasons.RateLimited);
+        }
+
+        try
+        {
+            return await SpaceProfiles.LoadAsync(db, playerId, clock.UtcNowForDb(), Context.ConnectionAborted);
+        }
+        finally
+        {
+            ProfileReads.Release();
+        }
+    }
+
     public async Task RefreshLook()
     {
         if (spaces.BeginRefreshLook(Context.ConnectionId) is { } playerId
-            && await SpaceProfiles.LoadAsync(db, playerId, clock.UtcNowForDb(), Context.ConnectionAborted) is { } profile)
+            && await LoadProfileAsync(playerId) is { } profile)
         {
             spaces.CompleteRefreshLook(Context.ConnectionId, profile);
         }

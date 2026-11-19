@@ -262,10 +262,10 @@ public sealed class SpaceTests(SpaceApiFactory api) : IClassFixture<SpaceApiFact
     // ------------------------------------------------------------------ instances
 
     [Fact]
-    public async Task Instance_HoldsSixteen_TheSeventeenthGetsAnotherOne()
+    public async Task Instance_HoldsSixteen_ThenAnotherOpens_UpToTheCap()
     {
         var welcomes = new List<SpaceWelcome>();
-        for (var i = 0; i < SpaceRules.InstanceCapacity + 1; i++)
+        for (var i = 0; i < SpaceRules.InstanceCapacity * SpaceApiFactory.MaxInstances; i++)
         {
             welcomes.Add((await JoinAsync(await Player.CreateGuestAsync(api))).Welcome);
         }
@@ -273,18 +273,24 @@ public sealed class SpaceTests(SpaceApiFactory api) : IClassFixture<SpaceApiFact
         var first = welcomes[0].InstanceId;
         Assert.All(welcomes.Take(16), w => Assert.Equal(first, w.InstanceId));
         Assert.Equal(16, welcomes.Take(16).Select(w => w.Slot).Distinct().Count());
-        Assert.NotEqual(first, welcomes[16].InstanceId);
         Assert.Equal(16, welcomes[15].Members.Count);
+        Assert.All(welcomes.Skip(16), w => Assert.NotEqual(first, w.InstanceId));
+
+        // Every instance is full and the cap is reached.
+        var last = Track(await HubPlayer.ConnectAsync(api, await Player.CreateGuestAsync(api)));
+        var refused = await Assert.ThrowsAsync<HubException>(() => last.Connection.InvokeAsync<SpaceWelcome>("Join"));
+        Assert.Contains(KickReasons.SpacesFull, refused.Message, StringComparison.Ordinal);
     }
 
     // ------------------------------------------------------------------ blocks
 
     [Fact]
-    public async Task Block_BeforeJoin_KeepsThePairApart_AndAtTheCapJoinFails()
+    public async Task Block_BeforeJoin_KeepsThePairApart_AndBlocksNeverLockAPlayerOut()
     {
-        // Four players, each blocked by the next: every one needs an instance of its own; the cap is 3.
+        // Four players, each blocked by all the others: each needs an instance of its own, past the cap of 2
+        // (else many accounts that block one player could keep that player out of every plaza).
         var players = new List<Player>();
-        for (var i = 0; i < SpaceApiFactory.MaxInstances + 1; i++)
+        for (var i = 0; i < 4; i++)
         {
             players.Add(await Player.CreateGuestAsync(api));
         }
@@ -298,15 +304,12 @@ public sealed class SpaceTests(SpaceApiFactory api) : IClassFixture<SpaceApiFact
         }
 
         var instances = new HashSet<int>();
-        foreach (var player in players.Take(SpaceApiFactory.MaxInstances))
+        foreach (var player in players)
         {
             instances.Add((await JoinAsync(player)).Welcome.InstanceId);
         }
 
-        Assert.Equal(SpaceApiFactory.MaxInstances, instances.Count);
-        var last = Track(await HubPlayer.ConnectAsync(api, players[^1]));
-        var refused = await Assert.ThrowsAsync<HubException>(() => last.Connection.InvokeAsync<SpaceWelcome>("Join"));
-        Assert.Contains(KickReasons.SpacesFull, refused.Message, StringComparison.Ordinal);
+        Assert.Equal(4, instances.Count);
     }
 
     [Fact]
@@ -374,9 +377,16 @@ public sealed class SpaceTests(SpaceApiFactory api) : IClassFixture<SpaceApiFact
         var player = await Player.CreateGuestAsync(api);
         Assert.Equal(HttpStatusCode.OK, (await player.Http.PatchAsJsonAsync("/api/v1/me/privacy", new { profileVisibility = "private" })).StatusCode);
 
-        var (_, welcome) = await JoinAsync(player);
+        var (client, welcome) = await JoinAsync(player);
+        var (other, _) = await JoinAsync(await Player.CreateGuestAsync(api));
 
         Assert.Null(welcome.Members.Single(m => m.Slot == welcome.Slot).Handle);
+
+        // Back to "players": RefreshLook shows the handle at once (a joined that replaces the member).
+        Assert.Equal(HttpStatusCode.OK, (await player.Http.PatchAsJsonAsync("/api/v1/me/privacy", new { profileVisibility = "players" })).StatusCode);
+        await client.Connection.InvokeAsync("RefreshLook");
+        var member = (SpaceMember)(await other.WaitForAsync(SpaceEvents.Joined, a => ((SpaceMember)a[0]!).Slot == welcome.Slot))[0]!;
+        Assert.Equal((await player.MeAsync()).GetProperty("handle").GetString(), member.Handle);
     }
 
     [Fact]
