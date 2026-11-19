@@ -88,8 +88,8 @@ new HubConnectionBuilder()
 2. Else the fullest instance with a free slot that contains no player in a block with the joiner (either direction).
 3. Else a new instance. At the instance cap: `Join` fails with `spaces_full`, except when instances with free slots
    exist and only blocks that other players placed on the joiner keep them out: then a new instance opens past the cap
-   (else many accounts that block one player could keep that player out of every plaza). Each instance holds at least
-   one connected avatar, so the connection cap still bounds them. The joiner's own blocks never open extra instances.
+   (else many accounts that block one player could keep that player out of every plaza), up to one instance per allowed
+   connection. The joiner's own blocks never open extra instances.
 
 ## 4. Messages: client → server (hub methods)
 
