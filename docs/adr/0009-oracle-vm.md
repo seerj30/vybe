@@ -33,8 +33,10 @@ logs without request paths, deploys of reviewed commits by digest.
    (`/var/lib/vybe/caddy`), because Let's Encrypt limits new certificates per week. HTTP/3 is off (no UDP port).
    compose mounts this file over the image's Caddyfile, so the web image stays the same for Fly.io and the VM.
 3. **sslip.io for the first deploy, an own domain before real players.** The first host name is
-   `<public IPv4 with dashes>.sslip.io`, so Let's Encrypt works without a domain. So that the name stays the same,
-   a reserved public IP is mandatory. Before real players, an own domain replaces it (an `A` record and a new value
+   `<public IPv4 with dashes>.sslip.io`, so Let's Encrypt works without a domain. The production VM keeps its
+   ephemeral public IP (owner decision, 2026-11-10, roadmap): it stays through stops and reboots and changes only
+   when the VM is replaced. A new VM then means a new host name. A reserved public IP removes this risk; use one for a
+   new VM. Before real players, an own domain replaces the sslip.io name (an `A` record and a new value
    in `stage-env.sh`): sslip.io is a third party that the team does not control. The host name is also the
    Supabase Site URL, the redirect URL and `Challenges__ShareBaseUrl`: they change together (runbook "Host name").
 4. **Client address.** Docker publishes ports with DNAT and the userland proxy is off (`daemon.json`), so Caddy sees

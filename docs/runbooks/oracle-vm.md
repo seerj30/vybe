@@ -60,7 +60,7 @@ Caddy gets a certificate from Let's Encrypt for `VYBE_PUBLIC_HOST`. Let's Encryp
 | Option | Host name | Cost | Notes |
 |---|---|---|---|
 | **No domain (first deploy and tests only)** | `<public IPv4 with dashes>.sslip.io`, for example `130-61-10-20.sslip.io` | 0 | sslip.io answers with the IP in the name. No DNS set-up. A new IP is a new host name: so the reserved public IP of one-time setup step 4 is mandatory. sslip.io is a third party that you do not control. |
-| **Own domain (required before real players)** | for example `play.vybe.example` | the domain | An `A` record to the reserved public IP. You control the name, it survives a new VM, and it does not depend on sslip.io. |
+| **Own domain (required before real players)** | for example `play.vybe.example` | the domain | An `A` record to the VM's public IP. You control the name, it survives a new VM, and it does not depend on sslip.io. |
 
 The host name is the web origin `https://<host>`. When it changes, change all of these together:
 
@@ -108,7 +108,9 @@ Do the steps in this order. Keep each value in the password manager.
    Keep TCP 22. Remove nothing else. The security list is the outer firewall. On the VM, ufw allows 22, 80 and
    443, but **ufw does not govern ports that Docker publishes** (Docker's own iptables rules come first). So never
    publish another port in `compose.yml`; the CI job checks that only `web` publishes 80 and 443.
-4. **Reserved public IP (mandatory, before the VM).** Networking → IP management → Reserved public IPs →
+4. **Reserved public IP (recommended for a new VM, before the VM).** Production keeps its ephemeral IP (owner
+   decision 2026-11-10): it stays through stops and reboots, but a replaced VM gets a new IP and a new host name.
+   For a new VM: Networking → IP management → Reserved public IPs →
    Reserve public IP address, name `vybe-prod`, in the home region. The host name (sslip.io or the domain's `A`
    record), the GitHub variables and the host key line all use this IP; a reserved IP stays when you replace the
    VM. Check on the price list that it costs nothing in your account (the budget alert also tells you).
@@ -118,11 +120,12 @@ Do the steps in this order. Keep each value in the password manager.
    - Shape: **VM.Standard.A1.Flex** (Ampere), **2 OCPU, 12 GB** memory. The Always Free limit is 4 OCPU and
      24 GB in total, so a second VM of the same size for a drill or staging is also free.
    - Boot volume: 50 GB (the free total is 200 GB).
-   - Networking: the public subnet of step 3, "Do not assign a public IPv4 address" (the reserved one comes next).
+   - Networking: the public subnet of step 3. With a reserved IP: "Do not assign a public IPv4 address" (the
+     reserved one comes next). Without one: "Assign a public IPv4 address" (ephemeral).
    - SSH key: paste `~/.ssh/vybe-admin.pub`.
    - "Out of capacity": try another availability domain, or try again later (Pay As You Go helps).
-   - After the VM is running: Instance → Attached VNICs → the VNIC → IPv4 addresses → Edit → "Reserved public
-     IP" → `vybe-prod`. Write down this IP: it is `<ip>` below.
+   - After the VM is running, with a reserved IP: Instance → Attached VNICs → the VNIC → IPv4 addresses → Edit →
+     "Reserved public IP" → `vybe-prod`. Write down the public IP: it is `<ip>` below.
 6. **Bootstrap the VM.** From the repository on the Mac, at a commit of `master`:
    ```bash
    ssh -o IdentitiesOnly=yes -i ~/.ssh/vybe-admin ubuntu@<ip>                         # accept the host key once, then exit
@@ -194,7 +197,8 @@ Do the steps in this order. Keep each value in the password manager.
 1. Checklist. Do not start until every line is true:
    - The Oracle account type is known (step 1): Free Tier (owner decision 2026-11-10, idle reclaim accepted), or
      **Pay As You Go** with the **USD 1 budget alert**. Pay As You Go is required before real beta players.
-   - The VM has the **reserved public IP** (steps 4–5); `VYBE_VM_HOST` and `VYBE_VM_HOST_KEY` use it.
+   - The VM has its public IP (reserved, or the ephemeral IP of this VM; steps 4–5); `VYBE_VM_HOST` and
+     `VYBE_VM_HOST_KEY` use it.
    - Steps 6–13 are done; the Supabase Site URL and redirect URL are `https://<host>`.
    - The heartbeat and the uptime check exist (step 9), and the backup is set up (step 10).
    - CI on `master` is green.
