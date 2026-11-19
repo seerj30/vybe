@@ -35,7 +35,8 @@ public static class SafetyEndpoints
     /// recipient session that holds the lock can leave a live challenge behind.
     /// </summary>
     private static async Task<IResult> BlockAsync(
-        BlockRequest request, VybeDbContext db, CurrentPlayer current, TimeProvider clock, CancellationToken cancellationToken)
+        BlockRequest request, VybeDbContext db, CurrentPlayer current, TimeProvider clock, SpaceManager spaces,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         var playerId = await current.GetIdAsync(cancellationToken);
@@ -65,6 +66,7 @@ public static class SafetyEndpoints
             .ExecuteUpdateAsync(u => u.SetProperty(c => c.Status, ChallengeStatus.Cancelled), cancellationToken);
         await FriendEndpoints.ApplyBlockAsync(db, playerId, target.Id, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        spaces.ApplyBlock(playerId, target.Id); // real-time spaces: the pair never shares an instance (P2)
         return Results.NoContent();
     }
 

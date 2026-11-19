@@ -51,6 +51,8 @@ tags:
     description: Achievements and badges (P1). Progress is computed on the server only.
   - name: account
     description: Data export and deletion.
+  - name: spaces
+    description: Real-time spaces (P2). The hub itself is SignalR over WebSockets; see docs/design/p2-spaces-protocol.md.
   - name: admin
     description: Moderation and administration. Bearer token with a moderator or administrator role claim.
 
@@ -1702,6 +1704,37 @@ paths:
         default:
           $ref: "#/components/responses/Problem"
 
+  # ------------------------------------------------------------------ spaces
+  /spaces/tickets:
+    post:
+      tags: [spaces]
+      operationId: createSpaceTicket
+      parameters:
+        - $ref: "#/components/parameters/CsrfHeader"
+      summary: Get a one-time ticket for the spaces hub
+      description: |
+        The ticket opens one WebSocket to `/api/v1/spaces/hub?access_token={ticket}` (SignalR, MessagePack).
+        Single use, valid 30 s, bound to the caller. 10 per minute per player (provisional). Guests are allowed.
+        The hub protocol is in docs/design/p2-spaces-protocol.md and `packages/contracts/src/spaces.ts`.
+      x-problem-codes:
+        "403": [account_suspended]
+        "429": [rate_limited]
+      responses:
+        "201":
+          description: Ticket issued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpaceTicket"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        default:
+          $ref: "#/components/responses/Problem"
+
   # ------------------------------------------------------------------ admin
   /admin/reports:
     get:
@@ -2332,6 +2365,7 @@ components:
         - idempotency_key_required
         - rate_limited
         - internal_error
+        - service_unavailable
         # identity / avatar
         - player_not_found
         - already_authenticated
@@ -2600,6 +2634,20 @@ components:
           $ref: "#/components/schemas/DisplayName"
         level:
           $ref: "#/components/schemas/Level"
+
+    # ---------------------------------------------------------------- spaces
+    SpaceTicket:
+      type: object
+      required: [ticket, expiresAt]
+      additionalProperties: false
+      properties:
+        ticket:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{43}$"
+          description: One-time hub ticket (256-bit, base64url). Send as `access_token` when the hub connects.
+        expiresAt:
+          type: string
+          format: date-time
 
     # ---------------------------------------------------------------- safety
     BlockRequest:

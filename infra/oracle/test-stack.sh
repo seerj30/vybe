@@ -105,6 +105,10 @@ check test "$(status "$origin/health/ready")" = 404
 check test "$(status "$origin/health/live")" = 404
 check test "$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$HTTP_PORT/")" = 308
 
+# Real-time spaces: the hub WebSocket through Caddy stays open past the server timeouts (also lets the guest
+# rate-limit window below start fresh: the check runs for more than a minute).
+check python3 "$HERE/spaces-check.py" "$origin" "$ca" 65
+
 # The client address: a forged X-Forwarded-For never gives a new rate-limit bucket (10 guests per address per minute).
 codes=""
 for i in $(seq 1 11); do

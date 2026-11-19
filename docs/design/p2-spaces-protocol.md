@@ -123,7 +123,7 @@ Objects are MessagePack maps with the camelCase keys below (JSON in test configu
 | Handler | Arguments | When |
 |---|---|---|
 | `snapshot` | `tick` (uint32), `avatars` (flat int array, 5 values per avatar) | Each tick while any avatar in the instance moved or changed state; else every 10th tick |
-| `joined` | `Member` | Another avatar entered the instance |
+| `joined` | `Member` | Another avatar entered the instance. A `joined` for an occupied slot replaces that member (after a reconnect, handle or look can differ) |
 | `left` | `slot` | An avatar left (leave, disconnect after the 30 s reservation, kick, or a block move) |
 | `look` | `slot`, `Look` | An avatar's look changed (`RefreshLook`) |
 | `emote` | `slot`, `sku` | |
@@ -175,6 +175,8 @@ interface Look {             // the GET /profiles avatar shape, with item SKUs i
 - `displayName` is never sent (free text).
 - A `handle` lets the client open `/profile/:handle` (report, block, friend request) with the existing HTTP flows.
 - Positions come only in `snapshot`; a client shows a `joined` member when its first snapshot entry arrives.
+  Ignore snapshot entries for a slot without a member: `joined` and `snapshot` can arrive in either order.
+- A client that reads slowly gets only the newest snapshot (the server skips older ones that are still queued).
 
 ## 6. Rates and sizes
 
@@ -198,14 +200,17 @@ interface Look {             // the GET /profiles avatar shape, with item SKUs i
 | Dropped for rate | > 150 in 60 s | `kicked("rate_limited")` |
 | Invalid input (out of range, unknown id, emote not owned, wrong argument type) | drop, `error("invalid_input")`; > 20 in 60 s | `kicked("invalid_input")` |
 | Input before `Join` (except `Join`) | drop, `error("not_joined")` | counts as invalid input |
-| No `Join` within 30 s of connect | | `kicked("not_joined")` |
+| No `Join` within 30 s of connect (or of `Leave`) | | `kicked("not_joined")` |
 | No input (`Move` or expression) for 10 min | | `kicked("idle")` |
 | Connections per player | 1: a new connection replaces the old one | old one gets `kicked("replaced")` |
 | Connections per client address (IPv6 per /64) | 20 | HTTP 429 before the upgrade |
-| Connections per API process | 1,100 | HTTP 503 before the upgrade |
+| Connections per API process | 1,100 | HTTP 503 `service_unavailable` before the upgrade |
+| Raw inbound bytes (all frames, also frames that fail binding) | 2 KB/s, burst 4 KB | `kicked("rate_limited")` |
+| Outbox (messages queued to a client that does not read) | 128 | `kicked("slow_client")` |
 | Tickets | 10 per minute per player, single use, 30 s | 429 `rate_limited` |
 
-`error` codes: `rate_limited`, `invalid_input`, `not_joined`. Unknown codes: ignore.
+`error` codes: `rate_limited`, `invalid_input`, `not_joined`. Unknown codes: ignore. `Join` can also fail with
+`account_unavailable` (the connection is then closed with that kick reason).
 
 ## 8. Disconnect, kick and reconnect
 
@@ -224,6 +229,8 @@ position (§3). After a deploy the API restarts with no state: every client join
 | `rate_limited`, `invalid_input` | abuse limit | do not reconnect for 60 s; then on user action |
 | `suspended` | the player is suspended | do not reconnect; show the suspension message |
 | `account_unavailable` | the player is `deleting` or deleted, or the session ended | do not reconnect; go to the start page |
+| `spaces_full` | a block move found no instance with room | reconnect after 60 s |
+| `slow_client` | the client did not read its messages | reconnect with the normal backoff |
 
 **Automatic reconnect** (connection lost without `kicked`): delays 0, 2, 5, 10, 20, 30, 30 … s with ±25 % jitter;
 stop after 5 minutes and show "Reconnect". Each attempt gets a new ticket (`accessTokenFactory`). After reconnect the
@@ -263,15 +270,16 @@ text. The privacy notice needs a "presence in spaces" row (P2 pack; orchestrator
 
 ## 11. Hosting notes (implementation PR)
 
-- Caddy (`infra/oracle/Caddyfile`, `infra/web/Caddyfile`): the hub path is proxied with WebSocket upgrade; the
-  16 KB body cap and the 2 min idle timeout must not cut a WebSocket; the access log stays off (the ticket is in the
-  query string). The CI Caddy checks get a WebSocket case.
+- Caddy (`infra/oracle/Caddyfile`, `infra/web/Caddyfile`): an own route for the hub path, without the body cap.
+  Measured with Caddy 2.11.9: it offers WebSockets on HTTP/1.1 only (no RFC 8441 on HTTP/2), and an upgraded
+  connection stays open past `read_body 30s`, `write 60s` and 150 KB of client frames. `infra/oracle/test-stack.sh`
+  checks a hub socket through Caddy for 65 s (origin check, single-use ticket, join). The access log stays off (the
+  ticket is in the query string); API traces drop `url.query` and skip the hub request.
 - API: SignalR (shared framework) plus the MessagePack protocol package. Production accepts MessagePack only;
   `Spaces:AllowJsonProtocol` = true only in Development and tests.
 - One API process holds all state (P2-2). A second process needs a backplane and sticky routing: out of scope.
-- `packages/contracts`: the ticket endpoint in OpenAPI; the hub types of §5 as a hand-written TypeScript module
-  with constants (`packages/contracts/src/spaces.ts`) if the package pattern allows, else this document stays the
-  only contract.
+- `packages/contracts`: the ticket endpoint in OpenAPI (`createSpaceTicket`, schema `SpaceTicket`); the hub types,
+  names and constants of §4–§8 in `packages/contracts/src/spaces.ts`, imported as `@vybe/contracts/spaces`.
 
 ## 12. Versioning
 

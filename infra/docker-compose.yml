@@ -58,6 +58,8 @@ services:
       Content__SeedOnStartup: "false"
       # The load test (infra/load) creates many guests from one address; the default limit is 10 per minute.
       RateLimits__GuestsPerIpPerMinute: ${VYBE_GUESTS_PER_IP_PER_MINUTE:-10}
+      # The spaces load test (infra/load/spaces.js) opens all hub sockets from one address; the default is 20.
+      Spaces__MaxConnectionsPerAddress: ${VYBE_SPACES_PER_IP:-20}
       # No SQL text in the console: it slows the API under load.
       Logging__LogLevel__Microsoft.EntityFrameworkCore: Warning
     ports: ["127.0.0.1:8080:8080"]

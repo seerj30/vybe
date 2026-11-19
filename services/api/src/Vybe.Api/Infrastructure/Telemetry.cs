@@ -49,7 +49,9 @@ public static class Telemetry
                 .WithTracing(tracing => tracing
                     .AddAspNetCoreInstrumentation(options =>
                     {
-                        options.Filter = context => !context.Request.Path.StartsWithSegments("/health", StringComparison.Ordinal);
+                        // No span for probes, and none for a hub WebSocket (it lasts the whole visit; Vybe.Spaces metrics cover it).
+                        options.Filter = context => !context.Request.Path.StartsWithSegments("/health", StringComparison.Ordinal)
+                            && !context.Request.Path.StartsWithSegments(Features.SpaceHub.Path, StringComparison.OrdinalIgnoreCase);
                         options.EnrichWithHttpResponse = (activity, response) => ScrubServerSpan(activity, response.HttpContext);
                     })
                     // Outgoing URLs can carry a Supabase Auth user id (J4 deletion): redact it like a request path.
@@ -59,7 +61,7 @@ public static class Telemetry
                 .WithMetrics(metrics => metrics
                     .AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
-                    .AddMeter("Npgsql", "System.Runtime", "Microsoft.AspNetCore.RateLimiting"))
+                    .AddMeter("Npgsql", "System.Runtime", "Microsoft.AspNetCore.RateLimiting", Features.SpaceMetrics.MeterName))
                 .UseOtlpExporter();
         }
 
@@ -91,6 +93,7 @@ public static class Telemetry
         // The exception handler clears the endpoint, so error responses use the route saved by EdgeSecurity.
         var route = (context.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText ?? context.Items[EdgeSecurity.RouteItem] as string;
         activity.SetTag("url.path", route is null ? "(unmatched)" : "/" + route.TrimStart('/'));
+        activity.SetTag("url.query", null); // can carry a capability (the space ticket in access_token)
         foreach (var tag in PeerTags)
         {
             activity.SetTag(tag, null);

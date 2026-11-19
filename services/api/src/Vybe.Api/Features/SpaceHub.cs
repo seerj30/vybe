@@ -1,0 +1,120 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
+using Vybe.Api.Infrastructure;
+using Vybe.Data;
+using Vybe.Data.Entities;
+
+namespace Vybe.Api.Features;
+
+/// <summary>
+/// The plaza hub (protocol doc §4). Thin: every rule lives in <see cref="SpaceManager"/>. The only arguments are
+/// integers and ids from fixed lists; no method takes free text.
+/// </summary>
+public sealed class SpaceHub(SpaceManager spaces, VybeDbContext db, TimeProvider clock) : Hub
+{
+    public const string Path = "/api/v1/spaces/hub";
+
+    public override Task OnConnectedAsync()
+    {
+        var playerId = Guid.Parse(Context.User!.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var address = Context.GetHttpContext()?.Items[SpaceGate.AddressItem] as string ?? "unknown";
+        spaces.Connected(Context, playerId, address);
+        return Task.CompletedTask;
+    }
+
+    public override Task OnDisconnectedAsync(Exception? exception)
+    {
+        spaces.Disconnected(Context.ConnectionId);
+        return Task.CompletedTask;
+    }
+
+    public async Task<SpaceWelcome> Join()
+    {
+        var playerId = spaces.BeginJoin(Context.ConnectionId);
+        SpaceProfile? profile;
+        try
+        {
+            profile = await SpaceProfiles.LoadAsync(db, playerId, clock.UtcNowForDb(), Context.ConnectionAborted);
+        }
+        catch
+        {
+            spaces.CancelJoin(Context.ConnectionId);
+            throw;
+        }
+
+        if (profile is null)
+        {
+            spaces.CancelJoin(Context.ConnectionId);
+            spaces.Kick(Context.ConnectionId, KickReasons.AccountUnavailable);
+            throw new HubException(KickReasons.AccountUnavailable);
+        }
+
+        return spaces.CompleteJoin(Context.ConnectionId, profile);
+    }
+
+    public void Leave() => spaces.Leave(Context.ConnectionId);
+
+    public void Move(int dx, int dz) => spaces.Move(Context.ConnectionId, dx, dz);
+
+    public void Emote(string? sku) => spaces.Emote(Context.ConnectionId, sku);
+
+    public void QuickChat(string? id) => spaces.QuickChat(Context.ConnectionId, id);
+
+    public void Sticker(string? id) => spaces.Sticker(Context.ConnectionId, id);
+
+    public async Task RefreshLook()
+    {
+        if (spaces.BeginRefreshLook(Context.ConnectionId) is { } playerId
+            && await SpaceProfiles.LoadAsync(db, playerId, clock.UtcNowForDb(), Context.ConnectionAborted) is { } profile)
+        {
+            spaces.CompleteRefreshLook(Context.ConnectionId, profile);
+        }
+    }
+}
+
+/// <summary>Reads what a space needs about a player: public handle, look (item SKUs), owned emotes, blocks.</summary>
+public static class SpaceProfiles
+{
+    /// <summary>The profile, or null for a missing, suspended, <c>deleting</c> or deleted player.</summary>
+    public static async Task<SpaceProfile?> LoadAsync(VybeDbContext db, Guid playerId, DateTime now, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        var player = await db.Players.AsNoTracking()
+            .Where(p => p.Id == playerId)
+            .Select(p => new { p.Handle, p.ProfileVisibility, p.Status, p.SuspendedUntil })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (player is null || player.Status is PlayerStatus.Deleting or PlayerStatus.Deleted
+            || (player.Status == PlayerStatus.Suspended && (player.SuspendedUntil is null || player.SuspendedUntil > now)))
+        {
+            return null;
+        }
+
+        var avatar = await db.AvatarConfigs.AsNoTracking().SingleAsync(a => a.PlayerId == playerId, cancellationToken);
+        var equipped = Equipped.FromJson(avatar.EquippedJson);
+        var ids = equipped.ItemIds().ToList();
+        var skus = await db.CatalogItems.AsNoTracking()
+            .Where(i => ids.Contains(i.Id))
+            .ToDictionaryAsync(i => i.Id, i => i.Sku, cancellationToken);
+        var emotes = await db.PlayerInventory.AsNoTracking()
+            .Where(i => i.PlayerId == playerId)
+            .Join(db.CatalogItems.Where(c => c.Slot == ItemSlot.Emote), i => i.ItemId, c => c.Id, (_, c) => c.Sku)
+            .ToListAsync(cancellationToken);
+        var blocks = await db.PlayerBlocks.AsNoTracking()
+            .Where(b => b.BlockerPlayerId == playerId || b.BlockedPlayerId == playerId)
+            .Select(b => b.BlockerPlayerId == playerId ? b.BlockedPlayerId : b.BlockerPlayerId)
+            .ToListAsync(cancellationToken);
+
+        string? Sku(Guid? id) => id is { } value ? skus.GetValueOrDefault(value) : null;
+        var look = new SpaceLook(
+            avatar.BodyPresetId, avatar.SkinToneId, avatar.FacePresetId, avatar.HairPresetId, avatar.HairColorId,
+            new SpaceEquipped(
+                Sku(equipped.Hair), Sku(equipped.Top), Sku(equipped.Bottom), Sku(equipped.Shoes), Sku(equipped.Emote),
+                [.. equipped.Accessories.Select(Sku)]));
+        return new SpaceProfile(
+            player.ProfileVisibility == ProfileVisibility.Private ? null : player.Handle,
+            look,
+            emotes.ToHashSet(StringComparer.Ordinal),
+            blocks.ToHashSet());
+    }
+}
