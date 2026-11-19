@@ -59,7 +59,7 @@ Caddy gets a certificate from Let's Encrypt for `VYBE_PUBLIC_HOST`. Let's Encryp
 
 | Option | Host name | Cost | Notes |
 |---|---|---|---|
-| **No domain (first deploy and tests only)** | `<public IPv4 with dashes>.sslip.io`, for example `130-61-10-20.sslip.io` | 0 | sslip.io answers with the IP in the name. No DNS set-up. A new IP is a new host name: so the reserved public IP of one-time setup step 4 is mandatory. sslip.io is a third party that you do not control. |
+| **No domain (first deploy and tests only)** | `<public IPv4 with dashes>.sslip.io`, for example `130-61-10-20.sslip.io` | 0 | sslip.io answers with the IP in the name. No DNS set-up. A new IP is a new host name: the production ephemeral IP changes only when the VM is replaced; a reserved IP (one-time setup step 4) avoids even that. sslip.io is a third party that you do not control. |
 | **Own domain (required before real players)** | for example `play.vybe.example` | the domain | An `A` record to the VM's public IP. You control the name, it survives a new VM, and it does not depend on sslip.io. |
 
 The host name is the web origin `https://<host>`. When it changes, change all of these together:
