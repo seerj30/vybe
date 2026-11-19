@@ -4,6 +4,7 @@ import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js
 import { BASE_LAYER_COLOR, BASE_LAYER_REGIONS, type Look } from "../avatar/avatar-look";
 import { buildPlazaGround } from "./plaza-ground";
 import type { Pose } from "./interpolation";
+import { resetWalk, swingWalk, type WalkBone } from "./walk-pose";
 
 /**
  * Three.js scene of the plaza (docs/design/p2-spaces-protocol.md, spec §9 budgets). Loaded lazily by the plaza
@@ -68,12 +69,6 @@ interface Base {
 interface Built {
   geometry: THREE.BufferGeometry;
   refs: number;
-}
-
-interface WalkBone {
-  bone: THREE.Bone;
-  axis: THREE.Vector3;
-  sign: number;
 }
 
 interface AvatarObject {
@@ -466,7 +461,7 @@ export class PlazaRenderer {
       const parentWorld = bone.parent.getWorldQuaternion(new THREE.Quaternion());
       const rootWorld = root.getWorldQuaternion(new THREE.Quaternion());
       const axis = new THREE.Vector3(1, 0, 0).applyQuaternion(rootWorld).applyQuaternion(parentWorld.invert());
-      walk.push({ bone, axis, sign });
+      walk.push({ bone, axis, sign, rest: bone.quaternion.clone() });
     }
     return { slot, key, group, mesh, mixer, idle, emote: null, walk, phase: 0 };
   }
@@ -507,6 +502,7 @@ export class PlazaRenderer {
       avatar.group.position.set(pose.x * CM, 0, pose.z * CM);
       avatar.group.rotation.y = pose.angle;
       avatar.mesh.material = pose.state === 2 ? this.awayMaterial : this.material;
+      resetWalk(avatar.walk);
       avatar.mixer.update(dt);
       this.walk(avatar, pose.state === 1 && avatar.emote === null, dt);
       this.tmpM.makeTranslation(pose.x * CM, 0.01, pose.z * CM);
@@ -534,11 +530,7 @@ export class PlazaRenderer {
       return;
     }
     avatar.phase += dt * WALK_RATE;
-    const swing = Math.sin(avatar.phase) * WALK_SWING;
-    for (const { bone, axis, sign } of avatar.walk) {
-      this.tmpQ.setFromAxisAngle(axis, swing * sign);
-      bone.quaternion.premultiply(this.tmpQ);
-    }
+    swingWalk(avatar.walk, Math.sin(avatar.phase) * WALK_SWING, this.tmpQ);
   }
 
   private follow(target: THREE.Vector3, dt: number): void {
