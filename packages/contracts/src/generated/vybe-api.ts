@@ -1041,6 +1041,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/spaces/tickets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get a one-time ticket for the spaces hub
+         * @description The ticket opens one WebSocket to `/api/v1/spaces/hub?access_token={ticket}` (SignalR, MessagePack).
+         *     Single use, valid 30 s, bound to the caller. 10 per minute per player (provisional). Guests are allowed.
+         *     The hub protocol is in docs/design/p2-spaces-protocol.md and `packages/contracts/src/spaces.ts`.
+         */
+        post: operations["createSpaceTicket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/reports": {
         parameters: {
             query?: never;
@@ -1246,7 +1268,7 @@ export interface components {
             message?: string;
         };
         /** @enum {string} */
-        ProblemCode: "malformed_request" | "invalid_idempotency_key" | "unauthenticated" | "forbidden" | "account_suspended" | "csrf_check_failed" | "not_found" | "revision_conflict" | "request_in_progress" | "payload_too_large" | "validation_failed" | "idempotency_key_mismatch" | "idempotency_key_required" | "rate_limited" | "internal_error" | "player_not_found" | "already_authenticated" | "age_not_eligible" | "invalid_link_proof" | "identity_already_linked" | "auth_unavailable" | "invalid_preset" | "incompatible_equipment" | "self_block" | "self_report" | "self_friend_request" | "already_friends" | "friend_request_declined" | "friend_request_limit" | "recipient_request_limit" | "friend_limit_reached" | "insufficient_funds" | "already_owned" | "level_too_low" | "item_unavailable" | "item_not_purchasable" | "item_not_owned" | "incompatible_item" | "item_inactive" | "item_already_equipped" | "outfit_limit_reached" | "outfit_items_invalid" | "room_item_limit" | "placement_out_of_bounds" | "placement_overlap" | "session_expired" | "challenge_unavailable" | "challenge_session_exists" | "challenge_expired" | "session_not_eligible" | "session_already_used" | "self_challenge" | "recipient_blocked" | "self_accept" | "challenge_already_accepted" | "challenge_not_completed" | "rematch_already_created" | "quest_not_completed" | "quest_already_claimed" | "quest_claim_expired" | "export_in_progress" | "reauthentication_required";
+        ProblemCode: "malformed_request" | "invalid_idempotency_key" | "unauthenticated" | "forbidden" | "account_suspended" | "csrf_check_failed" | "not_found" | "revision_conflict" | "request_in_progress" | "payload_too_large" | "validation_failed" | "idempotency_key_mismatch" | "idempotency_key_required" | "rate_limited" | "internal_error" | "service_unavailable" | "player_not_found" | "already_authenticated" | "age_not_eligible" | "invalid_link_proof" | "identity_already_linked" | "auth_unavailable" | "invalid_preset" | "incompatible_equipment" | "self_block" | "self_report" | "self_friend_request" | "already_friends" | "friend_request_declined" | "friend_request_limit" | "recipient_request_limit" | "friend_limit_reached" | "insufficient_funds" | "already_owned" | "level_too_low" | "item_unavailable" | "item_not_purchasable" | "item_not_owned" | "incompatible_item" | "item_inactive" | "item_already_equipped" | "outfit_limit_reached" | "outfit_items_invalid" | "room_item_limit" | "placement_out_of_bounds" | "placement_overlap" | "session_expired" | "challenge_unavailable" | "challenge_session_exists" | "challenge_expired" | "session_not_eligible" | "session_already_used" | "self_challenge" | "recipient_blocked" | "self_accept" | "challenge_already_accepted" | "challenge_not_completed" | "rematch_already_created" | "quest_not_completed" | "quest_already_claimed" | "quest_claim_expired" | "export_in_progress" | "reauthentication_required";
         /** @description Cursor for the next page; null on the last page. */
         NextCursor: string | null;
         /** @enum {string} */
@@ -1356,6 +1378,12 @@ export interface components {
             handle: components["schemas"]["Handle"];
             displayName: components["schemas"]["DisplayName"];
             level: components["schemas"]["Level"];
+        };
+        SpaceTicket: {
+            /** @description One-time hub ticket (256-bit, base64url). Send as `access_token` when the hub connects. */
+            ticket: string;
+            /** Format: date-time */
+            expiresAt: string;
         };
         BlockRequest: {
             handle: components["schemas"]["HandleInput"];
@@ -3886,6 +3914,37 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    createSpaceTicket: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Must be `vybe-web`. Declared on every unsafe operation that guests can call; clients
+                 *     always send it. The server checks it itself (not through generic schema validation) on
+                 *     cookie-authenticated requests: missing or wrong → 403 `csrf_check_failed`.
+                 */
+                "X-Requested-With": components["parameters"]["CsrfHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ticket issued. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpaceTicket"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
             default: components["responses"]["Problem"];
         };
     };

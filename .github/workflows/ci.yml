@@ -253,6 +253,8 @@ jobs:
           # Bodies over the proxy limit stop at Caddy.
           head -c 70000 /dev/zero | tr '\0' 'a' > big.txt
           test "$(status -X POST --data-binary @big.txt "$web/api/v1/guests")" = 413
+          # The spaces hub goes to the API without the body cap (WebSocket; the API refuses anything else).
+          test "$(status -X POST --data-binary @big.txt "$web/api/v1/spaces/hub")" = 200
 
           # The client address: Fly-Client-IP from a private peer becomes the only X-Forwarded-For value, and a
           # client-sent X-Forwarded-For never reaches the API.

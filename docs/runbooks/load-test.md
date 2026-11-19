@@ -2,7 +2,8 @@
 
 - Owner: stream D (operations). Spec §13: "Load test guest creation, game submissions, wallet transactions,
   and challenge acceptance". Spec §16 social beta gate: "load/security review".
-- Script: [`infra/load/street-hoops.js`](../../infra/load/street-hoops.js) (k6).
+- Script: [`infra/load/street-hoops.js`](../../infra/load/street-hoops.js) (k6). Real-time spaces (P2):
+  [`infra/load/spaces.js`](../../infra/load/spaces.js), see [Real-time spaces](#real-time-spaces-p2).
 - Target: about 20 requests/s, the closed-beta target (10× the expected peak) in
   [decision 7](../decisions/07-hosting.md).
 
@@ -93,3 +94,70 @@ beta gate, in an isolated environment, with production-like compute.
 | 2026-11-11 | Production, Oracle VM (2 OCPU A1, 12 GB) + Supabase Free (Nano, transaction pooler), release 963ac1f; k6 on the owner's Mac (Romania → Frankfurt); `RATE_SCALE=0.5`, `DURATION=3m` | 3 min of arrivals + drain (3 min 56 s) | 7.5 | 120 ms | 146 ms | 0 % (0 of 1,761) | Fail on checks only (98.7 %): 23 challenge recipients not created (k6 cookie jar bug over HTTPS, fixed in the script). Latency thresholds pass |
 | 2026-11-11 | Same, with the cookie fix; `RATE_SCALE=0.5`, `DURATION=2m` | 2 min of arrivals + drain (3 min 51 s) | 5.5 | 126 ms | 146 ms | 0 % (0 of 1,275) | Pass: all thresholds, 1,273 of 1,273 checks, challenges created, accepted and completed. VM load average after the run 0.35, API 102 MiB. Half the target rate: repeat at `RATE_SCALE=1` before more than a few hundred players |
 | 2026-11-11 | Production at the full rate, release 90628e1 (P1: friends, leaderboard upsert and achievement progress in the run verification, Street Juggle, My Room); k6 on the owner's Mac; `RATE_SCALE=1`, `DURATION=5m` | 5 min of arrivals + drain (6 min 59 s) | 14.6 (ramp-up and drain included) | 121 ms | 161 ms | 0 % (0 of 6,110) | Pass: all thresholds, 6,108 of 6,108 checks, challenges created, accepted and completed. VM during the run: API at most 32 % of one core (150 % only in the first sample, at start-up), at most 205 MiB; load average at most 0.64. 873 test guests, deleted afterwards |
+
+## Real-time spaces (P2)
+
+- Script: [`infra/load/spaces.js`](../../infra/load/spaces.js) (k6, `k6/experimental/websockets`). Each virtual user is
+  one avatar: a new guest, a hub ticket, a WebSocket with the SignalR MessagePack protocol (as the web client), `Join`,
+  then `Move` at 10 Hz (new direction every 2 s), a quick-chat every 20–25 s and a ping every 15 s. At the end of a
+  session it sends `Leave` and closes. Protocol: [p2-spaces-protocol.md](../design/p2-spaces-protocol.md).
+- Target ([P2 pack 02](../p2/02-real-time-spaces.md)): step up 100, 250, 500, 1,000 avatars with the HTTP scenario
+  above at the same time. Pass: snapshot interval p95 < 150 ms, the HTTP thresholds pass, API CPU < 70 % of its limit,
+  no dropped connections.
+- Thresholds of the script: `spaces_snapshot_gap` p95 < 150 ms, `spaces_join_time` p95 < 1 s, no join failures,
+  no kicks, no dropped connections, checks > 99 %.
+- Settings: `STEPS` (avatars per step, default `100,250,500,1000`), `STEP` (hold, `2m`), `RAMP` (`30s`),
+  `SESSION_MS` (session length before `Leave` and a new guest, `120000`).
+- Local targets only (same rule and `VYBE_LOAD_TARGET_CONFIRMED` as above).
+
+### Run it locally
+
+All sockets come from one address, so raise the guest, per-address hub and read limits of the local stack (the
+WebSocket upgrade has no cookie in k6, so it counts as an anonymous read of that address):
+
+```bash
+VYBE_GUESTS_PER_IP_PER_MINUTE=100000 VYBE_SPACES_PER_IP=5000 VYBE_READS_PER_MINUTE=100000 docker compose -f infra/docker-compose.yml up -d --build
+```
+
+```bash
+docker update --cpus 1.5 --memory 2g --memory-swap 2g vybe-api-1
+```
+
+```bash
+docker run --rm -i --ulimit nofile=65536:65536 -e BASE_URL=http://host.docker.internal:8080 -e STEPS=500 -e SESSION_MS=600000 grafana/k6:1.3.0 run - < infra/load/spaces.js
+```
+
+Start the HTTP scenario (`street-hoops.js`, `DURATION=2m`) in a second shell 30 s later, and sample the API with
+`docker stats vybe-api-1`. The `docker update` line gives the API the production limits of `infra/oracle/compose.yml`.
+
+### Record (spaces)
+
+Local compose on a developer laptop (Apple silicon, Docker Desktop, 14 CPUs), API container limited to 1.5 CPU and
+2 GB, k6 on the same laptop; branch `claude/stream-v-spaces-hub` (PR #75). One run per step: 30 s ramp, 2 min hold,
+sessions longer than the run (no churn); HTTP scenario at its full rate (about 10.5 requests/s over 2 min of
+arrivals) during the hold. CPU: `docker stats`, % of one core, steady state (after 40 s); the limit is 150 %.
+Not a capacity result for the Oracle VM: an A1 core is slower than a laptop core.
+
+| Date | Avatars | Snapshot gap p95 / p99 | Join p95 | Drops / kicks | Server messages/s | HTTP read p95 / write p95 / failures | API CPU median / p90 / max | API memory | Result |
+|---|---|---|---|---|---|---|---|---|---|
+| 2026-11-19 | 100 | 102 / 104 ms | 5 ms | 0 / 0 | ~930 | 3.8 / 16 ms / 0 % | 11 / 13 / 16 % | 164 MiB | Pass |
+| 2026-11-19 | 250 | 104 / 107 ms | 6 ms | 0 / 0 | ~2,300 | 5.7 / 15 ms / 0 % | 21 / 26 / 32 % | 172 MiB | Pass |
+| 2026-11-19 | 500 | 105 / 109 ms | 7 ms | 0 / 0 | ~4,600 | 4.9 / 17 ms / 0 % | 36 / 42 / 51 % | 190 MiB | Pass |
+| 2026-11-19 | 750 | 112 / 132 ms | 7 ms | 0 / 0 | ~6,900 | 25 / 48 ms / 0 % | 48 / 68 / 131 % | 212 MiB | Pass |
+| 2026-11-19 | 1,000 | 115 / 133 ms | 10 ms | 0 / 0 | ~9,300 | 25 / 49 ms / 0 % | 57 / 77 / 91 % | 229 MiB | Pass: 38 % of the CPU limit (median), 51 % (p90) |
+
+Notes from the same day:
+
+- A first single run (all steps in one, 2 min sessions with a new guest each time) failed on the test client: it
+  closed sockets without `Leave`, so the 30 s slot reservations of the closed sessions filled the 64 × 16 = 1,024
+  slots at 1,000 avatars (`spaces_full`), and it kept sending input after a refused `Join` (kicked `invalid_input`,
+  as designed). The script now sends `Leave` and treats a refused `Join` as a failure. The HTTP thresholds passed in
+  that run too (read p95 10 ms). With that churn and the retry loop the API reached its 1.5 CPU limit at 1,000.
+- At 750 and more, the first per-step runs got 429 on the WebSocket upgrade: the read limit (600 per minute per
+  address) counted every upgrade from the one k6 address. Real players connect from their own address or with their
+  guest cookie. The local stack now takes `VYBE_READS_PER_MINUTE`.
+- Capacity note: under heavy churn, players who drop without `Leave` hold their slot for 30 s, so `spaces_full`
+  (1,024 slots) comes before the connection cap (1,100).
+- Production run: only with owner approval (rule above), before the first real players in spaces. Expected peak in
+  the closed beta: about 15 players.
+
