@@ -612,6 +612,7 @@ export class Plaza {
     this.predictor.reset();
     this.predictor.configure(welcome.bounds, welcome.speedCmPerS);
     this.sender.reset();
+    this.moving.set(false); // a new instance: the server avatar stands until the next Move
     this.applyInput();
     this.renderer?.clear();
     this.failedItems.clear();

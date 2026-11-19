@@ -150,9 +150,11 @@ test("plaza: a failed load of the connection code shows Try again, not a spinner
   await expect(page.getByText("The plaza did not load. Check your connection and try again.")).toBeVisible({ timeout: 20_000 });
   expect(failed).toBe(true);
   await expect(plaza(page)).toHaveAttribute("data-status", "failed");
+  // Only the loaded connection code asks for a hub ticket: that request proves the second load worked.
+  const ticket = page.waitForRequest((request) => request.url().endsWith("/api/v1/spaces/tickets") && request.method() === "POST");
   await page.getByRole("button", { name: "Try again" }).click();
-  await expect(page.getByText("The plaza did not load. Check your connection and try again.")).toHaveCount(0);
-  await expect(plaza(page)).not.toHaveAttribute("data-status", "failed");
+  await ticket;
+  await expect(plaza(page)).toHaveAttribute("data-status", "joined", { timeout: 20_000 });
 });
 
 test("plaza (fake hub) without WebGL: members and events as lists", async ({ page }) => {

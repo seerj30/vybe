@@ -193,6 +193,23 @@ describe("plaza client", () => {
     expect(kinds().at(-1)).toBe("joined");
   });
 
+  it("a drop during the Join of a retry attempt keeps the backoff going", async () => {
+    let rejectJoin: (error: Error) => void = () => undefined;
+    const { client, hubs, kinds, clock } = setup([{}, { join: () => new Promise((_, reject) => (rejectJoin = reject)) }, {}]);
+    client.connect();
+    await flush();
+    hubs[0]!.close?.(new Error("lost"));
+    await clock.advance(0); // attempt 1: connects, waits on Join
+    expect(hubs).toHaveLength(2);
+    hubs[1]!.close?.(new Error("lost again"));
+    rejectJoin(new Error("connection closed"));
+    await flush();
+    expect(kinds().at(-1)).toBe("reconnecting");
+    await clock.advance(2000); // attempt 2 after 2 s
+    expect(hubs).toHaveLength(3);
+    expect(kinds().at(-1)).toBe("joined");
+  });
+
   it("a Join without an answer times out and reconnects", async () => {
     const { client, hubs, kinds, clock } = setup([{ join: () => new Promise(() => undefined) }, {}]);
     client.connect();

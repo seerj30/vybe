@@ -267,9 +267,13 @@ export class PlazaClient {
       // Lost without a kick (§8): automatic reconnect with backoff. A new generation: a `Join` still waiting on
       // this connection must not start a second retry when it rejects.
       this.generation++;
-      if (this.status.kind === "joined" || this.status.kind === "connecting") {
+      const status = this.status;
+      if (status.kind === "joined" || status.kind === "connecting") {
         this.lostAt = this.clock.now();
         this.attempt = 0;
+        this.retry();
+      } else if (status.kind === "reconnecting" || (status.kind === "kicked" && status.rule.action.kind === "auto")) {
+        // A retry attempt lost its socket (also during `Join`): the backoff continues.
         this.retry();
       }
     });
