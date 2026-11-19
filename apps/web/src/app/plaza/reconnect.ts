@@ -29,14 +29,17 @@ export function shutdownDelay(random: () => number = Math.random): number {
   return Math.round(2000 + random() * 4000);
 }
 
+/** `spaces_full` kick (a block move found no room): reconnect by itself after this long. */
+export const FULL_RETRY_MS = 60_000;
+
 /**
  * What the client does after a kick:
- * - `auto`: reconnect by itself (after `shutdownDelay`, then the normal backoff);
+ * - `auto`: reconnect by itself after `delayMs` (`null`: the 2–6 s `shutdownDelay`), then the normal backoff;
  * - `manual`: a button reconnects (after `cooldownMs`, if any);
  * - `none`: never on this page (another tab owns the connection, suspension);
  * - `leave`: go to the start page (the account is gone or the session ended).
  */
-export type KickAction = { kind: "auto" } | { kind: "manual"; cooldownMs: number } | { kind: "none" } | { kind: "leave" };
+export type KickAction = { kind: "auto"; delayMs: number | null } | { kind: "manual"; cooldownMs: number } | { kind: "none" } | { kind: "leave" };
 
 export interface KickRule {
   action: KickAction;
@@ -46,7 +49,7 @@ export interface KickRule {
 }
 
 export const KICK_RULES: Readonly<Record<KickReason, KickRule>> = {
-  server_shutdown: { action: { kind: "auto" }, message: "VYBE is restarting. You will be back in the plaza in a moment." },
+  server_shutdown: { action: { kind: "auto", delayMs: null }, message: "VYBE is restarting. You will be back in the plaza in a moment." },
   replaced: { action: { kind: "none" }, message: "The plaza is open in another tab or device. Close this one, or play there." },
   idle: { action: { kind: "manual", cooldownMs: 0 }, message: "You left the plaza after 10 minutes without moving.", button: "Rejoin" },
   not_joined: { action: { kind: "manual", cooldownMs: 0 }, message: "The plaza did not open in time.", button: "Try again" },
@@ -62,6 +65,8 @@ export const KICK_RULES: Readonly<Record<KickReason, KickRule>> = {
   },
   suspended: { action: { kind: "none" }, message: "Your account is suspended, so you cannot enter the plaza." },
   account_unavailable: { action: { kind: "leave" }, message: "Your session has ended." },
+  spaces_full: { action: { kind: "auto", delayMs: FULL_RETRY_MS }, message: "All plazas are full right now. VYBE tries again in a minute." },
+  slow_client: { action: { kind: "auto", delayMs: 0 }, message: "The connection was too slow. Reconnecting…" },
 };
 
 /** Text for a non-fatal `error` message (§7). */

@@ -229,6 +229,33 @@ describe("plaza client", () => {
     expect(kinds().at(-1)).toBe("joined");
   });
 
+  it("spaces_full kick: reconnects by itself after 60 s; slow_client: at once", async () => {
+    for (const [reason, wait] of [
+      ["spaces_full", 60_000],
+      ["slow_client", 0],
+    ] as const) {
+      const { client, hubs, clock } = setup();
+      client.connect();
+      await flush();
+      hubs[0]!.push("kicked", reason);
+      if (wait > 0) {
+        await clock.advance(wait - 1);
+        expect(hubs).toHaveLength(1);
+      }
+      await clock.advance(1);
+      expect(hubs).toHaveLength(2);
+    }
+  });
+
+  it("Join fails with account_unavailable: no retry, the page leaves", async () => {
+    const { client, statuses, clock, hubs } = setup([{ join: () => Promise.reject(new Error("HubException: account_unavailable")) }]);
+    client.connect();
+    await flush();
+    await clock.advance(60_000);
+    expect(hubs).toHaveLength(1);
+    expect(statuses.at(-1)).toMatchObject({ kind: "kicked", reason: "account_unavailable", rule: { action: { kind: "leave" } } });
+  });
+
   it("replaced, idle and abuse kicks never reconnect by themselves", async () => {
     for (const reason of ["replaced", "idle", "rate_limited", "suspended", "account_unavailable"]) {
       const { client, hubs, statuses, clock } = setup();

@@ -279,12 +279,14 @@ export class PlazaClient {
     const rule = KICK_RULES[reason];
     const now = this.clock.now();
     switch (rule.action.kind) {
-      case "auto":
+      case "auto": {
+        const delay = rule.action.delayMs ?? shutdownDelay(() => this.clock.random());
         this.setStatus({ kind: "kicked", reason, rule, retryAt: null });
-        this.lostAt = now;
-        this.attempt = 1; // after the 2–6 s start, the normal backoff continues
-        this.schedule(shutdownDelay(() => this.clock.random()));
+        this.lostAt = now + delay; // the 5 minute limit counts from the first attempt
+        this.attempt = 1; // after the first attempt, the normal backoff continues
+        this.schedule(delay);
         return;
+      }
       case "manual":
         this.setStatus({ kind: "kicked", reason, rule, retryAt: now + rule.action.cooldownMs });
         return;
@@ -299,6 +301,10 @@ export class PlazaClient {
     this.hub = null;
     this.generation++;
     this.stopHub(hub);
+    if (code === "account_unavailable") {
+      this.setStatus({ kind: "kicked", reason: code, rule: KICK_RULES[code], retryAt: null });
+      return;
+    }
     if (code === "spaces_full" || code === "rate_limited") {
       this.setStatus({ kind: "failed", message: JOIN_ERROR_TEXT[code], retry: true, leave: false });
       return;

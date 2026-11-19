@@ -127,6 +127,7 @@ async function guestInPlaza(browser: Browser): Promise<{ page: Page; handle: str
 }
 
 test("plaza (real hub): two guests see each other, quick-chat arrives, and a block separates them", async ({ page, browser }) => {
+  test.setTimeout(120_000); // three new players and a block round trip
   await newPlayer(page);
   test.skip(!(await hubAvailable(page)), "Waits for the stream V hub (POST /api/v1/spaces/tickets).");
   // Each hub test opens its own pair of players; they join the fullest instance, so run one test only.
@@ -135,6 +136,11 @@ test("plaza (real hub): two guests see each other, quick-chat arrives, and a blo
   try {
     const instance = await plaza(a.page).getAttribute("data-instance");
     await expect(plaza(b.page)).toHaveAttribute("data-instance", instance!);
+    // Both avatars render on both screens (a name tag shows from the first snapshot entry).
+    for (const page of [a.page, b.page]) {
+      await expect(plaza(page)).toHaveAttribute("data-avatars", "2", { timeout: 20_000 });
+      await expect(page.getByTestId("name-tag")).toHaveCount(2);
+    }
     await a.page.getByTestId("people-button").click();
     await expect(a.page.getByTestId("member-list")).toContainText(b.handle);
     await b.page.getByTestId("people-button").click();

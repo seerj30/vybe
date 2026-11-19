@@ -84,10 +84,12 @@ export type KickReason =
   | "rate_limited"
   | "invalid_input"
   | "suspended"
-  | "account_unavailable";
+  | "account_unavailable"
+  | "spaces_full"
+  | "slow_client";
 
 export type HubErrorCode = "rate_limited" | "invalid_input" | "not_joined";
-export type JoinErrorCode = "spaces_full" | "already_joined" | "rate_limited";
+export type JoinErrorCode = "spaces_full" | "already_joined" | "rate_limited" | "account_unavailable";
 
 const KICK_REASONS: ReadonlySet<string> = new Set<KickReason>([
   "server_shutdown",
@@ -98,9 +100,11 @@ const KICK_REASONS: ReadonlySet<string> = new Set<KickReason>([
   "invalid_input",
   "suspended",
   "account_unavailable",
+  "spaces_full",
+  "slow_client",
 ]);
 const ERROR_CODES: ReadonlySet<string> = new Set<HubErrorCode>(["rate_limited", "invalid_input", "not_joined"]);
-const JOIN_ERRORS: readonly JoinErrorCode[] = ["spaces_full", "already_joined", "rate_limited"];
+const JOIN_ERRORS: readonly JoinErrorCode[] = ["spaces_full", "already_joined", "rate_limited", "account_unavailable"];
 
 // ------------------------------------------------------------------ quick-chat manifest
 
