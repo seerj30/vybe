@@ -112,7 +112,7 @@ public sealed class StreetJuggleTests(ApiFactory api)
         {
             "lane_out_of_range" => [new { tMs = first.TMs, lane = 3 }],
             "street_hoops_event" => [new { tMs = first.TMs, aimX = 0, power = 500 }],
-            "fractional_time" => [JsonDocument.Parse($$"""{"tMs":{{first.TMs}}.0,"lane":{{first.Lane}}}""").RootElement],
+            "fractional_time" => [JsonElement.Parse($$"""{"tMs":{{first.TMs}}.0,"lane":{{first.Lane}}}""")],
             "extra_field" => [new { tMs = first.TMs, lane = first.Lane, points = 150 }],
             "equal_times" => [new { tMs = first.TMs, lane = first.Lane }, new { tMs = first.TMs, lane = second.Lane }],
             "too_fast" => [new { tMs = first.TMs, lane = first.Lane }, new { tMs = first.TMs + 100, lane = second.Lane }],
