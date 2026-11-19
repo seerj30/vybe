@@ -702,12 +702,12 @@ public sealed partial class SpaceManager(
         if (instance is null)
         {
             // The cap is about capacity. When instances with free slots exist and only blocks that other players placed on
-            // this player keep them out, a new instance opens past the cap, up to twice the cap: else blocks from many
-            // accounts could keep one player out of every plaza. The joiner's own blocks never open extra instances.
+            // this player keep them out, a new instance opens past the cap: else blocks from many accounts could keep one
+            // player out of every plaza. Every instance holds at least one connected avatar, so the connection cap
+            // (Spaces:MaxConnections) still bounds them. The joiner's own blocks never open instances past the cap.
             var blockedByOthers = _instances.Values.Any(i => i != exclude && i.Count < SpaceRules.InstanceCapacity
                 && i.Avatars.Any(a => profile.BlockedBy.Contains(a.PlayerId)));
-            var limit = blockedByOthers ? options.MaxInstances * 2 : options.MaxInstances;
-            if (_instances.Count >= limit)
+            if (_instances.Count >= options.MaxInstances && !blockedByOthers)
             {
                 return null;
             }
