@@ -3,7 +3,7 @@
 // same time as infra/load/street-hoops.js to check that the HTTP SLO still holds (docs/p2/02-real-time-spaces.md).
 // How to run: docs/runbooks/load-test.md. Local targets only: the script stops for any other host.
 import http from 'k6/http';
-import { check, fail } from 'k6';
+import { check, fail, sleep } from 'k6';
 import { WebSocket } from 'k6/experimental/websockets';
 import { Counter, Trend } from 'k6/metrics';
 
@@ -21,6 +21,7 @@ const SESSION_MS = Number(__ENV.SESSION_MS || '120000');
 
 const snapshotGap = new Trend('spaces_snapshot_gap', true);
 const joinTime = new Trend('spaces_join_time', true);
+const joinFailures = new Counter('spaces_join_failures');
 const snapshots = new Counter('spaces_snapshots');
 const kicks = new Counter('spaces_kicks');
 const drops = new Counter('spaces_dropped_connections');
@@ -39,6 +40,7 @@ export const options = {
     // Pass rule of docs/p2/02-real-time-spaces.md: snapshot interval p95 < 150 ms (10 Hz while avatars move).
     spaces_snapshot_gap: ['p(95)<150'],
     spaces_join_time: ['p(95)<1000'],
+    spaces_join_failures: ['count==0'],
     spaces_kicks: ['count==0'],
     spaces_dropped_connections: ['count==0'],
     checks: ['rate>0.99'],
@@ -124,7 +126,14 @@ function readHeader(bytes, start, end) {
   const head = bytes[at++];
   if ((head & 0xf0) !== 0x90) return { type: -1 };
   const type = bytes[at++];
-  if (type !== 1) return { type, raw: bytes.subarray(start, end) };
+  if (type === 3) {
+    // Completion: [3, headers, invocationId, resultKind, result?]; resultKind 1 = error.
+    if (bytes[at] !== 0x80) return { type };
+    at++;
+    at += 1 + (bytes[at] & 0x1f);
+    return { type, error: bytes[at] === 1 };
+  }
+  if (type !== 1) return { type };
   if ((bytes[at] & 0xf0) !== 0x80 || bytes[at] !== 0x80) return { type };
   at++; // empty headers map (the server sends none)
   if (bytes[at] === 0xc0) at++;
@@ -156,7 +165,14 @@ function ticket(token) {
   return res.status === 201 ? res.json('ticket') : null;
 }
 
+// Per VU: after a session that did not join, wait 1 s before the next one (no tight retry loop).
+let failedLast = false;
+
 export default function () {
+  if (failedLast) {
+    sleep(1);
+    failedLast = false;
+  }
   const token = guest();
   const hubTicket = token && ticket(token);
   if (!hubTicket) return;
@@ -184,7 +200,11 @@ export default function () {
       return;
     }
     for (const message of readMessages(event.data)) {
-      if (message.type === 3 && !joined) {
+      if (message.type === 3 && !joined && message.error) {
+        joinFailures.add(1);
+        closedByUs = true;
+        ws.close();
+      } else if (message.type === 3 && !joined) {
         joined = true;
         joinTime.add(Date.now() - joinStart);
         startWalking();
@@ -211,19 +231,19 @@ export default function () {
     }, 2000));
     timers.push(setInterval(() => ws.send(invocation('QuickChat', ['hi'])), 20000 + Math.floor(Math.random() * 5000)));
     timers.push(setInterval(() => ws.send(PING), 15000));
+    // The player leaves on purpose: Leave first (no 30 s slot reservation), then close.
     timers.push(setTimeout(() => {
       closedByUs = true;
-      ws.close();
+      ws.send(invocation('Leave', []));
+      setTimeout(() => ws.close(), 200);
     }, SESSION_MS));
   }
 
   ws.onclose = () => {
     timers.forEach((t) => clearInterval(t));
     check(joined, { 'joined the plaza': (j) => j === true });
+    failedLast = !joined;
     if (!closedByUs) drops.add(1);
   };
 
-  ws.onerror = () => {
-    if (!closedByUs) drops.add(1);
-  };
 }
