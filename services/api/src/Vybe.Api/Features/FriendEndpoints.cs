@@ -344,12 +344,19 @@ public static class FriendEndpoints
             return;
         }
 
+        await ApplyUnblockAsync(db, playerId, other.Id, cancellationToken);
+    }
+
+    /// <summary>The same, by player id (unblock by reference, for a player whose handle is not shown).</summary>
+    public static async Task ApplyUnblockAsync(VybeDbContext db, Guid playerId, Guid otherId, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(db);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        await PairLock.AcquireAsync(db, playerId, other.Id, cancellationToken);
-        if ((await ChallengeRuns.BlockersAsync(db, playerId, other.Id, cancellationToken)).Count == 0)
+        await PairLock.AcquireAsync(db, playerId, otherId, cancellationToken);
+        if ((await ChallengeRuns.BlockersAsync(db, playerId, otherId, cancellationToken)).Count == 0)
         {
             await db.Friendships
-                .Where(f => f.RequesterPlayerId == other.Id && f.AddresseePlayerId == playerId && f.Status == FriendshipStatus.Pending && f.Suppressed)
+                .Where(f => f.RequesterPlayerId == otherId && f.AddresseePlayerId == playerId && f.Status == FriendshipStatus.Pending && f.Suppressed)
                 .ExecuteUpdateAsync(u => u.SetProperty(f => f.Suppressed, false), cancellationToken);
         }
 
@@ -361,7 +368,7 @@ public static class FriendEndpoints
     /// FOR SHARE waits for a running anonymization (FOR NO KEY UPDATE, PrivacyProcessor) and then reads its status;
     /// an anonymization that starts later waits for this transaction, so its delete sees the new friendship row.
     /// </summary>
-    private static async Task EnsureStillListedAsync(VybeDbContext db, Guid otherId, CancellationToken cancellationToken)
+    internal static async Task EnsureStillListedAsync(VybeDbContext db, Guid otherId, CancellationToken cancellationToken)
     {
         var other = await db.Players.FromSql($"SELECT * FROM vybe.players WHERE id = {otherId} FOR SHARE")
             .AsNoTracking().SingleOrDefaultAsync(cancellationToken);

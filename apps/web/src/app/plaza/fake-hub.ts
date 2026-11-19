@@ -87,6 +87,9 @@ export class FakeHub implements HubLike {
   private time = 0;
   private ownSlot = 0;
   private joined = false;
+  private nextKey = 1;
+  private instanceId = 0;
+  private lastSafety = Number.NEGATIVE_INFINITY;
 
   constructor(private readonly options: FakeHubOptions = FAKE_DEFAULTS) {
     this.random = prng(options.seed);
@@ -114,12 +117,34 @@ export class FakeHub implements HubLike {
     this.closeHandlers.push(handler);
   }
 
-  invoke(method: string): Promise<unknown> {
-    if (method.toLowerCase() !== "join") return Promise.reject(new Error("unknown method"));
+  invoke(method: string, ...args: unknown[]): Promise<unknown> {
+    const name = method.toLowerCase();
+    if (name === "report" || name === "block") return this.safety(name, args);
+    if (name !== "join") return Promise.reject(new Error("unknown method"));
     if (this.joined) return Promise.reject(new Error("HubException: already_joined"));
     this.joined = true;
+    this.instanceId = this.options.instanceId;
     this.populate();
     return Promise.resolve(this.welcome());
+  }
+
+  /** `Report` and `Block` as the server checks them (protocol doc §9); a block moves this player to a new instance. */
+  private safety(name: "report" | "block", args: unknown[]): Promise<unknown> {
+    const [slot, key, reason] = args;
+    if (!this.joined) return Promise.reject(new Error("HubException: not_joined"));
+    if (name === "report" && !["offensive_name", "cheating", "harassment", "other"].includes(reason as string)) {
+      return Promise.reject(new Error("HubException: invalid_input"));
+    }
+    if (this.time - this.lastSafety < 1000) return Promise.reject(new Error("HubException: rate_limited"));
+    this.lastSafety = this.time;
+    const target = this.avatars.get(slot as number);
+    if (target === undefined || slot === this.ownSlot || target.member.key !== key) return Promise.reject(new Error("HubException: not_found"));
+    if (name === "block") {
+      this.avatars.delete(slot as number);
+      this.instanceId++;
+      this.emit("moved", this.welcome());
+    }
+    return Promise.resolve(null);
   }
 
   send(method: string, ...args: unknown[]): Promise<void> {
@@ -184,14 +209,14 @@ export class FakeHub implements HubLike {
 
   private populate(): void {
     const look = randomLook(this.random);
-    this.add(this.ownSlot, { slot: this.ownSlot, handle: this.options.handle, look }, 0, 0);
+    this.add(this.ownSlot, { slot: this.ownSlot, key: this.nextKey++, handle: this.options.handle, look }, 0, 0);
     const bots = Math.max(0, Math.min(15, this.options.bots));
     for (let i = 0; i < bots; i++) {
       const slot = i + 1;
       // Bots stand on a ring in front of the camera, so a still screenshot shows them all.
       const angle = (i / Math.max(bots, 1)) * Math.PI * 1.2 - Math.PI * 0.6;
       const radius = 280 + (i % 3) * 140;
-      this.add(slot, { slot, handle: NAMES[i % NAMES.length] ?? null, look: randomLook(this.random) }, Math.round(Math.sin(angle) * radius), Math.round(Math.cos(angle) * radius) + 250);
+      this.add(slot, { slot, key: this.nextKey++, handle: NAMES[i % NAMES.length] ?? null, look: randomLook(this.random) }, Math.round(Math.sin(angle) * radius), Math.round(Math.cos(angle) * radius) + 250);
     }
   }
 
@@ -204,7 +229,7 @@ export class FakeHub implements HubLike {
     return {
       protocolVersion: PROTOCOL_VERSION,
       manifestVersion: MANIFEST_VERSION,
-      instanceId: this.options.instanceId,
+      instanceId: this.instanceId,
       slot: this.ownSlot,
       tickHz: 10,
       bounds: DEFAULT_BOUNDS,

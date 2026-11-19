@@ -209,6 +209,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/blocks/ref/{reference}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a block by its reference
+         * @description For a block whose handle is not shown (private profile). Matches only the caller's own blocks.
+         *     Idempotent. Does not restore cancelled challenges.
+         */
+        delete: operations["unblockPlayerByRef"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/reports": {
         parameters: {
             query?: never;
@@ -1388,10 +1409,16 @@ export interface components {
         BlockRequest: {
             handle: components["schemas"]["HandleInput"];
         };
+        /**
+         * @description `handle` and `displayName` are null when the blocked player's profile is private (decision 6): a block
+         *     from the plaza must not show who it was. Unblock such a block with `ref`.
+         */
         BlockedPlayer: {
-            handle: components["schemas"]["Handle"];
+            handle: components["schemas"]["Handle"] | null;
             displayName: components["schemas"]["DisplayName"];
             blockedAt: components["schemas"]["Timestamp"];
+            /** @description Opaque reference to this block of the caller (`DELETE /me/blocks/ref/{reference}`). */
+            ref: string;
         };
         BlockedPlayerPage: {
             items: components["schemas"]["BlockedPlayer"][];
@@ -2556,6 +2583,36 @@ export interface operations {
             path: {
                 /** @description Player handle; matched case-insensitively. */
                 handle: components["parameters"]["HandlePath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Block removed or not present. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    unblockPlayerByRef: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description Must be `vybe-web`. Declared on every unsafe operation that guests can call; clients
+                 *     always send it. The server checks it itself (not through generic schema validation) on
+                 *     cookie-authenticated requests: missing or wrong → 403 `csrf_check_failed`.
+                 */
+                "X-Requested-With": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                /** @description The `ref` of a `BlockedPlayer`. */
+                reference: string;
             };
             cookie?: never;
         };

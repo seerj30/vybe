@@ -29,10 +29,13 @@ import {
   type Welcome,
   displayName,
   phraseText,
+  safetyErrorCode,
   stickerLabel,
 } from "./protocol";
 import { HUB_ERROR_TEXT } from "./reconnect";
 import { StickerIcon } from "./sticker-icon";
+import type { SpaceReportReason, SpaceSafetyError } from "@vybe/contracts/spaces";
+import { REPORT_REASONS } from "../profiles/safety";
 
 type Mode = "loading" | "3d" | "fallback";
 type Panel = "chat" | "stickers" | "emotes" | "people";
@@ -65,6 +68,16 @@ const FEED_LIMIT = 40;
 const ECHO_MS = 3_000;
 const JOYSTICK_RADIUS = 44;
 const TOAST_MS = 4_000;
+
+/** Plaza report reasons: the profile list without "Cheating" (there are no games in the plaza). */
+const PLAZA_REPORT_REASONS = REPORT_REASONS.filter((reason) => reason.value !== "cheating");
+
+const SAFETY_ERROR_TEXT: Record<SpaceSafetyError, string> = {
+  not_found: "That player has left the plaza.",
+  rate_limited: "Too many reports or blocks. Try again later.",
+  invalid_input: "That did not work. Try again.",
+  not_joined: "You are not in the plaza now. Try again when you are back.",
+};
 /** The connection code (a lazy chunk) did not load: "Try again" loads it again. */
 const LOAD_FAILED: PlazaStatus = { kind: "failed", message: "The plaza did not load. Check your connection and try again.", retry: true, leave: false };
 
@@ -83,6 +96,7 @@ const LOST_TEXT = "The 3D view stopped, so the plaza shows as a list until it re
     "[attr.data-mode]": "mode()",
     "[attr.data-status]": "status().kind",
     "[attr.data-instance]": "instanceId()",
+    "[attr.data-slot]": "ownSlot()",
     "[attr.data-avatars]": "stats()?.avatars",
     "[attr.data-draw-calls]": "stats()?.drawCalls",
     "[attr.data-triangles]": "stats()?.triangles",
@@ -240,14 +254,43 @@ const LOST_TEXT = "The 3D view stopped, so the plaza shows as a list until it re
             @case ("people") {
               <ul class="people-list" data-testid="member-list">
                 @for (member of members(); track member.slot) {
-                  <li>
-                    <span class="person">{{ member.slot === ownSlot() ? "You" : name(member) }}</span>
-                    @if (member.slot === ownSlot()) {
-                      <span class="muted small">This is you</span>
-                    } @else if (member.handle; as handle) {
-                      <a class="chip small-chip" [routerLink]="['/profile', handle]">Profile, report or block</a>
-                    } @else {
-                      <span class="muted small">Private profile</span>
+                  <li [attr.data-slot]="member.slot">
+                    <div class="member-row">
+                      <span class="person">{{ member.slot === ownSlot() ? "You" : name(member) }}</span>
+                      @if (member.slot === ownSlot()) {
+                        <span class="muted small">This is you</span>
+                      } @else {
+                        <span class="member-actions">
+                          @if (member.handle; as handle) {
+                            <a class="chip small-chip" [routerLink]="['/profile', handle]">Profile</a>
+                          }
+                          <button type="button" class="chip small-chip" [disabled]="safetyBusy()" (click)="askSafety('report', member)" data-testid="report-member">Report</button>
+                          <button type="button" class="chip small-chip" [disabled]="safetyBusy()" (click)="askSafety('block', member)" data-testid="block-member">Block</button>
+                        </span>
+                      }
+                    </div>
+                    @if (safety(); as ask) {
+                      @if (ask.slot === member.slot && ask.key === member.key) {
+                        @if (ask.kind === "report") {
+                          <div class="safety" role="group" [attr.aria-label]="'Report ' + name(member)" data-testid="report-form">
+                            <p class="small">Why do you report {{ name(member) }}? The player is not told who reported.</p>
+                            <div class="grid">
+                              @for (reason of reportReasons; track reason.value) {
+                                <button type="button" class="choice" [disabled]="safetyBusy()" (click)="report(member, reason.value)">{{ reason.label }}</button>
+                              }
+                            </div>
+                            <button type="button" class="link small" (click)="safety.set(null)">Cancel</button>
+                          </div>
+                        } @else {
+                          <div class="safety" role="group" [attr.aria-label]="'Block ' + name(member)" data-testid="block-form">
+                            <p class="small">Block {{ name(member) }}? You will not meet in the plaza again. Open challenges and a friendship between you end. The player is not told.</p>
+                            <div class="safety-buttons">
+                              <button type="button" class="button danger" [disabled]="safetyBusy()" (click)="block(member)" data-testid="confirm-block">Block</button>
+                              <button type="button" class="button secondary" (click)="safety.set(null)">Cancel</button>
+                            </div>
+                          </div>
+                        }
+                      }
                     }
                   </li>
                 }
@@ -322,7 +365,13 @@ const LOST_TEXT = "The 3D view stopped, so the plaza shows as a list until it re
     .choice:disabled { opacity: 0.5; cursor: wait; }
     .choice.icon { display: flex; align-items: center; justify-content: center; min-height: 60px; }
     .people-list { list-style: none; margin: 0; padding: 0; display: grid; }
-    .people-list li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) 0; }
+    .people-list li { display: grid; gap: var(--space-2); padding: var(--space-2) 0; }
+    .member-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+    .member-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1); }
+    .safety { display: grid; gap: var(--space-2); padding: var(--space-3); border-radius: var(--radius-md); background: var(--color-inset); }
+    .safety p { margin: 0; }
+    .safety-buttons { display: flex; gap: var(--space-2); }
+    .link { justify-self: start; padding: 0; border: 0; background: none; color: var(--color-accent); font: inherit; cursor: pointer; text-decoration: underline; }
     .people-list li + li { border-top: 1px solid var(--color-border); }
     .person { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
     .small { font-size: var(--text-xs); }
@@ -364,6 +413,10 @@ export class Plaza {
   protected readonly feed = signal<readonly FeedItem[]>([]);
   protected readonly panel = signal<Panel | null>(null);
   protected readonly toast = signal<string | null>(null);
+  /** The open report or block question in the people list: the member by slot and key (slots are reused). */
+  protected readonly safety = signal<{ kind: "report" | "block"; slot: number; key: number } | null>(null);
+  protected readonly safetyBusy = signal(false);
+  protected readonly reportReasons = PLAZA_REPORT_REASONS;
   protected readonly ownedEmotes = signal<readonly OwnedEmote[] | null>(null);
   protected readonly emotesFailed = signal(false);
   private readonly cooling = signal<ReadonlySet<Expression>>(new Set());
@@ -608,6 +661,7 @@ export class Plaza {
   };
 
   private welcome(welcome: Welcome, moved: boolean): void {
+    this.safety.set(null); // a new instance: the slots and keys of the question no longer apply
     this.interpolator.reset();
     this.predictor.reset();
     this.predictor.configure(welcome.bounds, welcome.speedCmPerS);
@@ -874,6 +928,39 @@ export class Plaza {
   }
 
   // ------------------------------------------------------------------ UI
+
+  protected askSafety(kind: "report" | "block", member: Member): void {
+    this.safety.set({ kind, slot: member.slot, key: member.key });
+  }
+
+  protected async report(member: Member, reason: SpaceReportReason): Promise<void> {
+    await this.safetyCall(() => this.client!.report(member.slot, member.key, reason), "Report sent. Thank you. A moderator will look at it.");
+  }
+
+  protected async block(member: Member): Promise<void> {
+    const name = this.name(member);
+    // The server moves this player to another instance (`moved`) before the call completes.
+    if (await this.safetyCall(() => this.client!.block(member.slot, member.key), `Blocked ${name}. You will not meet again in the plaza.`)) {
+      this.panel.set(null);
+    }
+  }
+
+  private async safetyCall(call: () => Promise<void>, done: string): Promise<boolean> {
+    if (this.client === null || this.safetyBusy()) return false;
+    this.safetyBusy.set(true);
+    try {
+      await call();
+      this.safety.set(null);
+      this.showToast(done, false);
+      return true;
+    } catch (error: unknown) {
+      this.showToast(SAFETY_ERROR_TEXT[safetyErrorCode(error) ?? "invalid_input"]);
+      if (safetyErrorCode(error) === "not_found") this.safety.set(null);
+      return false;
+    } finally {
+      if (!this.destroyed) this.safetyBusy.set(false);
+    }
+  }
 
   protected toggle(panel: Panel): void {
     this.panel.update((open) => (open === panel ? null : panel));

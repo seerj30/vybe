@@ -57,6 +57,32 @@ public sealed class SafetyTests(ApiFactory api)
     }
 
     [Fact]
+    public async Task BlockList_HidesAPrivatePlayer_AndUnblocksByRef()
+    {
+        var blocker = await Player.CreateGuestAsync(api);
+        var hidden = await Player.CreateGuestAsync(api);
+        await BlockOkAsync(blocker, await HandleAsync(hidden));
+        Assert.Equal(HttpStatusCode.OK, (await hidden.Http.PatchAsJsonAsync("/api/v1/me/privacy", new { profileVisibility = "private" })).StatusCode);
+
+        // Decision 6: a block (also one placed from the plaza, by slot) must not show who a private player is.
+        var response = await blocker.Http.GetAsync("/api/v1/me/blocks");
+        var page = await Contract.AssertAsync(response, HttpStatusCode.OK, "BlockedPlayerPage");
+        var entry = Assert.Single(page.GetProperty("items").EnumerateArray());
+        Assert.Equal(JsonValueKind.Null, entry.GetProperty("handle").ValueKind);
+        Assert.Equal(JsonValueKind.Null, entry.GetProperty("displayName").ValueKind);
+        var reference = entry.GetProperty("ref").GetString()!;
+
+        // A reference matches only the caller's own blocks; a bad one is refused.
+        Assert.Equal(HttpStatusCode.NoContent, (await hidden.Http.DeleteAsync($"/api/v1/me/blocks/ref/{reference}")).StatusCode);
+        Assert.Single((await ListAsync(blocker, string.Empty)).GetProperty("items").EnumerateArray());
+        await Contract.AssertProblemAsync(await blocker.Http.DeleteAsync("/api/v1/me/blocks/ref/not-a-ref"), HttpStatusCode.UnprocessableEntity, "validation_failed");
+
+        Assert.Equal(HttpStatusCode.NoContent, (await blocker.Http.DeleteAsync($"/api/v1/me/blocks/ref/{reference}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await blocker.Http.DeleteAsync($"/api/v1/me/blocks/ref/{reference}")).StatusCode); // idempotent
+        Assert.Empty((await ListAsync(blocker, string.Empty)).GetProperty("items").EnumerateArray());
+    }
+
+    [Fact]
     public async Task ListBlocks_PagesNewestFirst()
     {
         var blocker = await Player.CreateGuestAsync(api);

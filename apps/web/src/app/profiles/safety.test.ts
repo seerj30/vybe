@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { isBlocked } from "./safety";
 
-const entry = (handle: string) => ({ handle, displayName: handle, blockedAt: "2026-11-06T10:00:00Z" });
+const entry = (handle: string) => ({ handle, displayName: handle, blockedAt: "2026-11-06T10:00:00Z", ref: `r_${handle}` });
 
 describe("isBlocked", () => {
   it("reads the pages until it finds the handle", async () => {

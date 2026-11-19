@@ -23,14 +23,14 @@ type BlockedPlayer = Schemas["BlockedPlayer"];
     }
     @if (players().length > 0) {
       <ul class="blocks" aria-label="Blocked players">
-        @for (player of players(); track player.handle) {
-          <li [attr.aria-label]="player.handle">
+        @for (player of players(); track player.ref) {
+          <li [attr.aria-label]="label(player)">
             <span>
-              <strong>{{ player.displayName ?? player.handle }}</strong>
-              <span class="muted">{{ player.handle }} · blocked {{ player.blockedAt | date: "mediumDate" }}</span>
+              <strong>{{ player.displayName ?? label(player) }}</strong>
+              <span class="muted">{{ player.handle ?? "Private profile" }} · blocked {{ player.blockedAt | date: "mediumDate" }}</span>
             </span>
-            <button type="button" class="button secondary" [disabled]="busy() === player.handle" (click)="unblock(player)">
-              Unblock {{ player.handle }}
+            <button type="button" class="button secondary" [disabled]="busy() === player.ref" (click)="unblock(player)">
+              Unblock {{ label(player) }}
             </button>
           </li>
         }
@@ -77,14 +77,19 @@ export class BlockedPlayers {
     }
   }
 
+  /** A blocked player with a private profile has no handle here (decision 6). */
+  protected label(player: BlockedPlayer): string {
+    return player.handle ?? "a player with a private profile";
+  }
+
   protected async unblock(player: BlockedPlayer): Promise<void> {
-    this.busy.set(player.handle);
+    this.busy.set(player.ref);
     this.error.set(null);
     this.notice.set(null);
     try {
-      await this.api.unblock(player.handle);
-      this.players.update((players) => players.filter((p) => p.handle !== player.handle));
-      this.notice.set(`You unblocked ${player.handle}. Cancelled challenges do not come back.`);
+      await this.api.unblockByRef(player.ref);
+      this.players.update((players) => players.filter((p) => p.ref !== player.ref));
+      this.notice.set(`You unblocked ${this.label(player)}. Cancelled challenges do not come back.`);
     } catch (error: unknown) {
       this.error.set(errorMessage(error));
     } finally {

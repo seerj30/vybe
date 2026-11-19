@@ -361,6 +361,58 @@ public sealed partial class SpaceManager(
 
     // ------------------------------------------------------------------ blocks
 
+    /// <summary>Counts an invalid argument that the hub found before it reached the manager.</summary>
+    internal void InvalidInput(string connectionId)
+    {
+        var now = clock.GetUtcNow();
+        lock (_gate)
+        {
+            if (_clients.TryGetValue(connectionId, out var client))
+            {
+                Invalid(client, now, KickReasons.InvalidInput);
+            }
+        }
+    }
+
+    /// <summary>
+    /// First half of <c>Report</c> and <c>Block</c> (protocol doc §9): the caller and the player in <paramref name="slot"/>
+    /// of the caller's instance, when that member still has <paramref name="key"/>. Throws a <see cref="HubException"/>
+    /// with <c>not_found</c> when the member left (or is the caller), else with the reason the call was dropped.
+    /// </summary>
+    internal (Guid Caller, Guid Target) SafetyTarget(string connectionId, string type, int slot, int key)
+    {
+        var now = clock.GetUtcNow();
+        lock (_gate)
+        {
+            var client = Client(connectionId);
+            if (!Admit(client, now, requireJoined: true, type))
+            {
+                throw new HubException(client.Avatar is null ? KickReasons.NotJoined : KickReasons.RateLimited);
+            }
+
+            if (now - client.LastSafetyAction < SpaceRules.SafetyActionInterval)
+            {
+                Drop(client, now);
+                throw new HubException(KickReasons.RateLimited);
+            }
+
+            if (slot is < 0 or >= SpaceRules.InstanceCapacity)
+            {
+                Invalid(client, now, KickReasons.InvalidInput);
+                throw new HubException(KickReasons.InvalidInput);
+            }
+
+            client.LastSafetyAction = now;
+            var own = client.Avatar!;
+            if (own.Instance.Slots[slot] is not { } target || target.Key != key || target == own)
+            {
+                throw new HubException(SafetyErrors.NotFound);
+            }
+
+            return (client.PlayerId, target.PlayerId);
+        }
+    }
+
     /// <summary>
     /// Called after a block commits (protocol doc §9): the pair never shares an instance. The blocker moves; the
     /// blocked player sees a normal <c>left</c>.
@@ -719,7 +771,7 @@ public sealed partial class SpaceManager(
         }
 
         var slot = Array.IndexOf(instance.Slots, null);
-        var avatar = new SpaceAvatar(client.PlayerId, instance, slot, profile) { Client = client, IntentAt = now };
+        var avatar = new SpaceAvatar(client.PlayerId, instance, slot, instance.NextKey++, profile) { Client = client, IntentAt = now };
         var angle = Random.Shared.NextDouble() * 2 * Math.PI;
         var radius = Math.Sqrt(Random.Shared.NextDouble()) * SpaceRules.SpawnRadiusCm;
         (avatar.X, avatar.Z) = (Math.Round(radius * Math.Sin(angle)), Math.Round(radius * Math.Cos(angle)));

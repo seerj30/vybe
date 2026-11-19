@@ -360,6 +360,87 @@ public sealed class SpaceTests(SpaceApiFactory api) : IClassFixture<SpaceApiFact
         Assert.NotEqual(moved.InstanceId, again.InstanceId);
     }
 
+    [Fact]
+    public async Task BlockBySlot_WorksForAPrivateProfile_AndMovesTheBlocker()
+    {
+        var blocker = await Player.CreateGuestAsync(api);
+        var hidden = await Player.CreateGuestAsync(api);
+        Assert.Equal(HttpStatusCode.OK, (await hidden.Http.PatchAsJsonAsync("/api/v1/me/privacy", new { profileVisibility = "private" })).StatusCode);
+        var (a, welcomeA) = await JoinAsync(blocker);
+        var (b, welcomeB) = await JoinAsync(hidden);
+        Assert.Equal(welcomeA.InstanceId, welcomeB.InstanceId);
+        var target = (SpaceMember)(await a.WaitForAsync(SpaceEvents.Joined))[0]!;
+        Assert.Null(target.Handle);
+
+        await a.Connection.InvokeAsync("Block", target.Slot, target.MemberKey);
+
+        var moved = (SpaceWelcome)(await a.WaitForAsync(SpaceEvents.Moved))[0]!;
+        Assert.NotEqual(welcomeA.InstanceId, moved.InstanceId);
+        Assert.Equal(welcomeA.Slot, (await b.WaitForAsync(SpaceEvents.Left))[0]);
+        await using var db = api.CreateDbContext();
+        Assert.True(await db.PlayerBlocks.AnyAsync(x => x.BlockerPlayerId == blocker.Id && x.BlockedPlayerId == hidden.Id));
+    }
+
+    [Fact]
+    public async Task ReportBySlot_StoresAFixedReason_WithoutText_AndChecksTheMember()
+    {
+        var reporter = await Player.CreateGuestAsync(api);
+        var target = await Player.CreateGuestAsync(api);
+        var (a, welcomeA) = await JoinAsync(reporter);
+        var (b, welcomeB) = await JoinAsync(target);
+        Assert.Equal(welcomeA.InstanceId, welcomeB.InstanceId);
+        var member = (SpaceMember)(await a.WaitForAsync(SpaceEvents.Joined))[0]!;
+
+        // A stale key (the slot has another member now), the own slot and an unknown reason are refused.
+        var stale = await Assert.ThrowsAsync<HubException>(() => a.Connection.InvokeAsync("Report", member.Slot, member.MemberKey + 1, "harassment"));
+        Assert.Contains(SafetyErrors.NotFound, stale.Message, StringComparison.Ordinal);
+        api.Clock.Advance(SpaceRules.SafetyActionInterval);
+        var self = await Assert.ThrowsAsync<HubException>(() => a.Connection.InvokeAsync("Report", welcomeA.Slot, welcomeA.Members.Single(m => m.Slot == welcomeA.Slot).MemberKey, "harassment"));
+        Assert.Contains(SafetyErrors.NotFound, self.Message, StringComparison.Ordinal);
+        api.Clock.Advance(SpaceRules.SafetyActionInterval);
+        var reason = await Assert.ThrowsAsync<HubException>(() => a.Connection.InvokeAsync("Report", member.Slot, member.MemberKey, "you are bad"));
+        Assert.Contains(KickReasons.InvalidInput, reason.Message, StringComparison.Ordinal);
+
+        await a.Connection.InvokeAsync("Report", member.Slot, member.MemberKey, "harassment");
+        // A second call within a second is dropped (each call is a database write).
+        var fast = await Assert.ThrowsAsync<HubException>(() => a.Connection.InvokeAsync("Report", member.Slot, member.MemberKey, "harassment"));
+        Assert.Contains(KickReasons.RateLimited, fast.Message, StringComparison.Ordinal);
+        api.Clock.Advance(SpaceRules.SafetyActionInterval);
+        await a.Connection.InvokeAsync("Report", member.Slot, member.MemberKey, "other"); // the open report is reused
+
+        await using var db = api.CreateDbContext();
+        var report = await db.PlayerReports.SingleAsync(r => r.ReporterPlayerId == reporter.Id);
+        Assert.Equal((target.Id, ReportReason.Harassment, ReportStatus.Open), (report.TargetPlayerId, report.Reason, report.Status));
+        Assert.Null(report.Details);
+        // The target is not told and stays in the plaza.
+        Assert.DoesNotContain(b.Events, e => e.Method is SpaceEvents.Moved or SpaceEvents.Kicked or SpaceEvents.Error or SpaceEvents.Left);
+    }
+
+    [Fact]
+    public async Task BlockAndReportBySlot_RefuseAPlayerWhoseDeletionStarted()
+    {
+        var caller = await Player.CreateGuestAsync(api);
+        var leaving = await Player.CreateGuestAsync(api);
+        var (a, welcomeA) = await JoinAsync(caller);
+        var (_, welcomeB) = await JoinAsync(leaving);
+        Assert.Equal(welcomeA.InstanceId, welcomeB.InstanceId);
+        var member = (SpaceMember)(await a.WaitForAsync(SpaceEvents.Joined))[0]!;
+        await using (var db = api.CreateDbContext())
+        {
+            await db.Players.Where(p => p.Id == leaving.Id).ExecuteUpdateAsync(u => u.SetProperty(p => p.Status, PlayerStatus.Deleting));
+        }
+
+        var block = await Assert.ThrowsAsync<HubException>(() => a.Connection.InvokeAsync("Block", member.Slot, member.MemberKey));
+        Assert.Contains(SafetyErrors.NotFound, block.Message, StringComparison.Ordinal);
+        api.Clock.Advance(SpaceRules.SafetyActionInterval);
+        var report = await Assert.ThrowsAsync<HubException>(() => a.Connection.InvokeAsync("Report", member.Slot, member.MemberKey, "other"));
+        Assert.Contains(SafetyErrors.NotFound, report.Message, StringComparison.Ordinal);
+
+        await using var check = api.CreateDbContext();
+        Assert.False(await check.PlayerBlocks.AnyAsync(b => b.BlockerPlayerId == caller.Id));
+        Assert.False(await check.PlayerReports.AnyAsync(r => r.ReporterPlayerId == caller.Id));
+    }
+
     // ------------------------------------------------------------------ reconnect and privacy
 
     [Fact]

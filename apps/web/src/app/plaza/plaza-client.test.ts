@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/api-client";
 import { FakeHub } from "./fake-hub";
 import { type Clock, type HubLike, JOIN_TIMEOUT_MS, PlazaClient, type PlazaEvents, type PlazaStatus, TicketRefused, ticketSource } from "./plaza-client";
@@ -20,7 +20,7 @@ const WELCOME = {
   tickHz: 10,
   bounds: { minX: -1600, maxX: 1600, minZ: -1600, maxZ: 1600 },
   speedCmPerS: 350,
-  members: [{ slot: 0, handle: "me", look }],
+  members: [{ slot: 0, key: 1, handle: "me", look }],
 };
 
 /** A scripted hub: each connection follows `script`, and the test pushes server messages. */
@@ -39,8 +39,12 @@ class StubHub implements HubLike {
     this.stopped = true;
     return Promise.resolve();
   }
-  invoke(method: string): Promise<unknown> {
-    expect(method).toBe("Join");
+  readonly invoked: unknown[][] = [];
+  invoke(method: string, ...args: unknown[]): Promise<unknown> {
+    if (method !== "Join") {
+      this.invoked.push([method, ...args]);
+      return Promise.resolve(null);
+    }
     return this.script.join?.() ?? Promise.resolve(WELCOME);
   }
   send(method: string, ...args: unknown[]): Promise<void> {
@@ -146,7 +150,7 @@ describe("plaza client", () => {
     const { client, hubs, welcomes } = setup();
     client.connect();
     await flush();
-    hubs[0]!.push("moved", { ...WELCOME, instanceId: 4, slot: 1, members: [{ slot: 1, handle: null, look }] });
+    hubs[0]!.push("moved", { ...WELCOME, instanceId: 4, slot: 1, members: [{ slot: 1, key: 1, handle: null, look }] });
     expect(welcomes.map(([w, moved]) => [w.instanceId, moved])).toEqual([
       [3, false],
       [4, true],
@@ -370,5 +374,50 @@ describe("fake hub (dev flag)", () => {
     await hub.send("Sticker", "nope");
     expect(errors).toEqual(["rate_limited", "invalid_input"]);
     await hub.stop();
+  });
+
+  it("reports and blocks by slot and key, as the server checks them", async () => {
+    vi.useFakeTimers();
+    try {
+      const hub = new FakeHub({ bots: 3, seed: 1, lively: false, handle: "you", instanceId: 3 });
+      const moved: Welcome[] = [];
+      hub.on("moved", (welcome) => moved.push(welcome as Welcome));
+      await hub.start();
+      const welcome = (await hub.invoke("Join")) as Welcome;
+      const other = welcome.members.find((m) => m.slot !== welcome.slot)!;
+      const own = welcome.members.find((m) => m.slot === welcome.slot)!;
+      const second = () => vi.advanceTimersByTime(1100);
+
+      await expect(hub.invoke("Report", other.slot, other.key, "you are bad")).rejects.toThrow(/invalid_input$/);
+      await expect(hub.invoke("Report", other.slot, other.key + 100, "harassment")).rejects.toThrow(/not_found$/);
+      second();
+      await expect(hub.invoke("Report", own.slot, own.key, "harassment")).rejects.toThrow(/not_found$/);
+      second();
+      await hub.invoke("Report", other.slot, other.key, "harassment");
+      await expect(hub.invoke("Block", other.slot, other.key)).rejects.toThrow(/rate_limited$/); // one per second
+      second();
+      await hub.invoke("Block", other.slot, other.key);
+      expect(moved).toHaveLength(1);
+      expect(moved[0]!.instanceId).toBe(4);
+      expect(moved[0]!.members.map((m) => m.slot)).not.toContain(other.slot);
+      await hub.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("plaza client report and block", () => {
+  it("invokes Report and Block with slot and key while joined, and refuses before", async () => {
+    const { client, hubs } = setup();
+    await expect(client.report(1, 2, "harassment")).rejects.toThrow("not_joined");
+    client.connect();
+    await flush();
+    await client.report(1, 2, "harassment");
+    await client.block(1, 2);
+    expect(hubs[0]!.invoked.slice(-2)).toEqual([
+      ["Report", 1, 2, "harassment"],
+      ["Block", 1, 2],
+    ]);
   });
 });

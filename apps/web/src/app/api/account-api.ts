@@ -36,6 +36,11 @@ export class AccountApi {
     return this.data("DELETE", `/me/blocks/${segment(handle)}`);
   }
 
+  /** Unblock by the block's `ref`: also for a player whose handle is not shown (private profile). */
+  unblockByRef(ref: string): Promise<void> {
+    return this.data("DELETE", `/me/blocks/ref/${segment(ref)}`);
+  }
+
   requestDataExport(): Promise<Schemas["ExportRequested"]> {
     return this.data("POST", "/me/data-export");
   }
