@@ -161,3 +161,37 @@ Notes from the same day:
 - Production run: only with owner approval (rule above), before the first real players in spaces. Expected peak in
   the closed beta: about 15 players.
 
+### Production run (spaces)
+
+Same procedure as [Run it on production](#run-it-on-production-owner-approval-only), with three raised limits in
+`/etc/vybe/api.env` (all sockets come from one address): `RateLimits__GuestsPerIpPerMinute=100000`,
+`RateLimits__ReadsPerMinute=100000`, `Spaces__MaxConnectionsPerAddress=5000`. Restore the copy afterwards.
+
+```bash
+docker run --rm -i --ulimit nofile=65536:65536 --add-host <host>:<ip> -e BASE_URL=https://<host> -e VYBE_LOAD_TARGET_CONFIRMED=<host> -e SESSION_MS=1200000 grafana/k6:1.3.0 run - < infra/load/spaces.js
+```
+
+Sample the VM in a second shell (one SSH session): `docker stats --no-stream vybe-api-1 vybe-web-1` every 10 s.
+
+Record of 2026-11-19: release ea1299f, Oracle VM (2 OCPU A1, 12 GB; API limit 1.5 CPU / 2 GB, web 0.5 CPU / 512 MB),
+Supabase Free; k6 on the owner's Mac (Romania → Frankfurt), one run 100 → 250 → 500 → 1,000 avatars (30 s ramp,
+2 min hold), sessions longer than the run, no HTTP scenario at the same time. CPU in % of one core, steady state of
+each hold (10 samples).
+
+| Avatars | API CPU median / p90 / max | API memory | Web (Caddy) CPU median / max | Web memory | VM load max | Result |
+|---|---|---|---|---|---|---|
+| 100 | 26 / 30 / 39 % | 171 MiB | 15 / 22 % | 30 MiB | 1.3 | Pass: 17 % of the API limit |
+| 250 | 74 / 76 / 82 % | 169 MiB | 42 / 50 % | 56 MiB | 1.4 | Pass: 49 % of the API limit; web at its 0.5 CPU limit at peaks |
+| 500 | 154 / 168 / 169 % | 258 MiB | 58 / 60 % | 108 MiB | 3.4 | At the limit: API and web both at their CPU limits |
+| 1,000 | 170 / 171 / 174 % | 400 MiB | 60 / 60 % | 204 MiB | 5.6 | Fail: overload (below) |
+
+Whole run (k6 does not split the snapshot metrics by step): snapshot gap median 102 ms, p95 488 ms; join p95 5.7 s;
+130 join failures, 11 dropped sockets, 1 kick; 503 of 1,499 guest creations failed (about 30 s each: the proxy stopped
+waiting for the overloaded API; 2 connect timeouts in the 250 ramp, 1 in the 1,000 step); 996 sockets opened, 852 still open at the end. Thresholds fail. VM CPU per avatar
+is about 3.5 times the laptop's (an A1 core is slower, and TLS through Caddy is added).
+
+Conclusion: the VM carries about 250 avatars with headroom and about 500 at its CPU limit. The closed beta (about
+15 players, 1 instance) uses about 4 % of one core. Before more than about 250 players at the same time in the
+plaza: raise the web limit (Caddy terminates TLS for every socket), give the API more CPU, or move to a bigger VM.
+1,001 test guests (created 13:23:40–13:35 UTC) were queued for deletion after the run.
+
