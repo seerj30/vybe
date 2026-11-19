@@ -22,8 +22,8 @@
 
 | Field | Personal data? | Note |
 |---|---|---|
-| `handle` | yes (identifier the player chose) | can contain a real name; filtering is stream B |
-| `displayName` | yes | free text, 40 chars |
+| `handle` | yes (identifier) | can contain a real name; filtering is stream B. **Note 2026-11-19:** the server generates a random handle; players cannot choose one today |
+| `displayName` | yes | free text, 40 chars. **Note 2026-11-19:** no endpoint sets it today, so it is always empty; P2 spaces never send it |
 | `level` | low | |
 | Avatar presets and equipped items | low | shows purchases |
 | Not shown: email, wallet, inventory list, ledger, reports, blocks | — | private by spec §1 |

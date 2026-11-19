@@ -33,8 +33,10 @@ logs without request paths, deploys of reviewed commits by digest.
    (`/var/lib/vybe/caddy`), because Let's Encrypt limits new certificates per week. HTTP/3 is off (no UDP port).
    compose mounts this file over the image's Caddyfile, so the web image stays the same for Fly.io and the VM.
 3. **sslip.io for the first deploy, an own domain before real players.** The first host name is
-   `<public IPv4 with dashes>.sslip.io`, so Let's Encrypt works without a domain. So that the name stays the same,
-   a reserved public IP is mandatory. Before real players, an own domain replaces it (an `A` record and a new value
+   `<public IPv4 with dashes>.sslip.io`, so Let's Encrypt works without a domain. The production VM keeps its
+   ephemeral public IP (owner decision, 2026-11-10, roadmap): it stays through stops and reboots and changes only
+   when the VM is replaced. A new VM then means a new host name. A reserved public IP removes this risk; use one for a
+   new VM. Before real players, an own domain replaces the sslip.io name (an `A` record and a new value
    in `stage-env.sh`): sslip.io is a third party that the team does not control. The host name is also the
    Supabase Site URL, the redirect URL and `Challenges__ShareBaseUrl`: they change together (runbook "Host name").
 4. **Client address.** Docker publishes ports with DNAT and the userland proxy is off (`daemon.json`), so Caddy sees
@@ -123,11 +125,14 @@ logs without request paths, deploys of reviewed commits by digest.
 
 ## Consequences
 
-- Hosting costs USD 0 (Oracle Always Free on a Pay As You Go account with a USD 1 budget alert, Supabase Free, GHCR
-  and Actions on a public repository; a domain before real players).
+- Hosting costs USD 0 (Oracle Always Free on a Free Tier account, Supabase Free, GHCR and Actions on a public
+  repository; a domain before real players).
 - The team operates the VM: OS updates, Docker updates, restore drills, disk space. Unattended upgrades reboot it
-  at most once a night. The Pay As You Go account is mandatory: it avoids the idle reclaim of Always Free instances
-  (runbook).
+  at most once a night.
+- Idle reclaim: Oracle can stop an Always Free instance of a Free Tier account after 7 quiet days. **Decision of the
+  product owner (2026-11-10): stay on Free Tier** and accept this risk; restart the VM in the console. Upgrade to Pay
+  As You Go (no charge for Always Free resources, no idle reclaim, USD 1 budget alert) before real beta players
+  (runbook, "Idle reclaim").
 - A deploy is one approved workflow run; a failed migration stops it before the VM changes; a bad image does not
   replace a healthy one.
 - A change to the server files needs the owner on the VM (`bootstrap.sh --files-only`) before the next deploy.
