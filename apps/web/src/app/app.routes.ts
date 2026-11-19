@@ -59,6 +59,14 @@ export const routes: Routes = [
     title: "Street Hoops · VYBE",
     data: { layout: "fullscreen", mode: "online" },
   },
+  {
+    // P2 public plaza (docs/design/p2-spaces-protocol.md): the scene, SignalR and MessagePack load as a lazy chunk.
+    path: "plaza",
+    canActivate: [requirePlayer],
+    loadComponent: () => import("./plaza/plaza").then((m) => m.Plaza),
+    title: "Plaza · VYBE",
+    data: { layout: "fullscreen" },
+  },
   // The invite preview works without a player; accepting it can create a guest (spec §2 J2).
   { path: "challenge/:token", component: Invite, title: "Challenge · VYBE", data: { layout: "app" } },
   {
