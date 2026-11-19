@@ -269,7 +269,7 @@ suspended → `kicked("suspended")`; `deleting`/`deleted` → `kicked("account_u
 
 **Never stored or logged:** positions, headings, movement, quick-chat or sticker ids per player, emote use per player,
 who was near whom, tickets, the query string of the hub URL. No message content exists to store: there is no free
-text. The privacy notice needs a "presence in spaces" row (P2 pack; orchestrator, to confirm with counsel).
+text. The privacy notice draft has a "presence in spaces" row and a space-events row (§3; open point 9 for counsel).
 
 ## 11. Hosting notes (implementation PR)
 
