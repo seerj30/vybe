@@ -235,6 +235,9 @@ export class FakeHub implements HubLike {
       bounds: DEFAULT_BOUNDS,
       speedCmPerS: DEFAULT_SPEED_CM_PER_S,
       members: [...this.avatars.values()].map((a) => a.member),
+      space: "plaza",
+      ownerSlot: null,
+      room: null,
     };
   }
 

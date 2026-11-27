@@ -84,6 +84,10 @@ interface Message {
                       <span class="muted">{{ f.handle }} · Level {{ f.level }}</span>
                     </span>
                     <span class="row">
+                      @if (f.roomOpen) {
+                        <span class="open-tag">Open room</span>
+                        <a class="button" [routerLink]="['/visit', f.handle]" [attr.aria-label]="'Visit the room of ' + name(f)" data-testid="visit-room">Visit</a>
+                      }
                       <a class="button" routerLink="/arcade/street-hoops" [queryParams]="{ to: f.handle }" [attr.aria-label]="'Challenge ' + name(f)">Challenge</a>
                       @if (confirmRemove() === f.handle) {
                         <button type="button" class="button secondary" [disabled]="busy()" (click)="remove(f)">Yes, remove</button>
@@ -125,6 +129,7 @@ interface Message {
     .list li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--space-2); padding: 10px 0; }
     .list li + li { border-top: 1px solid var(--color-border); }
     .who { display: grid; min-width: 0; overflow-wrap: anywhere; }
+    .open-tag { padding: 2px 10px; border-radius: var(--radius-pill); background: var(--color-success); color: var(--color-on-accent); font-size: var(--text-xs); font-weight: 700; }
     p:empty { display: none; }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,

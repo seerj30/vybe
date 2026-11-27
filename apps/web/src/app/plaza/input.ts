@@ -47,6 +47,16 @@ export function intentFromScreen(right: number, forward: number): Intent {
   return Math.hypot(dx, dz) < MOVE_DEAD_ZONE ? STOP : { dx: dx + 0, dz: dz + 0 };
 }
 
+/**
+ * Screen intent to space axes for a view. The room camera (docs/design/p2-room-visits.md §8) stands in front of
+ * the open side and looks along −z: screen right is +x and forward is −z, the plaza mapping turned 180°.
+ */
+export function forView(intent: Intent, view: "plaza" | "room"): Intent {
+  if (view === "plaza" || (intent.dx === 0 && intent.dz === 0)) return intent;
+  // `+ 0` turns −0 into 0 (MessagePack would send a float for −0).
+  return { dx: -intent.dx + 0, dz: -intent.dz + 0 };
+}
+
 /** Held keys to an intent (full speed; diagonal keeps length 127). */
 export function intentFromKeys(held: ReadonlySet<Direction>): Intent {
   const right = (held.has("right") ? 1 : 0) - (held.has("left") ? 1 : 0);

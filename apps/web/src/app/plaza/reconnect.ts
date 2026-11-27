@@ -67,6 +67,10 @@ export const KICK_RULES: Readonly<Record<KickReason, KickRule>> = {
   account_unavailable: { action: { kind: "leave" }, message: "Your session has ended." },
   spaces_full: { action: { kind: "auto", delayMs: FULL_RETRY_MS }, message: "All plazas are full right now. VYBE tries again in a minute." },
   slow_client: { action: { kind: "auto", delayMs: 0 }, message: "The connection was too slow. Reconnecting…" },
+  // Room visits (docs/design/p2-room-visits.md §3): never back by itself; the page offers the plaza and the hub.
+  room_closed: { action: { kind: "none" }, message: "The room closed." },
+  removed: { action: { kind: "none" }, message: "You are no longer in this room." },
+  left_room: { action: { kind: "none" }, message: "You blocked a player, so you left the room." },
 };
 
 /** Text for a non-fatal `error` message (§7). */
@@ -81,4 +85,6 @@ export const JOIN_ERROR_TEXT = {
   spaces_full: "All plazas are full right now. Try again in a few minutes.",
   rate_limited: "Too many tries to enter the plaza. Wait a minute and try again.",
   already_joined: "You are already in the plaza.",
+  room_unavailable: "This room is not open for you now.",
+  room_full: "This room is full right now. Try again in a few minutes.",
 } as const;

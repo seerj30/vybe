@@ -20,7 +20,7 @@
 | Transport | WebSockets only, no negotiate request (client: `skipNegotiation: true`, `transport: WebSockets`) |
 | Hub protocol | SignalR **MessagePack** (`@microsoft/signalr` + `@microsoft/signalr-protocol-msgpack`). JSON only in test configurations (§11) |
 | Auth | One-time **space ticket** from `POST /api/v1/spaces/tickets` (guest cookie or Supabase bearer, as every other endpoint), sent as `access_token` on connect |
-| Space | `plaza`: instances of max. **16** avatars; the server picks or creates the instance |
+| Space | `plaza`: instances of max. **16** avatars; the server picks or creates the instance. `room`: a friend's open room, max. **8** avatars (§14) |
 | Authority | Server owns instance, slot, position, heading, movement state. Client sends intent only |
 | Tick | **10 Hz** server tick; full snapshot of the instance per tick while anything moves, else 1 Hz |
 | Input | move intent ≤ 10/s; emote, quick-chat, sticker: ids from fixed lists only. **No text field anywhere** |
@@ -71,7 +71,7 @@ new HubConnectionBuilder()
 
 | Item | Value |
 |---|---|
-| Space id | `plaza` (only space in P2; friend room visits are a later space type) |
+| Space id | `plaza`; `room` for live friend room visits (§14, [design](p2-room-visits.md)) |
 | Instance | integer id `instanceId` (≥ 1); shown as "Plaza 3". Created on demand, removed when empty for 60 s |
 | Capacity | max. **16** avatars per instance; max. **64** instances (1,024 avatars) per API process (*provisional*) |
 | Slot | integer 0–15, stable while the avatar is in the instance. All messages name avatars by slot |
@@ -240,6 +240,9 @@ position (§3). After a deploy the API restarts with no state: every client join
 | `account_unavailable` | the player is `deleting` or deleted, or the session ended | do not reconnect; go to the start page |
 | `spaces_full` | a block move found no instance with room | reconnect after 60 s |
 | `slow_client` | the client did not read its messages | reconnect with the normal backoff |
+| `room_closed` | room only: the owner closed the room, left, or did not come back within 30 s | do not reconnect; show "The room closed" with the plaza and the hub |
+| `removed` | room only: the owner removed or blocked the visitor, or the friendship ended | do not reconnect; show the plaza and the hub |
+| `left_room` | room only: the visitor blocked a member (the blocker leaves) | do not reconnect; show the plaza and the hub |
 
 **Automatic reconnect** (connection lost without `kicked`): delays 0, 2, 5, 10, 20, 30, 30 … s with ±25 % jitter;
 stop after 5 minutes and show "Reconnect". Each attempt gets a new ticket (`accessTokenFactory`). After reconnect the
@@ -307,7 +310,26 @@ text. The privacy notice draft has a "presence in spaces" row and a space-events
 | # | Question | Default until answered |
 |---|---|---|
 | 1 | Report or block from the plaza for a player with a private profile (no handle)? | **Done:** `Report(slot, key, reason)` and `Block(slot, key)` (§4) |
-| 2 | Join a friend's instance ("go to friend")? Shows presence to friends | Not in P2 (decision 8: presence is new personal data) |
+| 2 | Join a friend's instance ("go to friend")? Shows presence to friends | Not in the plaza (decision 8: presence is new personal data). The owner can open the own room to friends instead (§14) |
 | 3 | Sticker art (12 icons) | Stream W draws them (flat 2D, `assets/` or `apps/web`), ids from the manifest |
 | 4 | Final limits (speed, bounds, rates, caps) | The *provisional* values here; the load test (`docs/runbooks/load-test.md`) may change caps |
 | 5 | 20 connections per address: enough behind carrier-grade NAT (many players, one address)? | Keep 20; raise `Spaces:MaxConnectionsPerAddress` if real players hit it (the 429 is in the API metrics) |
+
+## 14. Room visits (stream X)
+
+Live friend room visits are a second space kind on this hub. Full rules: [p2-room-visits.md](p2-room-visits.md).
+Everything in §2–§12 applies, with these additions (protocol version stays 1: new methods, new optional fields).
+
+| Item | Room value |
+|---|---|
+| Enter | `OpenRoom()` (the owner) or `JoinRoom(handle)` (an accepted friend of the owner) instead of `Join()`. Both count as `Join` for the 5-per-minute limit |
+| Other methods | `CloseRoom()` (owner, send); `RemoveVisitor(slot, key)` (owner, invoke; errors `not_found`, `rate_limited`, `invalid_input`) |
+| `Welcome` | New optional fields `space` (`"plaza"` or `"room"`), `ownerSlot`, `room` (finish and item SKUs of the saved layout). The plaza sends `"plaza"`, null, null |
+| Join errors | `room_unavailable` (not open, not a friend, removed, or a block with a member), `room_full`; also `invalid_input` for a bad handle |
+| Capacity, bounds, speed | 8 avatars; x and z in [−170, 170] cm (the 4 m floor of `room.v1.json`, 30 cm inside the walls); 250 cm/s. No furniture collision |
+| Owner | Stays inside: `Leave`, `CloseRoom`, a kick, or 30 s away closes the room. A `Join` or `JoinRoom` elsewhere drops the owner's reserved slot and closes the room |
+| Blocks | The owner blocks a visitor → `removed`. A visitor blocks a member → the visitor gets `left_room`. No pair with a block shares a room |
+| Friendship ends | The visitor gets `removed` at once |
+| HTTP | `GET /me/friends` has `roomOpen` per friend; `PUT /me/room` answers 409 `room_open` while the room is open |
+| Privacy | Open rooms in memory only. A room join logs the player id and the space kind, never the owner or a room number. Metric gauge `vybe.spaces.rooms` |
+

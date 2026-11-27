@@ -2,6 +2,8 @@ import * as THREE from "three";
 import { type GLTF, GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { BASE_LAYER_COLOR, BASE_LAYER_REGIONS, type Look } from "../avatar/avatar-look";
+import type { RoomState } from "../room/room-layout";
+import { buildRoomScenery, materialsOf } from "../room/room-scenery";
 import { buildPlazaGround } from "./plaza-ground";
 import type { Pose } from "./interpolation";
 import { resetWalk, swingWalk, type WalkBone } from "./walk-pose";
@@ -29,6 +31,11 @@ export interface TagPosition {
 }
 
 export interface PlazaRendererOptions {
+  /**
+   * `plaza`: the plaza ground and a camera behind the own avatar. `room` (docs/design/p2-room-visits.md §8): the
+   * owner's room (`setRoom`) and a fixed camera in front of its open side, looking at the back wall (−z).
+   */
+  view?: "plaza" | "room";
   reducedMotion: boolean;
   idleAnimation: string;
   /** Called first in every frame: the page advances the own-avatar prediction. */
@@ -50,6 +57,9 @@ const WALK_RATE = 9;
 /** Camera behind and above the own avatar, looking along +z (input.ts maps screen axes the same way). */
 const CAMERA_OFFSET = new THREE.Vector3(0, 3.3, -5.6);
 const CAMERA_LOOK = new THREE.Vector3(0, 1.0, 1.8);
+/** Room view: the camera stands in front of the open side; portrait screens step back so the 4 m room fits. */
+const ROOM_LOOK = new THREE.Vector3(0, 0.9, -0.3);
+const ROOM_CAMERA = new THREE.Vector3(0, 2.6, 6.0);
 const WALK_BONES: readonly [string, number][] = [
   ["upper_leg_L", 1],
   ["upper_leg_R", -1],
@@ -103,7 +113,9 @@ export class PlazaRenderer {
   private readonly material: THREE.MeshToonMaterial;
   private readonly awayMaterial: THREE.MeshToonMaterial;
   private readonly groundMaterial: THREE.MeshToonMaterial;
-  private readonly ground: THREE.Mesh;
+  private readonly ground: THREE.Mesh | null = null;
+  private readonly view: "plaza" | "room";
+  private room: THREE.Group | null = null;
   private readonly shadows: THREE.InstancedMesh;
   private readonly timer = new THREE.Timer();
   private readonly resize: ResizeObserver;
@@ -128,9 +140,10 @@ export class PlazaRenderer {
     private readonly canvas: HTMLCanvasElement,
     private readonly options: PlazaRendererOptions,
   ) {
+    this.view = options.view ?? "plaza";
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "low-power" });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.setClearColor(0x9fc6e8);
+    this.renderer.setClearColor(this.view === "room" ? 0x2a2f45 : 0x9fc6e8);
     this.gradient = new THREE.DataTexture(TOON_LEVELS, TOON_LEVELS.length, 1, THREE.RedFormat);
     this.gradient.minFilter = THREE.NearestFilter;
     this.gradient.magFilter = THREE.NearestFilter;
@@ -146,11 +159,15 @@ export class PlazaRenderer {
     this.scene.fog = new THREE.Fog(0x9fc6e8, 26, 60);
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x8a90a6, 1.1));
     const sun = new THREE.DirectionalLight(0xffffff, 2.2);
-    sun.position.set(-6, 12, -4);
+    // The room's walls stand at the back and the left: its light comes from the open front-right side.
+    if (this.view === "room") sun.position.set(3, 6, 4);
+    else sun.position.set(-6, 12, -4);
     this.scene.add(sun);
 
-    this.ground = new THREE.Mesh(buildPlazaGround(), this.groundMaterial);
-    this.scene.add(this.ground);
+    if (this.view === "plaza") {
+      this.ground = new THREE.Mesh(buildPlazaGround(), this.groundMaterial);
+      this.scene.add(this.ground);
+    }
 
     // Blob shadows: one instanced mesh for all 16 avatars (one draw call).
     const shadowGeometry = new THREE.CircleGeometry(0.42, 16).rotateX(-Math.PI / 2);
@@ -170,6 +187,26 @@ export class PlazaRenderer {
     this.resize.observe(canvas);
     this.fit();
     this.request();
+  }
+
+  /**
+   * Room view: shows the owner's room (shell, finishes, furniture). Returns the skus that did not load (boxes or the
+   * default finish show). Rejects when the shell does not load; the avatars still show on the empty background.
+   */
+  async setRoom(room: RoomState): Promise<string[]> {
+    const scenery = await buildRoomScenery(room, (url) => this.load(url), this.gradient);
+    if (this.disposed) {
+      disposeScenery(scenery.group);
+      return scenery.failed;
+    }
+    if (this.room !== null) {
+      this.room.removeFromParent();
+      disposeScenery(this.room);
+    }
+    this.room = scenery.group;
+    this.scene.add(this.room);
+    this.request();
+    return scenery.failed;
   }
 
   /** Loads the shared base file. Rejects when it does not load: the page shows the 2D view. */
@@ -281,7 +318,8 @@ export class PlazaRenderer {
         () => undefined,
       );
     }
-    this.ground.geometry.dispose();
+    this.ground?.geometry.dispose();
+    if (this.room !== null) disposeScenery(this.room);
     this.shadows.geometry.dispose();
     (this.shadows.material as THREE.Material).dispose();
     this.shadows.dispose();
@@ -507,7 +545,7 @@ export class PlazaRenderer {
       this.walk(avatar, pose.state === 1 && avatar.emote === null, dt);
       this.tmpM.makeTranslation(pose.x * CM, 0.01, pose.z * CM);
       this.shadows.setMatrixAt(shadows++, this.tmpM);
-      if (avatar.slot === own) this.follow(avatar.group.position, dt);
+      if (avatar.slot === own && this.view === "plaza") this.follow(avatar.group.position, dt);
       tags.push(this.project(avatar.slot, avatar.group.position));
     }
     this.shadows.count = shadows;
@@ -563,6 +601,10 @@ export class PlazaRenderer {
     this.camera.aspect = width / height;
     this.camera.fov = width < height ? 60 : 50;
     this.camera.updateProjectionMatrix();
+    if (this.view === "room") {
+      this.camera.position.copy(ROOM_LOOK).addScaledVector(ROOM_CAMERA, width < height ? 1.95 : 1);
+      this.camera.lookAt(ROOM_LOOK);
+    }
     this.request();
   }
 
@@ -671,4 +713,12 @@ export function mergeSkinned(
   merged.setIndex(new THREE.BufferAttribute(index, 1));
   merged.computeBoundingSphere();
   return merged;
+}
+
+/** Room clones share geometry with the cached files (disposed with them): only their own materials go here. */
+function disposeScenery(group: THREE.Object3D): void {
+  group.traverse((o) => {
+    for (const m of materialsOf(o)) m.dispose();
+    if (o.userData["placeholder"]) (o as THREE.Mesh).geometry.dispose();
+  });
 }

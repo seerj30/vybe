@@ -18,8 +18,16 @@ export const SpaceMethods = {
   refreshLook: "RefreshLook",
   /** `Report(slot, key, reason)`: a fixed `SpaceReportReason`, no free text (protocol doc §9). */
   report: "Report",
-  /** `Block(slot, key)`: the server then moves the caller (`moved`). */
+  /** `Block(slot, key)`: the server then moves the caller (`moved`); in a room, see docs/design/p2-room-visits.md §5. */
   block: "Block",
+  /** Room visits (docs/design/p2-room-visits.md §3): open the own room as its owner; returns a room `Welcome`. */
+  openRoom: "OpenRoom",
+  /** `JoinRoom(handle)`: enter a friend's open room; returns a room `Welcome`. */
+  joinRoom: "JoinRoom",
+  /** Owner only: close the room (visitors get `kicked("room_closed")`). */
+  closeRoom: "CloseRoom",
+  /** `RemoveVisitor(slot, key)`, owner only: the visitor gets `kicked("removed")`. */
+  removeVisitor: "RemoveVisitor",
 } as const;
 
 /** Server → client handlers (protocol doc §5). */
@@ -51,6 +59,10 @@ export const SpaceRules = {
   reservationMs: 30_000,
   /** Values per avatar in a snapshot: slot, x, z, heading, state. */
   snapshotStride: 5,
+  /** Room visits: the owner plus 7 visitors, a 4 m room (30 cm inside the walls), a slower walk. */
+  roomCapacity: 8,
+  roomBoundCm: 170,
+  roomSpeedCmPerS: 250,
 } as const;
 
 /** Snapshot `state` values. */
@@ -71,7 +83,13 @@ export type SpaceKickReason =
   | "suspended"
   | "account_unavailable"
   | "spaces_full"
-  | "slow_client";
+  | "slow_client"
+  /** Room visits: the owner closed the room, left, or did not come back within 30 s. */
+  | "room_closed"
+  /** Room visits: the owner removed the visitor (or blocked them), or the friendship ended. */
+  | "removed"
+  /** Room visits: the visitor blocked a member, so the visitor left (the blocker moves). */
+  | "left_room";
 
 /** `HubException` messages of `Report` and `Block`: the member left (or is the caller), or an error code. */
 export type SpaceSafetyError = "not_found" | "rate_limited" | "invalid_input" | "not_joined";
@@ -79,8 +97,18 @@ export type SpaceSafetyError = "not_found" | "rate_limited" | "invalid_input" | 
 /** Report reasons: the `ReportReason` values of the HTTP API. */
 export type SpaceReportReason = "offensive_name" | "cheating" | "harassment" | "other";
 
-/** `HubException` messages of `Join`. */
-export type SpaceJoinError = "spaces_full" | "already_joined" | "rate_limited" | "account_unavailable";
+/**
+ * `HubException` messages of `Join`, `OpenRoom` and `JoinRoom`. `room_unavailable`: not open, not a friend, removed,
+ * or a block with a member (one code on purpose).
+ */
+export type SpaceJoinError =
+  | "spaces_full"
+  | "already_joined"
+  | "rate_limited"
+  | "account_unavailable"
+  | "room_unavailable"
+  | "room_full"
+  | "invalid_input";
 
 export interface SpaceEquipped {
   hair: string | null;
@@ -110,6 +138,26 @@ export interface SpaceMember {
   look: SpaceLook;
 }
 
+export type SpaceKind = "plaza" | "room";
+
+export type SpaceRoomSurface = "floor" | "wall_back" | "wall_left";
+
+/** One placed item of an open room: SKUs only (no item ids). */
+export interface SpaceRoomItem {
+  sku: string;
+  surface: SpaceRoomSurface;
+  x: number;
+  y: number;
+  rotation: 0 | 90 | 180 | 270;
+}
+
+/** The owner's saved room layout at open time: finish SKUs and placed items. */
+export interface SpaceRoom {
+  wall: string | null;
+  floor: string | null;
+  items: SpaceRoomItem[];
+}
+
 export interface SpaceWelcome {
   protocolVersion: number;
   manifestVersion: number;
@@ -119,6 +167,12 @@ export interface SpaceWelcome {
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
   speedCmPerS: number;
   members: SpaceMember[];
+  /** Optional room fields (docs/design/p2-room-visits.md §3): missing or "plaza" in the plaza. */
+  space?: SpaceKind;
+  /** Room: the owner's slot. */
+  ownerSlot?: number | null;
+  /** Room: the owner's saved layout. */
+  room?: SpaceRoom | null;
 }
 
 export interface SpaceAvatarSnapshot {
