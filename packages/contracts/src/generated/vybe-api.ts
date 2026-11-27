@@ -261,7 +261,8 @@ export interface paths {
          * List the caller's friends
          * @description Accepted friends, by handle (at most 200). Only the caller's own friends: no operation lists
          *     another player's friends. A friend with a private profile is listed with `profileVisible: false`
-         *     (design: docs/design/p1-friends-leaderboard.md).
+         *     (design: docs/design/p1-friends-leaderboard.md). `roomOpen` is true only while that friend's
+         *     room is open to the caller (docs/design/p2-room-visits.md); the API keeps it in memory only.
          */
         get: operations["listMyFriends"];
         put?: never;
@@ -592,7 +593,8 @@ export interface paths {
          *     manifest (docs/design/p1-my-room.md); it never trusts the client layout.
          *     Idempotent: a layout equal to the stored room returns it unchanged, also with an old
          *     `expectedRevision`. Another layout with an old revision gets 409 `revision_conflict`.
-         *     Problems about one item carry `itemId`.
+         *     While the room is open to friends, every save gets 409 `room_open`
+         *     (docs/design/p2-room-visits.md). Problems about one item carry `itemId`.
          */
         put: operations["saveMyRoom"];
         post?: never;
@@ -1289,7 +1291,7 @@ export interface components {
             message?: string;
         };
         /** @enum {string} */
-        ProblemCode: "malformed_request" | "invalid_idempotency_key" | "unauthenticated" | "forbidden" | "account_suspended" | "csrf_check_failed" | "not_found" | "revision_conflict" | "request_in_progress" | "payload_too_large" | "validation_failed" | "idempotency_key_mismatch" | "idempotency_key_required" | "rate_limited" | "internal_error" | "service_unavailable" | "player_not_found" | "already_authenticated" | "age_not_eligible" | "invalid_link_proof" | "identity_already_linked" | "auth_unavailable" | "invalid_preset" | "incompatible_equipment" | "self_block" | "self_report" | "self_friend_request" | "already_friends" | "friend_request_declined" | "friend_request_limit" | "recipient_request_limit" | "friend_limit_reached" | "insufficient_funds" | "already_owned" | "level_too_low" | "item_unavailable" | "item_not_purchasable" | "item_not_owned" | "incompatible_item" | "item_inactive" | "item_already_equipped" | "outfit_limit_reached" | "outfit_items_invalid" | "room_item_limit" | "placement_out_of_bounds" | "placement_overlap" | "session_expired" | "challenge_unavailable" | "challenge_session_exists" | "challenge_expired" | "session_not_eligible" | "session_already_used" | "self_challenge" | "recipient_blocked" | "self_accept" | "challenge_already_accepted" | "challenge_not_completed" | "rematch_already_created" | "quest_not_completed" | "quest_already_claimed" | "quest_claim_expired" | "export_in_progress" | "reauthentication_required";
+        ProblemCode: "malformed_request" | "invalid_idempotency_key" | "unauthenticated" | "forbidden" | "account_suspended" | "csrf_check_failed" | "not_found" | "revision_conflict" | "request_in_progress" | "payload_too_large" | "validation_failed" | "idempotency_key_mismatch" | "idempotency_key_required" | "rate_limited" | "internal_error" | "service_unavailable" | "player_not_found" | "already_authenticated" | "age_not_eligible" | "invalid_link_proof" | "identity_already_linked" | "auth_unavailable" | "invalid_preset" | "incompatible_equipment" | "self_block" | "self_report" | "self_friend_request" | "already_friends" | "friend_request_declined" | "friend_request_limit" | "recipient_request_limit" | "friend_limit_reached" | "insufficient_funds" | "already_owned" | "level_too_low" | "item_unavailable" | "item_not_purchasable" | "item_not_owned" | "incompatible_item" | "item_inactive" | "item_already_equipped" | "outfit_limit_reached" | "outfit_items_invalid" | "room_item_limit" | "placement_out_of_bounds" | "placement_overlap" | "room_open" | "session_expired" | "challenge_unavailable" | "challenge_session_exists" | "challenge_expired" | "session_not_eligible" | "session_already_used" | "self_challenge" | "recipient_blocked" | "self_accept" | "challenge_already_accepted" | "challenge_not_completed" | "rematch_already_created" | "quest_not_completed" | "quest_already_claimed" | "quest_claim_expired" | "export_in_progress" | "reauthentication_required";
         /** @description Cursor for the next page; null on the last page. */
         NextCursor: string | null;
         /** @enum {string} */
@@ -1439,6 +1441,12 @@ export interface components {
             since: components["schemas"]["Timestamp"];
             /** @description False for a private profile; `getProfile` then answers 404. */
             profileVisible: boolean;
+            /**
+             * @description True while this friend's room is open to the caller (enter it with the hub method
+             *     `JoinRoom(handle)`, docs/design/p2-room-visits.md). False when the room is closed, the
+             *     owner removed the caller in this opening, or a member inside is in a block with the caller.
+             */
+            roomOpen: boolean;
         };
         FriendList: {
             items: components["schemas"]["FriendEntry"][];

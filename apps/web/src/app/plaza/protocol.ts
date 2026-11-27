@@ -1,4 +1,15 @@
-import type { SpaceErrorCode, SpaceJoinError, SpaceKickReason, SpaceLook, SpaceMember, SpaceSafetyError, SpaceWelcome } from "@vybe/contracts/spaces";
+import type {
+  SpaceErrorCode,
+  SpaceJoinError,
+  SpaceKickReason,
+  SpaceKind,
+  SpaceLook,
+  SpaceMember,
+  SpaceRoom,
+  SpaceRoomItem,
+  SpaceSafetyError,
+  SpaceWelcome,
+} from "@vybe/contracts/spaces";
 import quickchat from "../../../../../assets/manifests/quickchat.v1.json";
 
 /**
@@ -24,10 +35,16 @@ export interface Bounds {
   maxZ: number;
 }
 
+/** Room visits (docs/design/p2-room-visits.md): 8 avatars, at most 40 placed items (room.v1.json). */
+export const MAX_ROOM_AVATARS = 8;
+const MAX_ROOM_ITEMS = 40;
+
 /** §5 Look, Member and Welcome: the shared hub contract (`@vybe/contracts/spaces`). */
 export type Look = SpaceLook;
 export type Member = SpaceMember;
-export type Welcome = SpaceWelcome;
+export type RoomLayout = SpaceRoom;
+/** A checked Welcome: `space` is always set; a room Welcome has `ownerSlot` and `room`. */
+export type Welcome = SpaceWelcome & { space: SpaceKind; ownerSlot: number | null; room: SpaceRoom | null };
 
 /** 0 idle, 1 walking, 2 away (connection lost, slot reserved). */
 export type AvatarState = 0 | 1 | 2;
@@ -60,9 +77,20 @@ const KICK_REASONS: ReadonlySet<string> = new Set<KickReason>([
   "account_unavailable",
   "spaces_full",
   "slow_client",
+  "room_closed",
+  "removed",
+  "left_room",
 ]);
 const ERROR_CODES: ReadonlySet<string> = new Set<HubErrorCode>(["rate_limited", "invalid_input", "not_joined"]);
-const JOIN_ERRORS: readonly JoinErrorCode[] = ["spaces_full", "already_joined", "rate_limited", "account_unavailable"];
+const JOIN_ERRORS: readonly JoinErrorCode[] = [
+  "spaces_full",
+  "already_joined",
+  "rate_limited",
+  "account_unavailable",
+  "room_unavailable",
+  "room_full",
+  "invalid_input",
+];
 
 // ------------------------------------------------------------------ quick-chat manifest
 
@@ -182,6 +210,30 @@ function parseBounds(value: unknown): Bounds | null {
   return { minX: b.minX, maxX: b.maxX, minZ: b.minZ, maxZ: b.maxZ };
 }
 
+const SURFACES: ReadonlySet<string> = new Set(["floor", "wall_back", "wall_left"]);
+const ROTATIONS: ReadonlySet<number> = new Set([0, 90, 180, 270]);
+
+/** A room layout (room Welcome): a bad item is skipped, so one unknown value does not hide the room. */
+export function parseRoomLayout(value: unknown): RoomLayout | null {
+  if (!isObj(value)) return null;
+  const wall = idOrNull(value["wall"]);
+  const floor = idOrNull(value["floor"]);
+  const rawItems = value["items"];
+  if (wall === undefined || floor === undefined || !Array.isArray(rawItems) || rawItems.length > MAX_ROOM_ITEMS) return null;
+  const items: SpaceRoomItem[] = [];
+  for (const raw of rawItems) {
+    if (!isObj(raw)) continue;
+    const { sku, surface } = raw;
+    const x = num(raw["x"]);
+    const y = num(raw["y"]);
+    const rotation = num(raw["rotation"]);
+    if (!isId(sku) || typeof surface !== "string" || !SURFACES.has(surface)) continue;
+    if (!isInt(x, 0, 63) || !isInt(y, 0, 63) || rotation === null || !ROTATIONS.has(rotation)) continue;
+    items.push({ sku, surface: surface as SpaceRoomItem["surface"], x, y, rotation: rotation as SpaceRoomItem["rotation"] });
+  }
+  return { wall, floor, items };
+}
+
 export function parseWelcome(value: unknown): Welcome | null {
   if (!isObj(value)) return null;
   const protocolVersion = num(value["protocolVersion"]);
@@ -207,7 +259,15 @@ export function parseWelcome(value: unknown): Welcome | null {
   }
   // The own member must be there: without it the own avatar never shows.
   if (!slots.has(slot)) return null;
-  return { protocolVersion, manifestVersion, instanceId, slot, tickHz, bounds, speedCmPerS: speed, members };
+  const base = { protocolVersion, manifestVersion, instanceId, slot, tickHz, bounds, speedCmPerS: speed, members };
+  const space = value["space"] ?? "plaza";
+  if (space === "plaza") return { ...base, space, ownerSlot: null, room: null };
+  // A room (docs/design/p2-room-visits.md §3): at most 8 avatars, the owner's slot and the layout.
+  const ownerSlot = num(value["ownerSlot"]);
+  const room = parseRoomLayout(value["room"]);
+  if (space !== "room" || room === null || members.length > MAX_ROOM_AVATARS || !isInt(slot, 0, MAX_ROOM_AVATARS - 1)) return null;
+  if (ownerSlot !== null && !isInt(ownerSlot, 0, MAX_ROOM_AVATARS - 1)) return null;
+  return { ...base, space, ownerSlot, room };
 }
 
 /**

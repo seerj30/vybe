@@ -13,15 +13,17 @@ import {
 import { ActivatedRoute, Router, RouterLink } from "@angular/router";
 import { API } from "../api/api";
 import { AVATAR_3D, itemAsset } from "../avatar/asset-manifest";
-import { type Intent, MoveSender, STOP, directionOf, intentFromJoystick, intentFromKeys } from "./input";
+import { fromSpaceRoom } from "../room/room-layout";
+import { type Intent, MoveSender, STOP, directionOf, forView, intentFromJoystick, intentFromKeys } from "./input";
 import { Interpolator, type Pose, Predictor } from "./interpolation";
-import { type HubFactory, PlazaClient, type PlazaEvents, type PlazaStatus, TicketRefused, ticketSource } from "./plaza-client";
+import { type HubFactory, PlazaClient, type PlazaEvents, type PlazaStatus, type SpaceTarget, TicketRefused, ticketSource } from "./plaza-client";
 import { avatarLook } from "./plaza-look";
 import type { PlazaRenderer, PlazaStats, TagPosition } from "./plaza-renderer";
 import {
   DEFAULT_BOUNDS,
   DEFAULT_SPEED_CM_PER_S,
   MAX_AVATARS,
+  MAX_ROOM_AVATARS,
   type Member,
   PHRASES,
   STICKERS,
@@ -33,11 +35,17 @@ import {
   stickerLabel,
 } from "./protocol";
 import { HUB_ERROR_TEXT } from "./reconnect";
+import { inRoom, type StatusView, statusView } from "./status-view";
 import { StickerIcon } from "./sticker-icon";
 import type { SpaceReportReason, SpaceSafetyError } from "@vybe/contracts/spaces";
 import { REPORT_REASONS } from "../profiles/safety";
 
 type Mode = "loading" | "3d" | "fallback";
+/**
+ * Which space the page shows (route data `space`): the public plaza, the own room as its owner (`/room/live`), or a
+ * friend's open room (`/visit/:handle`, docs/design/p2-room-visits.md §8).
+ */
+export type SpaceMode = "plaza" | "room-host" | "room-visit";
 type Panel = "chat" | "stickers" | "emotes" | "people";
 type Expression = "chat" | "sticker" | "emote";
 
@@ -78,6 +86,7 @@ const SAFETY_ERROR_TEXT: Record<SpaceSafetyError, string> = {
   invalid_input: "That did not work. Try again.",
   not_joined: "You are not in the plaza now. Try again when you are back.",
 };
+
 /** The connection code (a lazy chunk) did not load: "Try again" loads it again. */
 const LOAD_FAILED: PlazaStatus = { kind: "failed", message: "The plaza did not load. Check your connection and try again.", retry: true, leave: false };
 
@@ -94,6 +103,7 @@ const LOST_TEXT = "The 3D view stopped, so the plaza shows as a list until it re
   imports: [RouterLink, StickerIcon],
   host: {
     "[attr.data-mode]": "mode()",
+    "[attr.data-space]": "space",
     "[attr.data-status]": "status().kind",
     "[attr.data-instance]": "instanceId()",
     "[attr.data-slot]": "ownSlot()",
@@ -134,14 +144,18 @@ const LOST_TEXT = "The 3D view stopped, so the plaza shows as a list until it re
       }
 
       <header class="top">
-        <a class="pill back" routerLink="/hub" aria-label="Back to the hub">‹ Hub</a>
-        <h1 class="pill instance" data-testid="instance">
-          @if (instanceId(); as id) {
-            Plaza {{ id }}
-          } @else {
-            Plaza
+        @switch (space) {
+          @case ("room-host") {
+            <button type="button" class="pill back" (click)="closeRoom()" data-testid="close-room">Close room</button>
           }
-        </h1>
+          @case ("room-visit") {
+            <a class="pill back" routerLink="/friends" aria-label="Back to your friends">‹ Friends</a>
+          }
+          @default {
+            <a class="pill back" routerLink="/hub" aria-label="Back to the hub">‹ Hub</a>
+          }
+        }
+        <h1 class="pill instance" data-testid="instance">{{ title() }}</h1>
         <button type="button" class="pill people" [attr.aria-pressed]="panel() === 'people'" (click)="toggle('people')" data-testid="people-button">
           <span aria-hidden="true">●</span> {{ memberCount() }} / {{ maxAvatars }}<span class="visually-hidden"> players here. Show the list</span>
         </button>
@@ -152,7 +166,7 @@ const LOST_TEXT = "The 3D view stopped, so the plaza shows as a list until it re
       }
 
       @if (mode() === "fallback") {
-        <section class="fallback" aria-label="Plaza as a list">
+        <section class="fallback" [attr.aria-label]="space === 'plaza' ? 'Plaza as a list' : 'Room as a list'">
           <p class="notice">{{ fallbackText() }}</p>
           <h2>Players here</h2>
           <ul class="list" data-testid="fallback-members">
@@ -180,7 +194,7 @@ const LOST_TEXT = "The 3D view stopped, so the plaza shows as a list until it re
         </section>
       } @else {
         <!-- Screen readers hear the plaza events; the 3D view shows them as bubbles. -->
-        <ul class="visually-hidden" role="log" aria-label="Plaza events">
+        <ul class="visually-hidden" role="log" [attr.aria-label]="space === 'plaza' ? 'Plaza events' : 'Room events'">
           @for (item of feed().slice(-5); track item.key) {
             <li>{{ item.name }}: {{ item.text }}</li>
           }
@@ -256,13 +270,21 @@ const LOST_TEXT = "The 3D view stopped, so the plaza shows as a list until it re
                 @for (member of members(); track member.slot) {
                   <li [attr.data-slot]="member.slot">
                     <div class="member-row">
-                      <span class="person">{{ member.slot === ownSlot() ? "You" : name(member) }}</span>
+                      <span class="person">
+                        {{ member.slot === ownSlot() ? "You" : name(member) }}
+                        @if (member.slot === ownerSlot()) {
+                          <span class="host-tag" data-testid="host-tag">Host</span>
+                        }
+                      </span>
                       @if (member.slot === ownSlot()) {
                         <span class="muted small">This is you</span>
                       } @else {
                         <span class="member-actions">
                           @if (member.handle; as handle) {
                             <a class="chip small-chip" [routerLink]="['/profile', handle]">Profile</a>
+                          }
+                          @if (space === "room-host") {
+                            <button type="button" class="chip small-chip" [disabled]="safetyBusy()" (click)="askSafety('remove', member)" data-testid="remove-member">Remove</button>
                           }
                           <button type="button" class="chip small-chip" [disabled]="safetyBusy()" (click)="askSafety('report', member)" data-testid="report-member">Report</button>
                           <button type="button" class="chip small-chip" [disabled]="safetyBusy()" (click)="askSafety('block', member)" data-testid="block-member">Block</button>
@@ -281,9 +303,17 @@ const LOST_TEXT = "The 3D view stopped, so the plaza shows as a list until it re
                             </div>
                             <button type="button" class="link small" (click)="safety.set(null)">Cancel</button>
                           </div>
+                        } @else if (ask.kind === "remove") {
+                          <div class="safety" role="group" [attr.aria-label]="'Remove ' + name(member)" data-testid="remove-form">
+                            <p class="small">Remove {{ name(member) }} from your room? The player cannot come back while the room stays open.</p>
+                            <div class="safety-buttons">
+                              <button type="button" class="button danger" [disabled]="safetyBusy()" (click)="removeVisitor(member)" data-testid="confirm-remove">Remove</button>
+                              <button type="button" class="button secondary" (click)="safety.set(null)">Cancel</button>
+                            </div>
+                          </div>
                         } @else {
                           <div class="safety" role="group" [attr.aria-label]="'Block ' + name(member)" data-testid="block-form">
-                            <p class="small">Block {{ name(member) }}? You will not meet in the plaza again. Open challenges and a friendship between you end. The player is not told.</p>
+                            <p class="small">{{ blockText(member) }}</p>
                             <div class="safety-buttons">
                               <button type="button" class="button danger" [disabled]="safetyBusy()" (click)="block(member)" data-testid="confirm-block">Block</button>
                               <button type="button" class="button secondary" (click)="safety.set(null)">Cancel</button>
@@ -314,6 +344,13 @@ const LOST_TEXT = "The 3D view stopped, so the plaza shows as a list until it re
                 <button type="button" class="button" (click)="reload()">Reload</button>
               } @else if (view.action === "start") {
                 <a class="button" routerLink="/">Go to the start page</a>
+              }
+              @if (view.exits) {
+                @if (space === "room-host") {
+                  <a class="button" routerLink="/room" data-testid="back-to-room">Back to My Room</a>
+                } @else {
+                  <a class="button" routerLink="/plaza" data-testid="go-to-plaza">Go to the plaza</a>
+                }
               }
               <a class="button secondary" routerLink="/hub">Back to the hub</a>
             </div>
@@ -374,6 +411,7 @@ const LOST_TEXT = "The 3D view stopped, so the plaza shows as a list until it re
     .link { justify-self: start; padding: 0; border: 0; background: none; color: var(--color-accent); font: inherit; cursor: pointer; text-decoration: underline; }
     .people-list li + li { border-top: 1px solid var(--color-border); }
     .person { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
+    .host-tag { margin-left: var(--space-1); padding: 1px 8px; border-radius: var(--radius-pill); background: var(--color-accent); color: var(--color-on-accent); font-size: var(--text-xs); font-weight: 700; }
     .small { font-size: var(--text-xs); }
     .small-chip { min-height: 36px; padding: var(--space-1) var(--space-3); font-size: var(--text-xs); }
     .fallback { position: absolute; inset: 64px 0 76px; overflow-y: auto; padding: var(--space-3) var(--space-4); background: var(--color-bg); }
@@ -399,13 +437,19 @@ export class Plaza {
 
   protected readonly phrases = PHRASES;
   protected readonly stickers = STICKERS;
-  protected readonly maxAvatars = MAX_AVATARS;
   protected readonly name = displayName;
+  protected readonly space: SpaceMode = spaceMode(this.route.snapshot.data["space"]);
+  /** The owner's handle of a visited room (route `/visit/:handle`). */
+  private readonly roomHandle = this.route.snapshot.paramMap.get("handle") ?? "";
+  private readonly view: "plaza" | "room" = this.space === "plaza" ? "plaza" : "room";
+  protected readonly maxAvatars = this.space === "plaza" ? MAX_AVATARS : MAX_ROOM_AVATARS;
 
   protected readonly status = signal<PlazaStatus>({ kind: "connecting" });
   protected readonly mode = signal<Mode>("loading");
   protected readonly instanceId = signal<number | null>(null);
   protected readonly ownSlot = signal<number | null>(null);
+  /** The owner's slot in a room (null in the plaza). */
+  protected readonly ownerSlot = signal<number | null>(null);
   private readonly memberMap = signal<ReadonlyMap<number, Member>>(new Map());
   /** Slots with a snapshot entry: an avatar shows from its first position (protocol §5). */
   private readonly placed = signal<ReadonlySet<number>>(new Set());
@@ -414,7 +458,7 @@ export class Plaza {
   protected readonly panel = signal<Panel | null>(null);
   protected readonly toast = signal<string | null>(null);
   /** The open report or block question in the people list: the member by slot and key (slots are reused). */
-  protected readonly safety = signal<{ kind: "report" | "block"; slot: number; key: number } | null>(null);
+  protected readonly safety = signal<{ kind: "report" | "block" | "remove"; slot: number; key: number } | null>(null);
   protected readonly safetyBusy = signal(false);
   protected readonly reportReasons = PLAZA_REPORT_REASONS;
   protected readonly ownedEmotes = signal<readonly OwnedEmote[] | null>(null);
@@ -444,15 +488,23 @@ export class Plaza {
       case "emotes":
         return "Emotes";
       case "people":
-        return `Players in Plaza ${this.instanceId() ?? ""}`.trim();
+        return this.space === "plaza" ? `Players in Plaza ${this.instanceId() ?? ""}`.trim() : "People in this room";
       default:
         return "";
     }
   });
+  protected readonly title = computed(() => {
+    if (this.space === "room-host") return "Your room";
+    if (this.space === "room-visit") return `${this.roomHandle}'s room`;
+    const id = this.instanceId();
+    return id === null ? "Plaza" : `Plaza ${id}`;
+  });
   protected readonly statusView = computed(() => {
-    const view = statusView(this.status());
+    const place = this.view;
+    const view = statusView(this.status(), place);
     if (view !== null || this.mode() !== "loading") return view;
-    return { title: "Loading the plaza", text: "Loading the plaza…", busy: true, action: null, button: "" } satisfies StatusView;
+    const text = place === "room" ? "Loading the room…" : "Loading the plaza…";
+    return { title: text.slice(0, -1), text, busy: true, action: null, button: "", exits: false } satisfies StatusView;
   });
 
   private readonly reducedMotion = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -475,6 +527,7 @@ export class Plaza {
   private stickCenter = { x: 0, y: 0 };
   private stickIntent: Intent | null = null;
   private feedKey = 0;
+  private roomShown = false;
   private destroyed = false;
 
   constructor() {
@@ -510,7 +563,7 @@ export class Plaza {
       return;
     }
     if (this.destroyed) return;
-    this.client = new PlazaClient(factory.create, this.events, undefined, factory.ticketError);
+    this.client = new PlazaClient(factory.create, this.events, undefined, factory.ticketError, this.target());
     this.client.connect();
   }
 
@@ -519,6 +572,7 @@ export class Plaza {
       const { PlazaRenderer } = await import("./plaza-renderer");
       if (this.destroyed) return;
       this.renderer = new PlazaRenderer(this.canvas().nativeElement, {
+        view: this.view,
         reducedMotion: this.reducedMotion,
         idleAnimation: AVATAR_3D.idleAnimation,
         beforeFrame: (now, dt) => {
@@ -553,7 +607,7 @@ export class Plaza {
    */
   private async hubFactory(): Promise<{ create: HubFactory; ticketError: () => unknown }> {
     const query = this.route.snapshot.queryParamMap;
-    if (isDevMode() && query.get("fake") === "1") {
+    if (isDevMode() && query.get("fake") === "1" && this.space === "plaza") {
       const { FakeHub, FAKE_DEFAULTS } = await import("./fake-hub");
       const number = (key: string, fallback: number) => {
         const value = Number(query.get(key));
@@ -582,6 +636,12 @@ export class Plaza {
       }
     };
     return { create: signalRFactory(recorded), ticketError: () => (lastError instanceof TicketRefused ? lastError : null) };
+  }
+
+  private target(): SpaceTarget {
+    if (this.space === "room-host") return { kind: "host" };
+    if (this.space === "room-visit") return { kind: "visit", handle: this.roomHandle };
+    return { kind: "plaza" };
   }
 
   private stop(): void {
@@ -674,10 +734,28 @@ export class Plaza {
     this.echoes.length = 0;
     this.instanceId.set(welcome.instanceId);
     this.ownSlot.set(welcome.slot);
+    this.ownerSlot.set(welcome.ownerSlot);
+    if (welcome.room !== null) this.showRoom(welcome.room);
     this.placed.set(new Set());
     this.memberMap.set(new Map(welcome.members.map((m) => [m.slot, m])));
     for (const member of welcome.members) this.showAvatar(member);
     if (moved) this.showToast(`You are now in Plaza ${welcome.instanceId}.`, false);
+  }
+
+  /** Room view: the owner's layout. It cannot change while the room is open, so it loads once per page. */
+  private showRoom(layout: NonNullable<Welcome["room"]>): void {
+    const renderer = this.renderer;
+    if (renderer === null || this.roomShown) return;
+    this.roomShown = true;
+    renderer.setRoom(fromSpaceRoom(layout)).then(
+      (failed) => {
+        if (failed.length > 0) this.showToast("Some room items could not load, so boxes show instead.");
+      },
+      () => {
+        this.roomShown = false; // the next Welcome (a reconnect) tries again
+        this.showToast("The room could not load. You can still meet here.");
+      },
+    );
   }
 
   private snapshot(snapshot: Snapshot): void {
@@ -851,13 +929,13 @@ export class Plaza {
     event.preventDefault();
     if (event.repeat && this.held.has(direction)) return;
     this.held.add(direction);
-    this.sender.set(intentFromKeys(this.held), performance.now());
+    this.sender.set(this.toSpace(intentFromKeys(this.held)), performance.now());
   }
 
   protected keyUp(event: KeyboardEvent): void {
     const direction = directionOf(event.code);
     if (direction === undefined || !this.held.delete(direction)) return;
-    this.sender.set(intentFromKeys(this.held), performance.now());
+    this.sender.set(this.toSpace(intentFromKeys(this.held)), performance.now());
   }
 
   /** Window blur: keys and touches released outside the page never send keyup or pointerup, so stop. */
@@ -874,7 +952,12 @@ export class Plaza {
 
   /** Sends the intent of the input that is down now (stick first, then keys). */
   private applyInput(): void {
-    this.sender.set(this.stickIntent ?? intentFromKeys(this.held), performance.now());
+    this.sender.set(this.toSpace(this.stickIntent ?? intentFromKeys(this.held)), performance.now());
+  }
+
+  /** Screen intent to space axes (the room camera looks the other way). */
+  private toSpace(intent: Intent): Intent {
+    return forView(intent, this.view);
   }
 
   /** Hidden tab: `Move(0, 0)`, no more input, and no rendering until it shows again (protocol §4). */
@@ -911,14 +994,14 @@ export class Plaza {
     }
     this.knob.set({ x, y });
     this.stickIntent = intentFromJoystick(x, y, JOYSTICK_RADIUS);
-    this.sender.set(this.stickIntent, performance.now());
+    this.sender.set(this.toSpace(this.stickIntent), performance.now());
   }
 
   protected stickEnd(event: PointerEvent): void {
     if (event.pointerId !== this.stickPointer) return;
     this.stickReset(); // first: releasing the capture fires `lostpointercapture`, which comes back here
     (event.currentTarget as HTMLElement | null)?.releasePointerCapture?.(event.pointerId);
-    this.sender.set(intentFromKeys(this.held), performance.now());
+    this.sender.set(this.toSpace(intentFromKeys(this.held)), performance.now());
   }
 
   private stickReset(): void {
@@ -929,8 +1012,30 @@ export class Plaza {
 
   // ------------------------------------------------------------------ UI
 
-  protected askSafety(kind: "report" | "block", member: Member): void {
+  protected askSafety(kind: "report" | "block" | "remove", member: Member): void {
     this.safety.set({ kind, slot: member.slot, key: member.key });
+  }
+
+  protected blockText(member: Member): string {
+    const name = this.name(member);
+    switch (this.space) {
+      case "room-host":
+        return `Block ${name}? The player leaves your room, and you will not meet in the plaza or in rooms again. Open challenges and your friendship end. The player is not told.`;
+      case "room-visit":
+        return `Block ${name}? You leave this room, and you will not meet in the plaza or in rooms again. Open challenges and a friendship between you end. The player is not told.`;
+      default:
+        return `Block ${name}? You will not meet in the plaza again. Open challenges and a friendship between you end. The player is not told.`;
+    }
+  }
+
+  protected async removeVisitor(member: Member): Promise<void> {
+    await this.safetyCall(() => this.client!.removeVisitor(member.slot, member.key), `${this.name(member)} left your room.`);
+  }
+
+  /** The owner closes the room (visitors see "The room closed") and goes back to My Room. */
+  protected closeRoom(): void {
+    this.client?.closeRoom();
+    void this.router.navigate(["/room"]);
   }
 
   protected async report(member: Member, reason: SpaceReportReason): Promise<void> {
@@ -939,8 +1044,9 @@ export class Plaza {
 
   protected async block(member: Member): Promise<void> {
     const name = this.name(member);
-    // The server moves this player to another instance (`moved`) before the call completes.
-    if (await this.safetyCall(() => this.client!.block(member.slot, member.key), `Blocked ${name}. You will not meet again in the plaza.`)) {
+    // The server moves this player to another instance (`moved`) before the call completes; a visitor leaves the room.
+    const done = this.space === "plaza" ? `Blocked ${name}. You will not meet again in the plaza.` : `Blocked ${name}.`;
+    if (await this.safetyCall(() => this.client!.block(member.slot, member.key), done)) {
       this.panel.set(null);
     }
   }
@@ -954,7 +1060,9 @@ export class Plaza {
       this.showToast(done, false);
       return true;
     } catch (error: unknown) {
-      this.showToast(SAFETY_ERROR_TEXT[safetyErrorCode(error) ?? "invalid_input"]);
+      if (this.status().kind !== "joined") return false; // the call ended with the room (a block in a room, a close)
+      const text = SAFETY_ERROR_TEXT[safetyErrorCode(error) ?? "invalid_input"];
+      this.showToast(this.view === "room" ? inRoom(text) : text);
       if (safetyErrorCode(error) === "not_found") this.safety.set(null);
       return false;
     } finally {
@@ -997,40 +1105,6 @@ function without<T>(set: ReadonlySet<T>, value: T): ReadonlySet<T> {
   return next;
 }
 
-interface StatusView {
-  title: string;
-  text: string;
-  busy: boolean;
-  action: "retry" | "reload" | "start" | null;
-  button: string;
-}
-
-/** The overlay for every state except "joined" (null: no overlay). */
-export function statusView(status: PlazaStatus): StatusView | null {
-  switch (status.kind) {
-    case "joined":
-    case "closed":
-      return null;
-    case "connecting":
-      return { title: "Entering the plaza", text: "Entering the plaza…", busy: true, action: null, button: "" };
-    case "reconnecting":
-      return { title: "Reconnecting", text: "The connection was lost. Reconnecting…", busy: true, action: null, button: "" };
-    case "kicked": {
-      const action = status.rule.action;
-      if (action.kind === "auto") return { title: "Plaza restarting", text: status.rule.message, busy: true, action: null, button: "" };
-      if (action.kind === "manual") return { title: "You left the plaza", text: status.rule.message, busy: false, action: "retry", button: status.rule.button ?? "Rejoin" };
-      if (action.kind === "leave") return { title: "Session ended", text: status.rule.message, busy: false, action: "start", button: "" };
-      return { title: "You left the plaza", text: status.rule.message, busy: false, action: null, button: "" };
-    }
-    case "failed":
-      return {
-        title: "The plaza is not available",
-        text: status.message,
-        busy: false,
-        action: status.leave ? "start" : status.retry ? "retry" : null,
-        button: "Try again",
-      };
-    case "outdated":
-      return { title: "Update available", text: "VYBE has an update. Reload the page to enter the plaza.", busy: false, action: "reload", button: "" };
-  }
+function spaceMode(value: unknown): SpaceMode {
+  return value === "room-host" || value === "room-visit" ? value : "plaza";
 }

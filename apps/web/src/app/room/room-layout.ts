@@ -151,6 +151,22 @@ export function fromApi(room: {
   };
 }
 
+/**
+ * The layout of an open room (hub `Welcome`, docs/design/p2-room-visits.md §3) as a room to show. The hub sends
+ * SKUs only, so each placement gets a local id.
+ */
+export function fromSpaceRoom(room: {
+  wall: string | null;
+  floor: string | null;
+  items: readonly { sku: string; surface: Surface; x: number; y: number; rotation: Rotation }[];
+}): RoomState {
+  return {
+    wallItem: room.wall === null ? null : { itemId: "wall", sku: room.wall },
+    floorItem: room.floor === null ? null : { itemId: "floor", sku: room.floor },
+    items: room.items.map((p, i) => ({ itemId: `item-${i}`, sku: p.sku, surface: p.surface, x: p.x, y: p.y, rotation: p.rotation })),
+  };
+}
+
 export function toRequest(room: RoomState, expectedRevision: number): {
   expectedRevision: number;
   wallItemId: string | null;

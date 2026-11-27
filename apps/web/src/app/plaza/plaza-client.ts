@@ -42,6 +42,24 @@ export interface HubLike {
 
 export type HubFactory = () => HubLike;
 
+/**
+ * Which space the client enters (docs/design/p2-room-visits.md): the plaza (`Join`), the own room as its owner
+ * (`OpenRoom`), or a friend's open room (`JoinRoom(handle)`).
+ */
+export type SpaceTarget = { kind: "plaza" } | { kind: "host" } | { kind: "visit"; handle: string };
+
+/** The hub method and arguments that enter a space. */
+export function joinCall(target: SpaceTarget): [string, ...unknown[]] {
+  switch (target.kind) {
+    case "plaza":
+      return ["Join"];
+    case "host":
+      return ["OpenRoom"];
+    case "visit":
+      return ["JoinRoom", target.handle];
+  }
+}
+
 /** `Join` without an answer for this long: drop the connection and reconnect (§8 backoff). */
 export const JOIN_TIMEOUT_MS = 12_000;
 
@@ -129,6 +147,7 @@ export class PlazaClient {
     private readonly clock: Clock = REAL_CLOCK,
     /** The last ticket error (set by the factory's ticket source); read when `start` fails. */
     private readonly lastTicketError: () => unknown = () => null,
+    private readonly target: SpaceTarget = { kind: "plaza" },
   ) {}
 
   get joined(): boolean {
@@ -171,8 +190,18 @@ export class PlazaClient {
     return this.invokeIfJoined("Block", slot, key);
   }
 
+  /** Owner only: removes a visitor by slot and key. Rejects with the HubException; `safetyErrorCode` reads it. */
+  removeVisitor(slot: number, key: number): Promise<void> {
+    return this.invokeIfJoined("RemoveVisitor", slot, key);
+  }
+
+  /** Owner only: closes the room (visitors get `room_closed`) and the connection. No reconnect after this. */
+  closeRoom(): void {
+    this.dispose("CloseRoom");
+  }
+
   /** Leaves the instance and closes the connection (page left). No reconnect after this. */
-  dispose(): void {
+  dispose(last: "Leave" | "CloseRoom" = "Leave"): void {
     if (this.disposed) return;
     this.disposed = true;
     this.clearTimer();
@@ -182,7 +211,7 @@ export class PlazaClient {
     if (hub !== null) {
       // Leave first (no slot reservation), then close; both may fail on a dead socket, which is fine here.
       void hub
-        .send("Leave")
+        .send(last)
         .catch(() => undefined)
         .finally(() => void hub.stop().catch(() => undefined));
     }
@@ -215,7 +244,7 @@ export class PlazaClient {
     }
     let welcome: Welcome | null;
     try {
-      welcome = parseWelcome(await this.withTimeout(hub.invoke("Join"), JOIN_TIMEOUT_MS));
+      welcome = parseWelcome(await this.withTimeout(hub.invoke(...joinCall(this.target)), JOIN_TIMEOUT_MS));
     } catch (error: unknown) {
       if (generation !== this.generation) return;
       this.joinFailed(hub, joinErrorCode(error));
@@ -339,8 +368,13 @@ export class PlazaClient {
       this.setStatus({ kind: "kicked", reason: code, rule: KICK_RULES[code], retryAt: null });
       return;
     }
-    if (code === "spaces_full" || code === "rate_limited") {
+    if (code === "spaces_full" || code === "rate_limited" || code === "room_full") {
       this.setStatus({ kind: "failed", message: JOIN_ERROR_TEXT[code], retry: true, leave: false });
+      return;
+    }
+    if (code === "room_unavailable" || code === "invalid_input") {
+      // Not open, not a friend, removed, or a block: one answer; retrying does not help.
+      this.setStatus({ kind: "failed", message: JOIN_ERROR_TEXT.room_unavailable, retry: false, leave: false });
       return;
     }
     // `already_joined` or a lost connection during Join: try again with the backoff.

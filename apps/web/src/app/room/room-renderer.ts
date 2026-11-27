@@ -1,7 +1,10 @@
 import * as THREE from "three";
 import { type GLTF, GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { cells, isWall, type Placement, type RoomState } from "./room-layout";
+import { isWall, type Placement, type RoomState } from "./room-layout";
 import { ROOM, type RoomItemAsset, roomItem, type Surface } from "./room-manifest";
+import { cloneItem, materialsOf, placeholderItem, toonify, transformOf } from "./room-scenery";
+
+export { transformOf } from "./room-scenery";
 
 /**
  * Three.js scene of My Room (docs/design/p1-my-room.md). Loaded lazily by RoomViewport, like the avatar renderer:
@@ -46,27 +49,6 @@ const SELECTED = 0x2ee5ff;
 const FIT_W = 3.45;
 const FIT_H = 2.85;
 
-function materialsOf(object: THREE.Object3D): THREE.Material[] {
-  const mesh = object as THREE.Mesh;
-  if (!mesh.isMesh) return [];
-  return Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-}
-
-function role(material: THREE.Material): string {
-  return material.name.split(".")[0] ?? material.name;
-}
-
-/** Position and turn (radians around +Y) of a placement; glTF space: Y up, the back wall at z = -2 m, the left wall at x = -2 m. */
-export function transformOf(p: Placement, asset: RoomItemAsset): { position: [number, number, number]; turn: number } {
-  const [w, d] = cells(asset, p.surface, p.rotation);
-  if (p.surface === "floor") {
-    return { position: [-HALF + CELL * (p.x + w / 2), 0, -HALF + CELL * (p.y + d / 2)], turn: (p.rotation * Math.PI) / 180 };
-  }
-  const along = -HALF + CELL * (p.x + w / 2);
-  return p.surface === "wall_back"
-    ? { position: [along, CELL * p.y, -HALF], turn: 0 }
-    : { position: [-HALF, CELL * p.y, along], turn: Math.PI / 2 };
-}
 
 /** The grid cell under a point on the floor or a wall (glTF space), or null outside the room. */
 export function cellAt(surface: Surface, point: THREE.Vector3): Pick | null {
@@ -286,49 +268,15 @@ export class RoomRenderer {
 
   /** A clone with its own toon materials (geometry stays shared with the cached file) and the sku's colors. */
   private clone(gltf: GLTF, asset: RoomItemAsset): THREE.Object3D {
-    const object = gltf.scene.clone(true);
-    const colors = new Map(asset.textureVariants.map((v) => [v.material, v.color]));
-    object.traverse((o) => {
-      this.toonify(o);
-      for (const m of materialsOf(o)) {
-        const color = colors.get(role(m));
-        if (color !== undefined) (m as THREE.MeshToonMaterial).color.set(color);
-      }
-    });
-    return object;
+    return cloneItem(gltf, asset, this.gradient);
   }
 
   private placeholder(asset: RoomItemAsset, p: Placement): THREE.Object3D {
-    const [w, d] = cells(asset, p.surface, 0);
-    const size = isWall(p.surface) ? [w * CELL, d * CELL, 0.1] : [w * CELL, 0.5, d * CELL];
-    const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(size[0]! - 0.04, size[1]! - 0.04, size[2]! - 0.02),
-      this.toon(new THREE.MeshStandardMaterial({ color: 0x8a90a6 })),
-    );
-    mesh.position.set(0, size[1]! / 2, isWall(p.surface) ? 0.05 : 0);
-    mesh.userData["placeholder"] = true;
-    const group = new THREE.Group();
-    group.add(mesh);
-    return group;
+    return placeholderItem(asset, p, this.gradient);
   }
 
   private toonify(object: THREE.Object3D): void {
-    const mesh = object as THREE.Mesh;
-    if (!mesh.isMesh) return;
-    mesh.material = Array.isArray(mesh.material) ? mesh.material.map((m) => this.toon(m)) : this.toon(mesh.material);
-  }
-
-  private toon(source: THREE.Material): THREE.MeshToonMaterial {
-    const standard = source as THREE.MeshStandardMaterial;
-    const material = new THREE.MeshToonMaterial({
-      name: role(source),
-      color: standard.color?.clone() ?? new THREE.Color(0xffffff),
-      emissive: standard.emissive?.clone() ?? new THREE.Color(0x000000),
-      side: source.side,
-      gradientMap: this.gradient,
-    });
-    // No normals in the files (flat low-poly look): the toon shader derives face normals (see avatar-renderer).
-    return Object.assign(material, { flatShading: true });
+    toonify(object, this.gradient);
   }
 
   // ------------------------------------------------------------------ input

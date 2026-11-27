@@ -24,9 +24,16 @@ public sealed partial class SpaceManager(
     private readonly SortedDictionary<int, SpaceInstance> _instances = [];
     private readonly Dictionary<string, int> _perAddress = new(StringComparer.Ordinal);
     private readonly List<(Guid A, Guid B, DateTimeOffset At)> _liveBlocks = [];
+
+    /// <summary>Open friend rooms by owner (docs/design/p2-room-visits.md §4); never in <see cref="_instances"/>.</summary>
+    private readonly Dictionary<Guid, SpaceInstance> _rooms = [];
+
+    /// <summary>Friendships that ended lately: a <c>JoinRoom</c> that read the friendship before cannot use it.</summary>
+    private readonly List<(Guid A, Guid B, DateTimeOffset At)> _liveUnfriends = [];
     private readonly List<Task> _pumps = [];
     private int _connections;
     private int _nextInstanceId = 1;
+    private int _nextRoomId = 1;
     private uint _tick;
     private bool _stopping;
 
@@ -161,13 +168,13 @@ public sealed partial class SpaceManager(
     // ------------------------------------------------------------------ join and leave
 
     /// <summary>First half of <c>Join</c>: limits, before the profile is read from the database.</summary>
-    internal Guid BeginJoin(string connectionId)
+    internal Guid BeginJoin(string connectionId, string type = "join")
     {
         var now = clock.GetUtcNow();
         lock (_gate)
         {
             var client = Client(connectionId);
-            if (!Admit(client, now, requireJoined: false, "join"))
+            if (!Admit(client, now, requireJoined: false, type))
             {
                 throw new HubException(KickReasons.RateLimited);
             }
@@ -214,7 +221,8 @@ public sealed partial class SpaceManager(
 
             if (_reserved.Remove(client.PlayerId, out var reserved))
             {
-                if (!Conflicts(reserved.Instance, client.PlayerId, blocks))
+                // A reserved slot in a room is dropped (an owner's room closes): the player is in one space at a time.
+                if (!reserved.Instance.IsRoom && !Conflicts(reserved.Instance, client.PlayerId, blocks))
                 {
                     Reclaim(client, reserved, profile);
                     LogJoined(client.PlayerId, reserved.Instance.Id);
@@ -227,6 +235,213 @@ public sealed partial class SpaceManager(
             var avatar = Place(client, profile, now, exclude: null) ?? throw new HubException(KickReasons.SpacesFull);
             LogJoined(client.PlayerId, avatar.Instance.Id);
             return Welcome(avatar);
+        }
+    }
+
+    /// <summary>
+    /// Second half of <c>OpenRoom</c> (docs/design/p2-room-visits.md §3): the owner's reserved slot in the open room
+    /// (a reconnect), else a new room with the owner in the center. A reserved slot elsewhere is dropped.
+    /// </summary>
+    internal SpaceWelcome CompleteOpenRoom(string connectionId, SpaceProfile profile, SpaceRoom layout)
+    {
+        var now = clock.GetUtcNow();
+        lock (_gate)
+        {
+            var client = Client(connectionId);
+            client.Joining = false;
+            profile = WithLiveBlocks(client.PlayerId, profile, now);
+            client.LastInputAt = now;
+            if (_reserved.Remove(client.PlayerId, out var reserved))
+            {
+                if (reserved.Instance.IsRoom && reserved.Instance.OwnerId == client.PlayerId)
+                {
+                    Reclaim(client, reserved, profile);
+                    LogRoomJoined(client.PlayerId);
+                    return Welcome(reserved);
+                }
+
+                RemoveAvatar(reserved, now);
+            }
+
+            if (_rooms.Count >= options.MaxRooms)
+            {
+                throw new HubException(KickReasons.SpacesFull);
+            }
+
+            var room = new SpaceInstance(_nextRoomId++, now, client.PlayerId, layout);
+            _rooms[client.PlayerId] = room;
+            var avatar = PlaceInRoom(client, room, profile, now, owner: true);
+            LogRoomJoined(client.PlayerId);
+            return Welcome(avatar);
+        }
+    }
+
+    /// <summary>
+    /// Second half of <c>JoinRoom</c>: the caller is a friend of <paramref name="ownerId"/> (read at
+    /// <paramref name="checkedAt"/>). Every refusal except a full room is <c>room_unavailable</c>.
+    /// </summary>
+    internal SpaceWelcome CompleteJoinRoom(string connectionId, SpaceProfile profile, Guid ownerId, DateTimeOffset checkedAt)
+    {
+        var now = clock.GetUtcNow();
+        lock (_gate)
+        {
+            var client = Client(connectionId);
+            client.Joining = false;
+            profile = WithLiveBlocks(client.PlayerId, profile, now);
+            client.LastInputAt = now;
+            var reserved = _reserved.GetValueOrDefault(client.PlayerId);
+            _liveUnfriends.RemoveAll(u => now - u.At > LiveBlockLifetime);
+            var unfriended = _liveUnfriends.Any(u => u.At >= checkedAt
+                && ((u.A == ownerId && u.B == client.PlayerId) || (u.A == client.PlayerId && u.B == ownerId)));
+            if (unfriended || !_rooms.TryGetValue(ownerId, out var room) || room.Removed.Contains(client.PlayerId)
+                || Conflicts(room, client.PlayerId, profile.Blocks))
+            {
+                throw new HubException(RoomErrors.Unavailable);
+            }
+
+            var back = reserved?.Instance == room;
+            if (!back && room.Count >= room.Slots.Length)
+            {
+                throw new HubException(RoomErrors.Full);
+            }
+
+            if (reserved is not null)
+            {
+                _reserved.Remove(client.PlayerId);
+                if (back)
+                {
+                    Reclaim(client, reserved, profile);
+                    LogRoomJoined(client.PlayerId);
+                    return Welcome(reserved);
+                }
+
+                RemoveAvatar(reserved, now);
+            }
+
+            var avatar = PlaceInRoom(client, room, profile, now, owner: false);
+            LogRoomJoined(client.PlayerId);
+            return Welcome(avatar);
+        }
+    }
+
+    /// <summary>The owner closes the room: visitors get <c>kicked("room_closed")</c>; the owner stays connected.</summary>
+    internal void CloseRoom(string connectionId)
+    {
+        var now = clock.GetUtcNow();
+        lock (_gate)
+        {
+            var client = Client(connectionId);
+            if (!Admit(client, now, requireJoined: true, "close_room"))
+            {
+                return;
+            }
+
+            var room = client.Avatar!.Instance;
+            if (room.OwnerId != client.PlayerId)
+            {
+                Invalid(client, now, KickReasons.InvalidInput);
+                return;
+            }
+
+            CloseRoomLocked(room, now);
+            client.LastInputAt = now;
+        }
+    }
+
+    /// <summary>
+    /// The owner removes the visitor in <paramref name="slot"/> (when it still has <paramref name="key"/>): the visitor
+    /// gets <c>kicked("removed")</c> and cannot enter again while this opening lasts.
+    /// </summary>
+    internal void RemoveVisitor(string connectionId, int slot, int key)
+    {
+        var now = clock.GetUtcNow();
+        lock (_gate)
+        {
+            var client = Client(connectionId);
+            if (!Admit(client, now, requireJoined: true, "remove_visitor"))
+            {
+                throw new HubException(client.Avatar is null ? KickReasons.NotJoined : KickReasons.RateLimited);
+            }
+
+            if (now - client.LastSafetyAction < SpaceRules.SafetyActionInterval)
+            {
+                Drop(client, now);
+                throw new HubException(KickReasons.RateLimited);
+            }
+
+            var room = client.Avatar!.Instance;
+            if (room.OwnerId != client.PlayerId || slot < 0 || slot >= room.Slots.Length)
+            {
+                Invalid(client, now, KickReasons.InvalidInput);
+                throw new HubException(KickReasons.InvalidInput);
+            }
+
+            client.LastSafetyAction = now;
+            if (room.Slots[slot] is not { } target || target.Key != key || target == client.Avatar)
+            {
+                throw new HubException(SafetyErrors.NotFound);
+            }
+
+            room.Removed.Add(target.PlayerId);
+            Eject(target, KickReasons.Removed, now);
+        }
+    }
+
+    /// <summary>
+    /// Called after a friendship ends (unfriend or block): a visitor in the other player's open room is removed, and
+    /// a <c>JoinRoom</c> that read the friendship before cannot enter.
+    /// </summary>
+    public void ApplyUnfriend(Guid a, Guid b)
+    {
+        var now = clock.GetUtcNow();
+        lock (_gate)
+        {
+            _liveUnfriends.RemoveAll(u => now - u.At > LiveBlockLifetime);
+            _liveUnfriends.Add((a, b, now));
+            foreach (var (owner, visitor) in new[] { (a, b), (b, a) })
+            {
+                if (_rooms.TryGetValue(owner, out var room) && room.Avatars.FirstOrDefault(x => x.PlayerId == visitor) is { } avatar)
+                {
+                    Eject(avatar, KickReasons.Removed, now);
+                }
+            }
+        }
+    }
+
+    /// <summary>True while the player's room is open (also during the owner's 30 s reconnect grace).</summary>
+    public bool IsRoomOpen(Guid ownerId)
+    {
+        lock (_gate)
+        {
+            return _rooms.ContainsKey(ownerId);
+        }
+    }
+
+    /// <summary>
+    /// The owners among <paramref name="friendIds"/> whose room is open to <paramref name="viewer"/> now: not removed,
+    /// and no member in a block with the viewer (either direction). Else a viewer who sees "open" but cannot enter
+    /// could tell that a member blocked them (spec §2 block privacy). <paramref name="viewerBlocks"/>: the viewer's
+    /// blocks from the database, both directions; the live blocks of the manager are added here.
+    /// </summary>
+    public IReadOnlySet<Guid> OpenRoomsFor(Guid viewer, IEnumerable<Guid> friendIds, IReadOnlySet<Guid> viewerBlocks)
+    {
+        ArgumentNullException.ThrowIfNull(friendIds);
+        ArgumentNullException.ThrowIfNull(viewerBlocks);
+        var now = clock.GetUtcNow();
+        lock (_gate)
+        {
+            var blocks = new HashSet<Guid>(viewerBlocks);
+            foreach (var (blocker, blocked, at) in _liveBlocks)
+            {
+                if (now - at <= LiveBlockLifetime && (blocker == viewer || blocked == viewer))
+                {
+                    blocks.Add(blocker == viewer ? blocked : blocker); // committed after the database read above
+                }
+            }
+
+            return friendIds
+                .Where(id => _rooms.TryGetValue(id, out var room) && !room.Removed.Contains(viewer) && !Conflicts(room, viewer, blocks))
+                .ToHashSet();
         }
     }
 
@@ -396,14 +611,14 @@ public sealed partial class SpaceManager(
                 throw new HubException(KickReasons.RateLimited);
             }
 
-            if (slot is < 0 or >= SpaceRules.InstanceCapacity)
+            var own = client.Avatar!;
+            if (slot < 0 || slot >= own.Instance.Slots.Length)
             {
                 Invalid(client, now, KickReasons.InvalidInput);
                 throw new HubException(KickReasons.InvalidInput);
             }
 
             client.LastSafetyAction = now;
-            var own = client.Avatar!;
             if (own.Instance.Slots[slot] is not { } target || target.Key != key || target == own)
             {
                 throw new HubException(SafetyErrors.NotFound);
@@ -431,6 +646,14 @@ public sealed partial class SpaceManager(
             b?.BlockedBy.Add(blocker);
             if (a is null || b is null || a.Instance != b.Instance)
             {
+                return;
+            }
+
+            if (a.Instance.IsRoom)
+            {
+                // Room rules (docs/design/p2-room-visits.md §5): the owner's block removes the visitor; a visitor who
+                // blocks leaves. The blocked player sees a normal left (or, as a visitor, the same "removed").
+                Eject(a.Instance.OwnerId == blocker ? b : a, a.Instance.OwnerId == blocker ? KickReasons.Removed : KickReasons.LeftRoom, now);
                 return;
             }
 
@@ -467,10 +690,20 @@ public sealed partial class SpaceManager(
         {
             _tick++;
             var heartbeat = _tick % SpaceRules.IdleSnapshotEvery == 0;
-            foreach (var instance in _instances.Values.ToList())
+            foreach (var instance in _instances.Values.Concat(_rooms.Values).ToList())
             {
+                if (instance.Closed)
+                {
+                    continue; // closed by an owner's expired reservation earlier in this loop
+                }
+
                 foreach (var avatar in instance.Avatars.ToList())
                 {
+                    if (instance.Closed)
+                    {
+                        break; // the owner's reservation ended: the room closed
+                    }
+
                     if (avatar.Client is null && now - avatar.AwaySince >= SpaceRules.Reservation)
                     {
                         RemoveAvatar(avatar, now);
@@ -482,7 +715,7 @@ public sealed partial class SpaceManager(
 
                 if (instance.Count == 0)
                 {
-                    if (now - instance.EmptySince >= SpaceRules.EmptyInstanceLifetime)
+                    if (!instance.IsRoom && now - instance.EmptySince >= SpaceRules.EmptyInstanceLifetime)
                     {
                         _instances.Remove(instance.Id);
                     }
@@ -510,7 +743,8 @@ public sealed partial class SpaceManager(
             }
 
             metrics.Instances = _instances.Count;
-            metrics.Avatars = _instances.Values.Sum(i => i.Count);
+            metrics.Rooms = _rooms.Count;
+            metrics.Avatars = _instances.Values.Sum(i => i.Count) + _rooms.Values.Sum(i => i.Count);
         }
 
         metrics.Tick(clock.GetElapsedTime(started).TotalMilliseconds);
@@ -528,10 +762,11 @@ public sealed partial class SpaceManager(
             if (active)
             {
                 var length = Math.Sqrt((avatar.IntentX * avatar.IntentX) + (avatar.IntentZ * avatar.IntentZ));
-                var step = SpaceRules.SpeedCmPerS * Math.Min(length / SpaceRules.MaxIntent, 1) * SpaceRules.TickInterval.TotalSeconds;
+                var (speed, bound) = (avatar.Instance.SpeedCmPerS, avatar.Instance.BoundCm);
+                var step = speed * Math.Min(length / SpaceRules.MaxIntent, 1) * SpaceRules.TickInterval.TotalSeconds;
                 var (nx, nz) = (avatar.IntentX / length, avatar.IntentZ / length);
-                x = Math.Clamp(x + (nx * step), -SpaceRules.BoundCm, SpaceRules.BoundCm);
-                z = Math.Clamp(z + (nz * step), -SpaceRules.BoundCm, SpaceRules.BoundCm);
+                x = Math.Clamp(x + (nx * step), -bound, bound);
+                z = Math.Clamp(z + (nz * step), -bound, bound);
                 heading = HeadingOf(nx, nz);
             }
         }
@@ -595,6 +830,7 @@ public sealed partial class SpaceManager(
             }
 
             _instances.Clear();
+            _rooms.Clear();
             _reserved.Clear();
             pumps = [.. _pumps];
         }
@@ -790,6 +1026,12 @@ public sealed partial class SpaceManager(
             return;
         }
 
+        if (instance.OwnerId == avatar.PlayerId)
+        {
+            CloseRoomLocked(instance, now); // the owner must stay inside: without the owner the room closes
+            return;
+        }
+
         instance.Slots[avatar.Slot] = null;
         instance.Changed = true;
         if (_reserved.TryGetValue(avatar.PlayerId, out var reserved) && reserved == avatar)
@@ -837,15 +1079,91 @@ public sealed partial class SpaceManager(
     private SpaceAvatar? AvatarOf(Guid playerId) =>
         _byPlayer.TryGetValue(playerId, out var client) && client.Avatar is { } avatar ? avatar : _reserved.GetValueOrDefault(playerId);
 
-    private SpaceWelcome Welcome(SpaceAvatar avatar) => new(
-        SpaceRules.ProtocolVersion,
-        manifest.Version,
-        avatar.Instance.Id,
-        avatar.Slot,
-        SpaceRules.TickHz,
-        new SpaceBounds(-SpaceRules.BoundCm, SpaceRules.BoundCm, -SpaceRules.BoundCm, SpaceRules.BoundCm),
-        SpaceRules.SpeedCmPerS,
-        [.. avatar.Instance.Avatars.Select(a => a.Member())]);
+    private SpaceWelcome Welcome(SpaceAvatar avatar)
+    {
+        var instance = avatar.Instance;
+        var bound = instance.BoundCm;
+        return new(
+            SpaceRules.ProtocolVersion,
+            manifest.Version,
+            instance.Id,
+            avatar.Slot,
+            SpaceRules.TickHz,
+            new SpaceBounds(-bound, bound, -bound, bound),
+            instance.SpeedCmPerS,
+            [.. instance.Avatars.Select(a => a.Member())],
+            instance.IsRoom ? SpaceKinds.Room : SpaceKinds.Plaza,
+            instance.Avatars.FirstOrDefault(a => a.PlayerId == instance.OwnerId)?.Slot,
+            instance.Layout);
+    }
+
+    /// <summary>Places a player in an open room: the owner in the center, a visitor near the open front edge.</summary>
+    private SpaceAvatar PlaceInRoom(SpaceClient client, SpaceInstance room, SpaceProfile profile, DateTimeOffset now, bool owner)
+    {
+        var slot = Array.IndexOf(room.Slots, null);
+        var avatar = new SpaceAvatar(client.PlayerId, room, slot, room.NextKey++, profile) { Client = client, IntentAt = now };
+        if (!owner)
+        {
+            var angle = Random.Shared.NextDouble() * 2 * Math.PI;
+            var radius = Math.Sqrt(Random.Shared.NextDouble()) * SpaceRules.RoomVisitorSpawnRadiusCm;
+            avatar.X = Math.Clamp(Math.Round(radius * Math.Sin(angle)), -room.BoundCm, room.BoundCm);
+            avatar.Z = Math.Clamp(Math.Round(SpaceRules.RoomVisitorSpawnZ + (radius * Math.Cos(angle))), -room.BoundCm, room.BoundCm);
+            avatar.Heading = 128; // facing into the room (−z)
+        }
+
+        room.Slots[slot] = avatar;
+        room.Changed = true;
+        client.Avatar = avatar;
+        Broadcast(room, SpaceEvents.Joined, [avatar.Member()], except: client);
+        return avatar;
+    }
+
+    /// <summary>
+    /// Closes an open room: every visitor gets <c>kicked("room_closed")</c> (a reserved visitor slot just ends). The
+    /// owner's connection, if any, stays open without an avatar.
+    /// </summary>
+    private void CloseRoomLocked(SpaceInstance room, DateTimeOffset now)
+    {
+        if (room.Closed)
+        {
+            return;
+        }
+
+        room.Closed = true;
+        _rooms.Remove(room.OwnerId!.Value);
+        foreach (var avatar in room.Avatars.ToList())
+        {
+            room.Slots[avatar.Slot] = null;
+            if (_reserved.TryGetValue(avatar.PlayerId, out var reserved) && reserved == avatar)
+            {
+                _reserved.Remove(avatar.PlayerId);
+            }
+
+            if (avatar.Client is { } client)
+            {
+                client.Avatar = null;
+                if (avatar.PlayerId != room.OwnerId)
+                {
+                    KickLocked(client, KickReasons.RoomClosed, now);
+                }
+            }
+        }
+
+        room.EmptySince = now;
+    }
+
+    /// <summary>Takes a member out of a room with a kick reason (a reserved member's slot just ends).</summary>
+    private void Eject(SpaceAvatar avatar, string reason, DateTimeOffset now)
+    {
+        if (avatar.Client is { } client)
+        {
+            KickLocked(client, reason, now);
+        }
+        else
+        {
+            RemoveAvatar(avatar, now);
+        }
+    }
 
     private void Broadcast(SpaceInstance instance, string handler, object?[] args, SpaceClient? except = null)
     {
@@ -904,6 +1222,10 @@ public sealed partial class SpaceManager(
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Space join: player {PlayerId}, instance {InstanceId}")]
     private partial void LogJoined(Guid playerId, int instanceId);
+
+    /// <summary>Room joins log the space kind only: never the owner or a room number (who visited whom, decision 8).</summary>
+    [LoggerMessage(Level = LogLevel.Information, Message = "Space join: player {PlayerId}, space room")]
+    private partial void LogRoomJoined(Guid playerId);
 
     [LoggerMessage(Level = LogLevel.Information,
         Message = "Space connection closed: player {PlayerId}, reason {Reason}, {DurationSeconds} s, {Dropped} dropped, {Invalid} invalid")]

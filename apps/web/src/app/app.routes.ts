@@ -67,6 +67,21 @@ export const routes: Routes = [
     title: "Plaza · VYBE",
     data: { layout: "fullscreen" },
   },
+  // P2 live friend room visits (docs/design/p2-room-visits.md): the plaza page with a room scene, same lazy chunk.
+  {
+    path: "room/live",
+    canActivate: [requirePlayer],
+    loadComponent: () => import("./plaza/plaza").then((m) => m.Plaza),
+    title: "Your room · VYBE",
+    data: { layout: "fullscreen", space: "room-host" },
+  },
+  {
+    path: "visit/:handle",
+    canActivate: [requirePlayer],
+    loadComponent: () => import("./plaza/plaza").then((m) => m.Plaza),
+    title: "Room visit · VYBE",
+    data: { layout: "fullscreen", space: "room-visit" },
+  },
   // The invite preview works without a player; accepting it can create a guest (spec §2 J2).
   { path: "challenge/:token", component: Invite, title: "Challenge · VYBE", data: { layout: "app" } },
   {

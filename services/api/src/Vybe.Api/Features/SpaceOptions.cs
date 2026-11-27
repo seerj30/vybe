@@ -15,6 +15,9 @@ public sealed class SpaceOptions
 
     public int MaxInstances { get; init; } = 64;
 
+    /// <summary>Open friend rooms per API process (docs/design/p2-room-visits.md §4).</summary>
+    public int MaxRooms { get; init; } = 128;
+
     public int MaxConnections { get; init; } = 1100;
 
     public int MaxConnectionsPerAddress { get; init; } = 20;
@@ -64,6 +67,22 @@ public static class SpaceRules
 
     /// <summary>Queued messages per connection; a client that falls this far behind is closed.</summary>
     public const int OutboxCapacity = 128;
+
+    /// <summary>Room visits (docs/design/p2-room-visits.md §4): the owner plus 7 visitors.</summary>
+    public const int RoomCapacity = 8;
+
+    /// <summary>
+    /// Room bounds: <c>room.v1.json</c> floor 8 × 0.5 m = 4 m, centered on (0, 0), and 30 cm inside the walls
+    /// (<c>RoomVisitTests</c> checks this against the manifest).
+    /// </summary>
+    public const int RoomBoundCm = 170;
+
+    public const int RoomSpeedCmPerS = 250;
+
+    /// <summary>Visitors appear within this distance of the front edge center (0, <see cref="RoomVisitorSpawnZ"/>).</summary>
+    public const int RoomVisitorSpawnRadiusCm = 80;
+
+    public const int RoomVisitorSpawnZ = 120;
 }
 
 /// <summary><c>assets/manifests/quickchat.v1.json</c>: the only quick-chat phrase and sticker ids the hub accepts (P2-3).</summary>

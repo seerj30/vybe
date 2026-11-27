@@ -25,6 +25,7 @@ public sealed class SpaceMetrics
         meter.CreateObservableGauge("vybe.spaces.connections", () => Connections, description: "Open hub connections");
         meter.CreateObservableGauge("vybe.spaces.avatars", () => Avatars, description: "Avatars in instances");
         meter.CreateObservableGauge("vybe.spaces.instances", () => Instances, description: "Plaza instances");
+        meter.CreateObservableGauge("vybe.spaces.rooms", () => Rooms, description: "Open friend rooms");
     }
 
     public int Connections { get; set; }
@@ -32,6 +33,8 @@ public sealed class SpaceMetrics
     public int Avatars { get; set; }
 
     public int Instances { get; set; }
+
+    public int Rooms { get; set; }
 
     public void MessageIn(string type) => _messagesIn.Add(1, new KeyValuePair<string, object?>("type", type));
 

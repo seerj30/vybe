@@ -77,12 +77,19 @@ public static class RoomEndpoints
     /// <summary>
     /// <c>PUT /me/room</c>: replaces the whole room, all or nothing, under a row lock. A save equal to the stored room
     /// returns it unchanged (idempotent retry); another layout with an old revision is 409 <c>revision_conflict</c>.
+    /// While the room is open to friends: 409 <c>room_open</c>.
     /// </summary>
     private static async Task<RoomResponse> SaveAsync(
         HttpContext context, VybeDbContext db, CurrentPlayer current, ContentCatalog content, TimeProvider clock,
-        CancellationToken cancellationToken)
+        SpaceManager spaces, CancellationToken cancellationToken)
     {
         var playerId = await current.GetIdAsync(cancellationToken);
+        if (spaces.IsRoomOpen(playerId))
+        {
+            // Visitors see the layout read at open time: no edits while the room is open (docs/design/p2-room-visits.md).
+            throw Problem.Of(409, "room_open");
+        }
+
         var request = RequestBody.Deserialize<RoomLayoutRequest>(await RequestBody.ReadAsync(context, cancellationToken));
         var placements = Shape(request, content.Room);
 
@@ -222,6 +229,16 @@ public static class RoomEndpoints
         {
             throw RoomLayout.ItemProblem(422, "item_inactive", id);
         }
+    }
+
+    /// <summary>The saved room as the scene of an open room (docs/design/p2-room-visits.md §3): SKUs only.</summary>
+    internal static async Task<SpaceRoom> ReadForSpaceAsync(VybeDbContext db, Guid playerId, CancellationToken cancellationToken)
+    {
+        var room = await ReadAsync(db, playerId, cancellationToken);
+        return new SpaceRoom(
+            room.WallItem?.Sku,
+            room.FloorItem?.Sku,
+            [.. room.Items.Select(p => new SpaceRoomItem(p.Sku, p.Surface, p.X, p.Y, p.Rotation))]);
     }
 
     private static async Task<RoomResponse> ReadAsync(VybeDbContext db, Guid playerId, CancellationToken cancellationToken)

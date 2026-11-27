@@ -114,6 +114,17 @@ const PROBLEMS: Record<LayoutProblem, string> = {
               </section>
             }
 
+            <section class="card" aria-labelledby="open-title" data-testid="open-room-card">
+              <h2 id="open-title">Open my room to friends</h2>
+              <p class="muted small">Your friends can walk in your room with you, up to 7 at a time. Only your friends see that it is open, and only while you are inside. You cannot change the room while it is open.</p>
+              @if (dirty()) {
+                <p class="notice small">Save or discard your changes first.</p>
+                <button type="button" class="button" disabled>Open my room</button>
+              } @else {
+                <a class="button" routerLink="/room/live" data-testid="open-room">Open my room</a>
+              }
+            </section>
+
             <section class="card" aria-labelledby="finish-title">
               <h2 id="finish-title">Walls and floor</h2>
               <label class="field">
