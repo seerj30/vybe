@@ -23,6 +23,7 @@ async function shot(page: Page, name: string): Promise<void> {
 }
 
 test("plaza (fake hub): 16 avatars inside the draw-call budget, and the member list", async ({ page }) => {
+  test.slow(); // 3D in software on a 2-core CI runner, while the app preloads its page chunks
   await newPlayer(page);
   await page.getByTestId("plaza-link").click();
   await expect(page).toHaveURL(/\/plaza$/);
@@ -53,6 +54,7 @@ test("plaza (fake hub): 16 avatars inside the draw-call budget, and the member l
 });
 
 test("plaza (fake hub): quick-chat with its cooldown, stickers, emotes and keyboard movement", async ({ page }) => {
+  test.slow(); // 3D in software on a 2-core CI runner, while the app preloads its page chunks
   await newPlayer(page);
   await openFakePlaza(page, "bots=2&still=1");
   await expect(plaza(page)).toHaveAttribute("data-mode", "3d", { timeout: 30_000 });
