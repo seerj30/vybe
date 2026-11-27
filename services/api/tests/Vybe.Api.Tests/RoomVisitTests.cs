@@ -146,6 +146,62 @@ public sealed class RoomVisitTests(SpaceApiFactory api) : IClassFixture<SpaceApi
         await walker.AvatarAsync(welcome.Slot, a => a.Z == SpaceRules.RoomBoundCm, moved.Tick);
     }
 
+    [Fact]
+    public async Task Furniture_Blocks_AndOwnerAndVisitorsSpawnOutsideIt()
+    {
+        var owner = await Player.CreateGuestAsync(api);
+        var friend = await Player.CreateGuestAsync(api);
+        await BefriendAsync(owner, friend);
+        var bed = await GrantAsync(owner, "furn_bed");
+        var sofa = await GrantAsync(owner, "furn_sofa");
+        var rug = await GrantAsync(owner, "furn_round_rug");
+        Assert.Equal(HttpStatusCode.OK, (await owner.Http.PutAsJsonAsync("/api/v1/me/room", new
+        {
+            expectedRevision = 0,
+            wallItemId = (Guid?)null,
+            floorItemId = (Guid?)null,
+            items = new[]
+            {
+                new { itemId = bed, surface = "floor", x = 3, y = 2, rotation = 0 }, // over the center (the owner spawn)
+                new { itemId = sofa, surface = "floor", x = 2, y = 6, rotation = 0 }, // over the visitor spawn area
+                new { itemId = rug, surface = "floor", x = 0, y = 0, rotation = 0 },
+            },
+        })).StatusCode);
+
+        // The owner spawns at the free point nearest to the center: the bed's left edge (x −50 minus the radius).
+        var (host, welcome) = await OpenAsync(owner);
+        var content = api.Services.GetRequiredService<ContentCatalog>();
+        var obstacles = RoomCollision.Obstacles(welcome.Room!, content.RoomItems, content.Room);
+        Assert.Equal(2, obstacles.Count); // the rug does not block
+        api.Tick();
+        var start = await host.AvatarAsync(welcome.Slot);
+        Assert.Equal((-50 - RoomCollision.AvatarRadiusCm, 0), (start.X, start.Z));
+
+        var (_, visit) = await VisitAsync(friend, await HandleAsync(owner));
+        api.Tick();
+        var guest = await host.AvatarAsync(visit.Slot);
+        Assert.DoesNotContain(obstacles, o => o.Contains(guest.X, guest.Z));
+
+        // Two ticks away from the bed, then four ticks toward it: the owner stops at its edge.
+        for (var i = 0; i < 2; i++)
+        {
+            await host.Connection.InvokeAsync("Move", -127, 0);
+            api.Tick();
+        }
+
+        var away = await host.AvatarAsync(welcome.Slot, a => a.X == start.X - 50, start.Tick);
+        for (var i = 0; i < 4; i++)
+        {
+            await host.Connection.InvokeAsync("Move", 127, 0);
+            api.Tick();
+        }
+
+        await host.Connection.InvokeAsync("Move", 0, 0);
+        api.Tick();
+        var stopped = await host.AvatarAsync(welcome.Slot, a => a.State == 0, away.Tick);
+        Assert.Equal((start.X, start.Z), (stopped.X, stopped.Z));
+    }
+
     // ------------------------------------------------------------------ closing
 
     [Fact]

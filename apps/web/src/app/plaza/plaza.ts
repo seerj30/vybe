@@ -16,6 +16,7 @@ import { AVATAR_3D, itemAsset } from "../avatar/asset-manifest";
 import { fromSpaceRoom } from "../room/room-layout";
 import { type Intent, MoveSender, STOP, directionOf, forView, intentFromJoystick, intentFromKeys } from "./input";
 import { Interpolator, type Pose, Predictor } from "./interpolation";
+import { roomObstacles } from "./room-collision";
 import { type HubFactory, PlazaClient, type PlazaEvents, type PlazaStatus, type SpaceTarget, TicketRefused, ticketSource } from "./plaza-client";
 import { avatarLook } from "./plaza-look";
 import type { PlazaRenderer, PlazaStats, TagPosition } from "./plaza-renderer";
@@ -724,7 +725,7 @@ export class Plaza {
     this.safety.set(null); // a new instance: the slots and keys of the question no longer apply
     this.interpolator.reset();
     this.predictor.reset();
-    this.predictor.configure(welcome.bounds, welcome.speedCmPerS);
+    this.predictor.configure(welcome.bounds, welcome.speedCmPerS, welcome.room === null ? [] : roomObstacles(welcome.room));
     this.sender.reset();
     this.moving.set(false); // a new instance: the server avatar stands until the next Move
     this.applyInput();

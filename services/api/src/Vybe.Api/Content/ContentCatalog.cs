@@ -68,7 +68,7 @@ public sealed record RoomEntry(
 
 public sealed record RoomGrid(int Columns, int Rows);
 
-public sealed record RoomFile(int Version, string? Description, RoomGrid Floor, RoomGrid Wall, int MaxItems, RoomEntry[] Items);
+public sealed record RoomFile(int Version, string? Description, double CellMeters, RoomGrid Floor, RoomGrid Wall, int MaxItems, RoomEntry[] Items);
 
 public sealed record RulesetContent(string Id, string GameId, int Version, IRewardConfig Config, string ConfigJson, string Checksum);
 

@@ -242,7 +242,7 @@ public sealed partial class SpaceManager(
     /// Second half of <c>OpenRoom</c> (docs/design/p2-room-visits.md §3): the owner's reserved slot in the open room
     /// (a reconnect), else a new room with the owner in the center. A reserved slot elsewhere is dropped.
     /// </summary>
-    internal SpaceWelcome CompleteOpenRoom(string connectionId, SpaceProfile profile, SpaceRoom layout)
+    internal SpaceWelcome CompleteOpenRoom(string connectionId, SpaceProfile profile, SpaceRoom layout, IReadOnlyList<RoomObstacle> obstacles)
     {
         var now = clock.GetUtcNow();
         lock (_gate)
@@ -268,7 +268,7 @@ public sealed partial class SpaceManager(
                 throw new HubException(KickReasons.SpacesFull);
             }
 
-            var room = new SpaceInstance(_nextRoomId++, now, client.PlayerId, layout);
+            var room = new SpaceInstance(_nextRoomId++, now, client.PlayerId, layout, obstacles);
             _rooms[client.PlayerId] = room;
             var avatar = PlaceInRoom(client, room, profile, now, owner: true);
             LogRoomJoined(client.PlayerId);
@@ -761,13 +761,10 @@ public sealed partial class SpaceManager(
             state = active ? AvatarStates.Walking : AvatarStates.Idle;
             if (active)
             {
+                var instance = avatar.Instance;
+                (x, z) = Walk(x, z, avatar.IntentX, avatar.IntentZ, instance.SpeedCmPerS, instance.BoundCm, instance.Obstacles);
                 var length = Math.Sqrt((avatar.IntentX * avatar.IntentX) + (avatar.IntentZ * avatar.IntentZ));
-                var (speed, bound) = (avatar.Instance.SpeedCmPerS, avatar.Instance.BoundCm);
-                var step = speed * Math.Min(length / SpaceRules.MaxIntent, 1) * SpaceRules.TickInterval.TotalSeconds;
-                var (nx, nz) = (avatar.IntentX / length, avatar.IntentZ / length);
-                x = Math.Clamp(x + (nx * step), -bound, bound);
-                z = Math.Clamp(z + (nz * step), -bound, bound);
-                heading = HeadingOf(nx, nz);
+                heading = HeadingOf(avatar.IntentX / length, avatar.IntentZ / length);
             }
         }
 
@@ -775,6 +772,20 @@ public sealed partial class SpaceManager(
             || (int)Math.Round(x) != (int)Math.Round(avatar.X) || (int)Math.Round(z) != (int)Math.Round(avatar.Z);
         (avatar.X, avatar.Z, avatar.Heading, avatar.State) = (x, z, heading, state);
         return changed;
+    }
+
+    /// <summary>
+    /// One tick of walking (protocol doc §4): <paramref name="speedCmPerS"/> × |intent| / 127 (at most full speed) for
+    /// 100 ms in the intent direction, inside ±<paramref name="bound"/> and outside the room furniture. With no
+    /// obstacles (the plaza) this is a plain clamp to the bounds. The web predictor runs the same rule.
+    /// </summary>
+    public static (double X, double Z) Walk(
+        double x, double z, int intentX, int intentZ, int speedCmPerS, int bound, IReadOnlyList<RoomObstacle> obstacles)
+    {
+        var length = Math.Sqrt((intentX * intentX) + (intentZ * intentZ));
+        var step = speedCmPerS * Math.Min(length / SpaceRules.MaxIntent, 1) * SpaceRules.TickInterval.TotalSeconds;
+        var (nx, nz) = (intentX / length, intentZ / length);
+        return RoomCollision.Move(x, z, nx * step, nz * step, obstacles, bound);
     }
 
     /// <summary>Heading in 1/256 turns: θ = h × 2π / 256, facing (sin θ, cos θ).</summary>
@@ -1097,7 +1108,10 @@ public sealed partial class SpaceManager(
             instance.Layout);
     }
 
-    /// <summary>Places a player in an open room: the owner in the center, a visitor near the open front edge.</summary>
+    /// <summary>
+    /// Places a player in an open room: the owner in the center, a visitor near the open front edge. A point inside
+    /// furniture moves to the nearest free point.
+    /// </summary>
     private SpaceAvatar PlaceInRoom(SpaceClient client, SpaceInstance room, SpaceProfile profile, DateTimeOffset now, bool owner)
     {
         var slot = Array.IndexOf(room.Slots, null);
@@ -1110,6 +1124,8 @@ public sealed partial class SpaceManager(
             avatar.Z = Math.Clamp(Math.Round(SpaceRules.RoomVisitorSpawnZ + (radius * Math.Cos(angle))), -room.BoundCm, room.BoundCm);
             avatar.Heading = 128; // facing into the room (−z)
         }
+
+        (avatar.X, avatar.Z) = RoomCollision.FreeSpot(avatar.X, avatar.Z, room.Obstacles, room.BoundCm);
 
         room.Slots[slot] = avatar;
         room.Changed = true;

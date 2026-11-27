@@ -1,0 +1,569 @@
+{
+  "description": "Shared vectors for furniture collision in open rooms (docs/design/p2-room-visits.md \u00a74). Both the API (RoomCollisionTests) and the web predictor (room-collision.test.ts) run every walk: start at `from`, send `intent` for `ticks` server ticks of 100 ms, and expect `to` (cm, \u00b10.01). `obstacles` are [minX, minZ, maxX, maxZ] in cm. Room manifest room.v1.json, room speed and bounds of SpaceRules.",
+  "avatarRadiusCm": 20,
+  "boundCm": 170,
+  "speedCmPerS": 250,
+  "cases": [
+    {
+      "name": "no furniture: a plain clamp to the bounds (the plaza rule)",
+      "items": [],
+      "obstacles": [],
+      "walks": [
+        {
+          "from": [
+            160,
+            -160
+          ],
+          "intent": [
+            127,
+            -127
+          ],
+          "ticks": 3,
+          "to": [
+            170,
+            -170
+          ]
+        },
+        {
+          "from": [
+            0,
+            0
+          ],
+          "intent": [
+            64,
+            0
+          ],
+          "ticks": 4,
+          "to": [
+            50.394,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a sofa stops a straight walk at its edge (footprint plus the avatar radius)",
+      "items": [
+        {
+          "sku": "furn_sofa",
+          "surface": "floor",
+          "x": 2,
+          "y": 2,
+          "rotation": 0
+        }
+      ],
+      "obstacles": [
+        [
+          -120,
+          -120,
+          120,
+          20
+        ]
+      ],
+      "walks": [
+        {
+          "from": [
+            0,
+            100
+          ],
+          "intent": [
+            0,
+            -127
+          ],
+          "ticks": 8,
+          "to": [
+            0.0,
+            20
+          ]
+        },
+        {
+          "from": [
+            -150,
+            -50
+          ],
+          "intent": [
+            127,
+            0
+          ],
+          "ticks": 4,
+          "to": [
+            -120,
+            -50.0
+          ]
+        },
+        {
+          "from": [
+            0,
+            -150
+          ],
+          "intent": [
+            0,
+            127
+          ],
+          "ticks": 6,
+          "to": [
+            0.0,
+            -120
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a diagonal walk into a sofa slides along its edge",
+      "items": [
+        {
+          "sku": "furn_sofa",
+          "surface": "floor",
+          "x": 2,
+          "y": 2,
+          "rotation": 0
+        }
+      ],
+      "obstacles": [
+        [
+          -120,
+          -120,
+          120,
+          20
+        ]
+      ],
+      "walks": [
+        {
+          "from": [
+            0,
+            100
+          ],
+          "intent": [
+            -127,
+            -127
+          ],
+          "ticks": 5,
+          "to": [
+            -88.388,
+            20
+          ]
+        },
+        {
+          "from": [
+            0,
+            100
+          ],
+          "intent": [
+            -127,
+            -127
+          ],
+          "ticks": 12,
+          "to": [
+            -170,
+            -86.066
+          ]
+        },
+        {
+          "from": [
+            0,
+            100
+          ],
+          "intent": [
+            -60,
+            -127
+          ],
+          "ticks": 12,
+          "to": [
+            -128.15,
+            -2.604
+          ]
+        },
+        {
+          "from": [
+            -150,
+            60
+          ],
+          "intent": [
+            127,
+            -127
+          ],
+          "ticks": 8,
+          "to": [
+            -8.579,
+            20
+          ]
+        }
+      ]
+    },
+    {
+      "name": "rotation 0 and 180: a bed covers 3 x 4 cells",
+      "items": [
+        {
+          "sku": "furn_bed",
+          "surface": "floor",
+          "x": 0,
+          "y": 0,
+          "rotation": 180
+        }
+      ],
+      "obstacles": [
+        [
+          -220,
+          -220,
+          -30,
+          20
+        ]
+      ],
+      "walks": [
+        {
+          "from": [
+            100,
+            -100
+          ],
+          "intent": [
+            -127,
+            0
+          ],
+          "ticks": 10,
+          "to": [
+            -30,
+            -100.0
+          ]
+        },
+        {
+          "from": [
+            -100,
+            100
+          ],
+          "intent": [
+            0,
+            -127
+          ],
+          "ticks": 10,
+          "to": [
+            -100.0,
+            20
+          ]
+        }
+      ]
+    },
+    {
+      "name": "rotation 90 and 270: the bed footprint turns to 4 x 3 cells",
+      "items": [
+        {
+          "sku": "furn_bed",
+          "surface": "floor",
+          "x": 0,
+          "y": 0,
+          "rotation": 270
+        }
+      ],
+      "obstacles": [
+        [
+          -220,
+          -220,
+          20,
+          -30
+        ]
+      ],
+      "walks": [
+        {
+          "from": [
+            100,
+            -100
+          ],
+          "intent": [
+            -127,
+            0
+          ],
+          "ticks": 10,
+          "to": [
+            20,
+            -100.0
+          ]
+        },
+        {
+          "from": [
+            -100,
+            100
+          ],
+          "intent": [
+            0,
+            -127
+          ],
+          "ticks": 10,
+          "to": [
+            -100.0,
+            -30
+          ]
+        }
+      ]
+    },
+    {
+      "name": "rugs never block",
+      "items": [
+        {
+          "sku": "furn_round_rug",
+          "surface": "floor",
+          "x": 3,
+          "y": 3,
+          "rotation": 0
+        },
+        {
+          "sku": "furn_striped_rug",
+          "surface": "floor",
+          "x": 2,
+          "y": 5,
+          "rotation": 0
+        }
+      ],
+      "obstacles": [],
+      "walks": [
+        {
+          "from": [
+            0,
+            150
+          ],
+          "intent": [
+            0,
+            -127
+          ],
+          "ticks": 12,
+          "to": [
+            0.0,
+            -150.0
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wall items never block",
+      "items": [
+        {
+          "sku": "decor_hoops_poster",
+          "surface": "wall_back",
+          "x": 3,
+          "y": 0,
+          "rotation": 0
+        },
+        {
+          "sku": "decor_wall_shelf",
+          "surface": "wall_left",
+          "x": 3,
+          "y": 1,
+          "rotation": 0
+        }
+      ],
+      "obstacles": [],
+      "walks": [
+        {
+          "from": [
+            0,
+            0
+          ],
+          "intent": [
+            0,
+            -127
+          ],
+          "ticks": 10,
+          "to": [
+            0.0,
+            -170
+          ]
+        },
+        {
+          "from": [
+            0,
+            0
+          ],
+          "intent": [
+            -127,
+            0
+          ],
+          "ticks": 10,
+          "to": [
+            -170,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "name": "an unknown sku never blocks",
+      "items": [
+        {
+          "sku": "furn_not_in_the_manifest",
+          "surface": "floor",
+          "x": 3,
+          "y": 3,
+          "rotation": 0
+        }
+      ],
+      "obstacles": [],
+      "walks": [
+        {
+          "from": [
+            0,
+            150
+          ],
+          "intent": [
+            0,
+            -127
+          ],
+          "ticks": 12,
+          "to": [
+            0.0,
+            -150.0
+          ]
+        }
+      ]
+    },
+    {
+      "name": "an avatar inside an obstacle walks out, then the obstacle blocks it",
+      "items": [
+        {
+          "sku": "furn_floor_lamp",
+          "surface": "floor",
+          "x": 4,
+          "y": 4,
+          "rotation": 0
+        }
+      ],
+      "obstacles": [
+        [
+          -20,
+          -20,
+          70,
+          70
+        ]
+      ],
+      "walks": [
+        {
+          "from": [
+            25,
+            25
+          ],
+          "intent": [
+            127,
+            0
+          ],
+          "ticks": 3,
+          "to": [
+            100.0,
+            25.0
+          ]
+        },
+        {
+          "from": [
+            100,
+            25
+          ],
+          "intent": [
+            -127,
+            0
+          ],
+          "ticks": 3,
+          "to": [
+            70,
+            25.0
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a one-cell gap between two items lets an avatar through",
+      "items": [
+        {
+          "sku": "furn_floor_lamp",
+          "surface": "floor",
+          "x": 2,
+          "y": 4,
+          "rotation": 0
+        },
+        {
+          "sku": "furn_cactus",
+          "surface": "floor",
+          "x": 4,
+          "y": 4,
+          "rotation": 0
+        }
+      ],
+      "obstacles": [
+        [
+          -120,
+          -20,
+          -30,
+          70
+        ],
+        [
+          -20,
+          -20,
+          70,
+          70
+        ]
+      ],
+      "walks": [
+        {
+          "from": [
+            -25,
+            150
+          ],
+          "intent": [
+            0,
+            -127
+          ],
+          "ticks": 10,
+          "to": [
+            -25.0,
+            -100.0
+          ]
+        }
+      ]
+    },
+    {
+      "name": "the nearer of two obstacles stops the avatar",
+      "items": [
+        {
+          "sku": "furn_floor_lamp",
+          "surface": "floor",
+          "x": 4,
+          "y": 4,
+          "rotation": 0
+        },
+        {
+          "sku": "furn_bookshelf",
+          "surface": "floor",
+          "x": 6,
+          "y": 4,
+          "rotation": 0
+        }
+      ],
+      "obstacles": [
+        [
+          -20,
+          -20,
+          70,
+          70
+        ],
+        [
+          80,
+          -20,
+          220,
+          70
+        ]
+      ],
+      "walks": [
+        {
+          "from": [
+            -100,
+            25
+          ],
+          "intent": [
+            127,
+            0
+          ],
+          "ticks": 10,
+          "to": [
+            -20,
+            25.0
+          ]
+        }
+      ]
+    }
+  ]
+}

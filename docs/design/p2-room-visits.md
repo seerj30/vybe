@@ -93,9 +93,33 @@ A visitor cannot tell a remove from a block by the owner: both are `removed` (sp
 | Bounds | From `room.v1.json`: floor 8 × 0.5 m = 4 m, centered on (0, 0); the back wall at z = −200 cm, the left wall at x = −200 cm. Avatars stay 30 cm inside: x and z in **[−170, 170] cm** |
 | Spawn | Owner: the center. Visitor: a random point within 80 cm of the front edge center (0, 120) |
 | Speed | **250 cm/s** (*provisional*; the plaza speed is too fast for a 4 m room) |
-| Collision | None between avatars, **no furniture collision** (avatars walk through furniture). Reason: the floor layout has rugs, footprints and rotations; a correct check needs the room rules on the server tick. Later if players ask |
+| Collision | None between avatars. **Furniture blocks** (product owner, 2026-11-27): see "Furniture collision" below |
 | Removed set | Player ids that the owner removed in this opening; deleted when the room closes |
 | Layout | Read once at `OpenRoom` (the saved layout). It cannot change while open (409 `room_open`) |
+
+**Furniture collision.** The server tick is the authority (`RoomCollision.cs`). The web predictor runs the same
+rules (`room-collision.ts`), so the own avatar does not rubber-band at furniture.
+
+1. **Obstacles.** At `OpenRoom` the server makes one rectangle per floor item on the `object` layer of `room.v1.json`:
+   the footprint after the rotation (90° and 270° swap `w` and `d`), in cm (cell `x`, `y` → x = −200 + 50 `x`,
+   z = −200 + 50 `y`), grown by the **avatar radius of 20 cm** on each side (*provisional*; about the shoulder width
+   of the avatar). Rugs, wall items and SKUs that the manifest does not know never block. The layout cannot change
+   while the room is open, so the obstacles stay the same until the room closes.
+2. **Movement.** The avatar is a point. A tick first moves along x, then along z. Each part stops at the edge of an
+   obstacle that it enters from outside. So a diagonal walk into an obstacle **slides** along its edge. Only the inside
+   of a rectangle blocks: an avatar can stand on an edge and walk along it.
+3. **No stuck avatar.** An obstacle never blocks an avatar that is already inside it: that avatar walks out freely
+   and then cannot walk back in. A spawn point (owner: the center; visitor: near the front) inside an obstacle moves
+   to the nearest free point of a 10 cm grid. Only a floor fully covered with furniture has no free point; then the
+   avatar stays and walks out (rule above). Reconnects keep the old position, which was free.
+4. **Plaza.** Plaza instances have no obstacles: the tick is the same clamp as before.
+5. **Tests.** Shared vectors (`packages/contracts/fixtures/room-collision.v1.json`) run in the API (`RoomCollisionTests`)
+   and in the web predictor (`room-collision.test.ts`): blocked moves, sliding, rotations, rugs, wall items, an avatar
+   inside an obstacle, gaps.
+
+A layout can cut the floor into parts (for example a row of furniture from wall to wall). Then avatars in different
+parts cannot meet, and a visitor can spawn in another part than the owner. This is the owner's layout choice; the
+server does not refuse it (open question 2).
 
 **Owner presence.** The owner's avatar must stay in the room. When the owner's connection drops, the avatar is
 "away" for 30 s (as in the plaza) and the room stays open. After 30 s, or on `Leave`, `CloseRoom`, a kick, a
@@ -172,9 +196,11 @@ Every plaza limit (§7 of the protocol doc) applies per connection. In addition:
   owner disconnect keeps the room 30 s then closes, owner reconnect gets the room back, remove plus no re-entry,
   block rules (owner blocks → `removed`; visitor blocks → `left_room`), unfriend removes, block with a member keeps
   a joiner out, `roomOpen` in `GET /me/friends` (true only for friends while open), `PUT /me/room` 409 while open,
-  bounds (−170…170), expressions in a room, plaza tests unchanged.
+  bounds (−170…170), expressions in a room, plaza tests unchanged. Furniture (`RoomCollisionTests` and
+  `RoomVisitTests`): the shared vectors, the free spawn of owner and visitor, a stop at the bed edge through the hub,
+  the plaza rule unchanged without obstacles.
 - **Web unit (Vitest)**: Welcome parsing of the new fields, room kick reasons and join errors, the client join
-  method per space, the input turn for the room camera.
+  method per space, the input turn for the room camera, the predictor on the shared furniture vectors.
 - **E2E (Playwright, real hub)**: three guests who are friends: A opens the room, B and C see "Visit" and enter,
   all see 3 members; A removes C (C sees the remove state); A closes (B sees "The room closed"). Phone 375 px check
   of the live room.
@@ -184,7 +210,8 @@ Every plaza limit (§7 of the protocol doc) applies per connection. In addition:
 | # | Question | Default until answered |
 |---|---|---|
 | 1 | Also show open rooms on the hub (a card)? | Friend list only |
-| 2 | Furniture collision? | None (§4) |
+| 2 | Furniture collision: a layout can cut the floor into parts that avatars cannot leave. Refuse such layouts in the editor, or spawn visitors in the owner's part? | Allowed; the spawn is the nearest free point (§4) |
+| 6 | Avatar radius 20 cm: a gap of one cell (50 cm) between two items leaves 10 cm to pass. Is that the wanted feel? | 20 cm (*provisional*) |
 | 3 | Edit while open? | Not possible: the editor sends the owner to the live room; the API refuses saves (409) |
 | 4 | Let the owner invite a friend (a notification)? | No: a notification is a new channel (decision 8 review) |
 | 5 | Room capacity 8 and room cap 128 | Provisional; the load test can change them |
