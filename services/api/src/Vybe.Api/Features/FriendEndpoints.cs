@@ -10,7 +10,8 @@ public sealed record FriendRequestCreate(string? Handle);
 
 public sealed record FriendRequestResult(string Handle, FriendshipStatus Status);
 
-public sealed record FriendEntry(string Handle, string? DisplayName, int Level, DateTime Since, bool ProfileVisible);
+/// <summary><c>RoomOpen</c>: the friend's room is open to the caller now (docs/design/p2-room-visits.md, API memory only).</summary>
+public sealed record FriendEntry(string Handle, string? DisplayName, int Level, DateTime Since, bool ProfileVisible, bool RoomOpen);
 
 public sealed record FriendList(IReadOnlyList<FriendEntry> Items);
 
@@ -234,15 +235,19 @@ public static class FriendEndpoints
         DeleteAsync(handle, db, current, (me, other) => f => f.RequesterPlayerId == me && f.AddresseePlayerId == other
             && f.Status == FriendshipStatus.Pending, cancellationToken);
 
-    /// <summary>Idempotent: either friend ends the friendship.</summary>
-    private static Task<IResult> RemoveAsync(string handle, VybeDbContext db, CurrentPlayer current, CancellationToken cancellationToken) =>
+    /// <summary>
+    /// Idempotent: either friend ends the friendship. A visitor in the other player's open room leaves it
+    /// (docs/design/p2-room-visits.md §5).
+    /// </summary>
+    private static Task<IResult> RemoveAsync(
+        string handle, VybeDbContext db, CurrentPlayer current, SpaceManager spaces, CancellationToken cancellationToken) =>
         DeleteAsync(handle, db, current, (me, other) => f => f.Status == FriendshipStatus.Accepted
             && ((f.RequesterPlayerId == me && f.AddresseePlayerId == other) || (f.RequesterPlayerId == other && f.AddresseePlayerId == me)),
-            cancellationToken);
+            cancellationToken, spaces.ApplyUnfriend);
 
     private static async Task<IResult> DeleteAsync(
         string handle, VybeDbContext db, CurrentPlayer current, Func<Guid, Guid, Expression<Func<Friendship, bool>>> match,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, Action<Guid, Guid>? committed = null)
     {
         var playerId = await current.GetIdAsync(cancellationToken);
         if (await PlayerHandles.FindAsync(db, handle, cancellationToken) is { } other)
@@ -250,7 +255,8 @@ public static class FriendEndpoints
             await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
             await PairLock.AcquireAsync(db, playerId, other.Id, cancellationToken);
             await db.Friendships.Where(match(playerId, other.Id)).ExecuteDeleteAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+            await transaction.CommitAsync(CancellationToken.None);
+            committed?.Invoke(playerId, other.Id);
         }
 
         return Results.NoContent();
@@ -260,18 +266,21 @@ public static class FriendEndpoints
     /// The caller's friends by handle. A private friend is listed (the friendship is a mutual choice) with
     /// <c>profileVisible = false</c>; nobody can list another player's friends (spec §17 decision 6).
     /// </summary>
-    private static async Task<FriendList> ListFriendsAsync(VybeDbContext db, CurrentPlayer current, CancellationToken cancellationToken)
+    private static async Task<FriendList> ListFriendsAsync(
+        VybeDbContext db, CurrentPlayer current, SpaceManager spaces, CancellationToken cancellationToken)
     {
         var playerId = await current.GetIdAsync(cancellationToken);
         var rows = await db.Friendships.AsNoTracking()
             .Where(f => f.Status == FriendshipStatus.Accepted && (f.RequesterPlayerId == playerId || f.AddresseePlayerId == playerId))
             .Join(Listable(db), f => f.RequesterPlayerId == playerId ? f.AddresseePlayerId : f.RequesterPlayerId, p => p.Id,
-                (f, p) => new { p.Handle, p.DisplayName, p.Level, Since = f.RespondedAt!.Value, p.ProfileVisibility })
+                (f, p) => new { p.Id, p.Handle, p.DisplayName, p.Level, Since = f.RespondedAt!.Value, p.ProfileVisibility })
             .OrderBy(r => r.Handle)
             .Take(MaxFriends)
             .ToListAsync(cancellationToken);
+        // Open rooms are in API memory only: a friend sees "open" only while the room is open (no stored presence).
+        var open = spaces.OpenRoomsFor(playerId, rows.Select(r => r.Id));
         return new FriendList(rows
-            .Select(r => new FriendEntry(r.Handle, r.DisplayName, r.Level, r.Since, r.ProfileVisibility == ProfileVisibility.Players))
+            .Select(r => new FriendEntry(r.Handle, r.DisplayName, r.Level, r.Since, r.ProfileVisibility == ProfileVisibility.Players, open.Contains(r.Id)))
             .ToList());
     }
 

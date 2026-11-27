@@ -42,6 +42,26 @@ public sealed record SpaceMember(
     [property: Key("handle")] string? Handle,
     [property: Key("look")] SpaceLook Look);
 
+/// <summary>One placed room item of an open room (docs/design/p2-room-visits.md §3): SKUs only, no item ids.</summary>
+[MessagePackObject]
+public sealed record SpaceRoomItem(
+    [property: Key("sku")] string Sku,
+    [property: Key("surface")] string Surface,
+    [property: Key("x")] int X,
+    [property: Key("y")] int Y,
+    [property: Key("rotation")] int Rotation);
+
+/// <summary>The owner's saved room layout at open time: wall and floor finish SKUs and the placed items.</summary>
+[MessagePackObject]
+public sealed record SpaceRoom(
+    [property: Key("wall")] string? Wall,
+    [property: Key("floor")] string? Floor,
+    [property: Key("items")] IReadOnlyList<SpaceRoomItem> Items);
+
+/// <summary>
+/// <c>space</c>, <c>ownerSlot</c> and <c>room</c> are the optional room fields (docs/design/p2-room-visits.md §3):
+/// <c>"plaza"</c>, null and null in the plaza.
+/// </summary>
 [MessagePackObject]
 public sealed record SpaceWelcome(
     [property: Key("protocolVersion")] int ProtocolVersion,
@@ -51,7 +71,10 @@ public sealed record SpaceWelcome(
     [property: Key("tickHz")] int TickHz,
     [property: Key("bounds")] SpaceBounds Bounds,
     [property: Key("speedCmPerS")] int SpeedCmPerS,
-    [property: Key("members")] IReadOnlyList<SpaceMember> Members);
+    [property: Key("members")] IReadOnlyList<SpaceMember> Members,
+    [property: Key("space")] string Space,
+    [property: Key("ownerSlot")] int? OwnerSlot,
+    [property: Key("room")] SpaceRoom? Room);
 
 /// <summary>Server → client handler names (protocol doc §5).</summary>
 public static class SpaceEvents
@@ -88,6 +111,31 @@ public static class KickReasons
     public const string AccountUnavailable = "account_unavailable";
     public const string SpacesFull = "spaces_full";
     public const string SlowClient = "slow_client";
+
+    /// <summary>Room visits: the owner closed the room, left, or did not come back within 30 s.</summary>
+    public const string RoomClosed = "room_closed";
+
+    /// <summary>Room visits: the owner removed (or blocked) the visitor, or the friendship ended.</summary>
+    public const string Removed = "removed";
+
+    /// <summary>Room visits: the visitor blocked a member and leaves (the blocker moves, as in the plaza).</summary>
+    public const string LeftRoom = "left_room";
+}
+
+/// <summary><c>HubException</c> messages of <c>JoinRoom</c> (docs/design/p2-room-visits.md §3).</summary>
+public static class RoomErrors
+{
+    /// <summary>Not open, not a friend, removed, or a block with a member: one code, so the answer tells nothing more.</summary>
+    public const string Unavailable = "room_unavailable";
+
+    public const string Full = "room_full";
+}
+
+/// <summary>Space kinds: the public plaza and a friend's open room.</summary>
+public static class SpaceKinds
+{
+    public const string Plaza = "plaza";
+    public const string Room = "room";
 }
 
 /// <summary>
@@ -293,9 +341,37 @@ internal sealed class SpaceAvatar(Guid playerId, SpaceInstance instance, int slo
 
 internal sealed class SpaceInstance(int id, DateTimeOffset now)
 {
+    /// <summary>An open room (docs/design/p2-room-visits.md §4): 8 slots, the room bounds and speed.</summary>
+    public SpaceInstance(int id, DateTimeOffset now, Guid ownerId, SpaceRoom layout)
+        : this(id, now)
+    {
+        OwnerId = ownerId;
+        Layout = layout;
+        Slots = new SpaceAvatar?[SpaceRules.RoomCapacity];
+        BoundCm = SpaceRules.RoomBoundCm;
+        SpeedCmPerS = SpaceRules.RoomSpeedCmPerS;
+    }
+
     public int Id { get; } = id;
 
     public SpaceAvatar?[] Slots { get; } = new SpaceAvatar?[SpaceRules.InstanceCapacity];
+
+    /// <summary>The room owner; null for a plaza instance.</summary>
+    public Guid? OwnerId { get; }
+
+    public bool IsRoom => OwnerId is not null;
+
+    /// <summary>The owner's saved layout at open time (rooms only).</summary>
+    public SpaceRoom? Layout { get; }
+
+    public int BoundCm { get; } = SpaceRules.BoundCm;
+
+    public int SpeedCmPerS { get; } = SpaceRules.SpeedCmPerS;
+
+    /// <summary>Visitors the owner removed in this opening (rooms only): they cannot enter again.</summary>
+    public HashSet<Guid> Removed { get; } = [];
+
+    public bool Closed { get; set; }
 
     public DateTimeOffset EmptySince { get; set; } = now;
 

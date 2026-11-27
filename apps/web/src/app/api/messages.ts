@@ -24,6 +24,7 @@ const MESSAGES: Partial<Record<ErrorCode, string>> = {
   room_item_limit: "A room holds at most 40 items. Remove an item first.",
   placement_out_of_bounds: "An item does not fit inside the room there.",
   placement_overlap: "Two items are on the same place. Move one of them.",
+  room_open: "Your room is open to friends. Close it first, then save your changes.",
   // Accounts, privacy and admin (stream H).
   forbidden: "You do not have access to this.",
   not_found: "VYBE did not find this.",

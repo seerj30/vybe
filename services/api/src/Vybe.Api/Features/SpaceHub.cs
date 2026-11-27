@@ -54,13 +54,110 @@ public sealed class SpaceHub(SpaceManager spaces, VybeDbContext db, TimeProvider
 
         if (profile is null)
         {
-            spaces.CancelJoin(Context.ConnectionId);
-            spaces.Kick(Context.ConnectionId, KickReasons.AccountUnavailable);
-            throw new HubException(KickReasons.AccountUnavailable);
+            return AccountUnavailable();
         }
 
         return spaces.CompleteJoin(Context.ConnectionId, profile);
     }
+
+    /// <summary>A missing, suspended or deleted player: the join ends and the connection closes.</summary>
+    private SpaceWelcome AccountUnavailable()
+    {
+        spaces.CancelJoin(Context.ConnectionId);
+        spaces.Kick(Context.ConnectionId, KickReasons.AccountUnavailable);
+        throw new HubException(KickReasons.AccountUnavailable);
+    }
+
+    /// <summary>The id of the player with <paramref name="handle"/> when that player is an accepted friend of the caller.</summary>
+    private async Task<Guid?> FriendOwnerAsync(Guid playerId, string handle)
+    {
+        var owner = await PlayerHandles.FindAsync(db, handle, Context.ConnectionAborted);
+        if (owner is null || owner.Id == playerId)
+        {
+            return null;
+        }
+
+        return await FriendEndpoints.FriendIds(db, playerId).AnyAsync(id => id == owner.Id, Context.ConnectionAborted) ? owner.Id : null;
+    }
+
+    /// <summary>
+    /// Opens the caller's room to friends (docs/design/p2-room-visits.md §3) and places the caller in it as the owner.
+    /// The scene is the saved layout; it cannot change while the room is open.
+    /// </summary>
+    public async Task<SpaceWelcome> OpenRoom()
+    {
+        var playerId = spaces.BeginJoin(Context.ConnectionId, "open_room");
+        SpaceProfile? profile;
+        SpaceRoom? layout = null;
+        try
+        {
+            profile = await LoadProfileAsync(playerId);
+            if (profile is not null)
+            {
+                layout = await GatedReadAsync(() => RoomEndpoints.ReadForSpaceAsync(db, playerId, Context.ConnectionAborted));
+            }
+        }
+        catch
+        {
+            spaces.CancelJoin(Context.ConnectionId);
+            throw;
+        }
+
+        if (profile is null || layout is null)
+        {
+            return AccountUnavailable();
+        }
+
+        return spaces.CompleteOpenRoom(Context.ConnectionId, profile, layout);
+    }
+
+    /// <summary>
+    /// Enters the open room of the friend with <paramref name="handle"/>. A non-friend gets <c>room_unavailable</c>
+    /// before the server looks at the room, so the answer never tells whether a stranger's room is open.
+    /// </summary>
+    public async Task<SpaceWelcome> JoinRoom(string? handle)
+    {
+        var playerId = spaces.BeginJoin(Context.ConnectionId, "join_room");
+        if (!PlayerHandles.IsInput(handle))
+        {
+            spaces.CancelJoin(Context.ConnectionId);
+            spaces.InvalidInput(Context.ConnectionId);
+            throw new HubException(KickReasons.InvalidInput);
+        }
+
+        var checkedAt = clock.GetUtcNow();
+        SpaceProfile? profile;
+        Guid? ownerId;
+        try
+        {
+            ownerId = await GatedReadAsync(() => FriendOwnerAsync(playerId, handle!));
+            profile = await LoadProfileAsync(playerId);
+        }
+        catch
+        {
+            spaces.CancelJoin(Context.ConnectionId);
+            throw;
+        }
+
+        if (profile is null)
+        {
+            return AccountUnavailable();
+        }
+
+        if (ownerId is not { } owner)
+        {
+            spaces.CancelJoin(Context.ConnectionId);
+            throw new HubException(RoomErrors.Unavailable);
+        }
+
+        return spaces.CompleteJoinRoom(Context.ConnectionId, profile, owner, checkedAt);
+    }
+
+    /// <summary>The owner closes the room; visitors get <c>kicked("room_closed")</c>.</summary>
+    public void CloseRoom() => spaces.CloseRoom(Context.ConnectionId);
+
+    /// <summary>The owner removes the visitor in <paramref name="slot"/> (with its member key) for this opening.</summary>
+    public void RemoveVisitor(int slot, int key) => spaces.RemoveVisitor(Context.ConnectionId, slot, key);
 
     public void Leave() => spaces.Leave(Context.ConnectionId);
 
@@ -132,7 +229,11 @@ public sealed class SpaceHub(SpaceManager spaces, VybeDbContext db, TimeProvider
         ["other"] = ReportReason.Other,
     };
 
-    private async Task<SpaceProfile?> LoadProfileAsync(Guid playerId)
+    private Task<SpaceProfile?> LoadProfileAsync(Guid playerId) =>
+        GatedReadAsync(() => SpaceProfiles.LoadAsync(db, playerId, clock.UtcNowForDb(), Context.ConnectionAborted));
+
+    /// <summary>Runs a database read inside <see cref="ProfileReads"/>.</summary>
+    private async Task<T> GatedReadAsync<T>(Func<Task<T>> read)
     {
         if (!await ProfileReads.WaitAsync(TimeSpan.FromSeconds(5), Context.ConnectionAborted))
         {
@@ -141,7 +242,7 @@ public sealed class SpaceHub(SpaceManager spaces, VybeDbContext db, TimeProvider
 
         try
         {
-            return await SpaceProfiles.LoadAsync(db, playerId, clock.UtcNowForDb(), Context.ConnectionAborted);
+            return await read();
         }
         finally
         {

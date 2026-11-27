@@ -469,7 +469,8 @@ paths:
       description: |
         Accepted friends, by handle (at most 200). Only the caller's own friends: no operation lists
         another player's friends. A friend with a private profile is listed with `profileVisible: false`
-        (design: docs/design/p1-friends-leaderboard.md).
+        (design: docs/design/p1-friends-leaderboard.md). `roomOpen` is true only while that friend's
+        room is open to the caller (docs/design/p2-room-visits.md); the API keeps it in memory only.
       responses:
         "200":
           description: The caller's friends.
@@ -1008,12 +1009,13 @@ paths:
         manifest (docs/design/p1-my-room.md); it never trusts the client layout.
         Idempotent: a layout equal to the stored room returns it unchanged, also with an old
         `expectedRevision`. Another layout with an old revision gets 409 `revision_conflict`.
-        Problems about one item carry `itemId`.
+        While the room is open to friends, every save gets 409 `room_open`
+        (docs/design/p2-room-visits.md). Problems about one item carry `itemId`.
       parameters:
         - $ref: "#/components/parameters/CsrfHeader"
       x-problem-codes:
         "403": [item_not_owned, account_suspended]
-        "409": [revision_conflict]
+        "409": [revision_conflict, room_open]
         "422": [validation_failed, room_item_limit, incompatible_item, item_inactive, placement_out_of_bounds, placement_overlap]
       requestBody:
         required: true
@@ -2428,6 +2430,8 @@ components:
         - room_item_limit
         - placement_out_of_bounds
         - placement_overlap
+        # live room visits (stream X)
+        - room_open
         # gameplay
         - session_expired
         # challenges
@@ -2732,7 +2736,7 @@ components:
           enum: [pending, accepted]
     FriendEntry:
       type: object
-      required: [handle, displayName, level, since, profileVisible]
+      required: [handle, displayName, level, since, profileVisible, roomOpen]
       properties:
         handle:
           $ref: "#/components/schemas/Handle"
@@ -2745,6 +2749,12 @@ components:
         profileVisible:
           type: boolean
           description: False for a private profile; `getProfile` then answers 404.
+        roomOpen:
+          type: boolean
+          description: |
+            True while this friend's room is open to the caller (enter it with the hub method
+            `JoinRoom(handle)`, docs/design/p2-room-visits.md). False when the room is closed, or the
+            owner removed the caller in this opening.
     FriendList:
       type: object
       required: [items]
