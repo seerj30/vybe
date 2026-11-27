@@ -62,25 +62,60 @@ Caddy gets a certificate from Let's Encrypt for `VYBE_PUBLIC_HOST`. Let's Encryp
 | **No domain (first deploy and tests only)** | `<public IPv4 with dashes>.sslip.io`, for example `130-61-10-20.sslip.io` | 0 | sslip.io answers with the IP in the name. No DNS set-up. A new IP is a new host name: the production ephemeral IP changes only when the VM is replaced; a reserved IP (one-time setup step 4) avoids even that. sslip.io is a third party that you do not control. |
 | **Own domain (required before real players)** | for example `play.vybe.example` | the domain | An `A` record to the VM's public IP. You control the name, it survives a new VM, and it does not depend on sslip.io. |
 
-The host name is the web origin `https://<host>`. When it changes, change all of these together:
+The host name is the web origin `https://<host>`. It is in these places, and they must change together:
 
-1. `stage-env.sh` on the VM (it writes `VYBE_PUBLIC_HOST` and `Challenges__ShareBaseUrl=https://<host>`).
-2. Supabase → Authentication → URL configuration: **Site URL** `https://<host>` and **Redirect URLs**
-   `https://<host>/`. Today they are `https://141-144-232-12.sslip.io` and `https://141-144-232-12.sslip.io/`
-   (checked 2026-11-10).
-   Sign-in and email links go to the Site URL.
-3. GitHub environment variable `VYBE_PUBLIC_ORIGIN` = `https://<host>`.
-4. A deploy (or "Restart" below), so the containers read the new values.
+| Where | What | How |
+|---|---|---|
+| VM `/etc/vybe/web.env` | `VYBE_PUBLIC_HOST` (Caddy site and certificate) | `set-host.sh` |
+| VM `/etc/vybe/api.env` | `Challenges__ShareBaseUrl` (invite links), `Content__AssetBaseUrl` (item pictures) | `set-host.sh` |
+| GitHub environment `production-oracle` | variable `VYBE_PUBLIC_ORIGIN` (deploy check and environment URL) | GitHub settings |
+| GitHub repository | variable `VYBE_UPTIME_ORIGIN` (uptime check; without it, the check uses the sslip.io name) | GitHub settings |
+| Supabase → Authentication → URL configuration | **Site URL** `https://<host>`, **Redirect URLs** `https://<host>/` (today the sslip.io name, checked 2026-11-10) | Supabase dashboard |
 
-**Before the first real players, move to an own domain.** Do steps 1–4 above with the domain, then check: sign-in
-with a test account (Supabase URLs), a new invite link opens on the domain (`Challenges__ShareBaseUrl`), and the
-domain answers with HSTS. Keep the sslip.io name working for some days (the IP stays the same), so links that
-testers already have still open.
+`set-host.sh` changes only the three host values. It does not ask for the secrets again (`stage-env.sh` does).
 
-Effects of a change: invite links that players already shared (`Challenges__ShareBaseUrl`) point to the old
-host name. They stop working when the old name no longer reaches the VM (sslip.io with a new IP, or a removed
-DNS record). Email links that Supabase already sent go to the old Site URL. The HSTS header has
-`includeSubDomains`: with an own domain, every subdomain of the host must be on https.
+### Move to an own domain
+
+Required before real players. Found on 2026-11-27: the DNS resolver of at least one Romanian internet provider
+answers `141-144-232-12.sslip.io` with its own server (81.196.9.130, a self-signed certificate), not with the VM.
+Players of such providers cannot reach VYBE on the sslip.io name. Chrome with secure DNS still works, so a quick
+test in Chrome does not show the problem.
+
+1. **Buy the domain** (product owner). A registrar with its own DNS is enough, for example Cloudflare Registrar or
+   Porkbun. Turn on two-factor authentication. Keep the account details in the password manager.
+2. **DNS.** Add an `A` record for the host (for example `play.<domain>` or the domain itself) to the VM's public
+   IP `141.144.232.12`, TTL 5 minutes. No `AAAA` record (the VM has no IPv6). At Cloudflare: **DNS only** (grey
+   cloud), no proxy: Caddy gets its own certificate, and the hub WebSocket goes straight to Caddy.
+3. **Check DNS.** On the Mac:
+   ```bash
+   dig +short <host> @1.1.1.1
+   ```
+   ```bash
+   dig +short <host>
+   ```
+   Both must answer `141.144.232.12`. The second line uses the local resolver (the one that rewrote sslip.io).
+4. **Copy the server files to the VM** with the `tar` command in "Deploy" below. `set-host.sh` comes with them
+   (it is new on 2026-11-27, so the VM does not have it yet).
+5. **Change the host on the VM:**
+   ```bash
+   ssh -o IdentitiesOnly=yes -i ~/.ssh/vybe-admin ubuntu@141.144.232.12 'bash ~/vybe-oracle/set-host.sh <host>'
+   ```
+6. **GitHub:** set `VYBE_PUBLIC_ORIGIN` (environment `production-oracle`) and `VYBE_UPTIME_ORIGIN` (repository
+   variable) to `https://<host>`.
+7. **Supabase:** set the Site URL to `https://<host>` and the Redirect URLs to `https://<host>/`. Remove the
+   sslip.io entries after step 9.
+8. **Deploy** (workflow "Deploy (Oracle VM)", mode `deploy`). The deploy checks that `VYBE_PUBLIC_HOST` on the VM
+   is the host of `VYBE_PUBLIC_ORIGIN`. Caddy gets the certificate at the first request; the first page load can
+   take some seconds.
+9. **Check:** `https://<host>` opens with a valid certificate; the browser console shows no CSP error; a guest
+   can start; sign-in with a test account works (Supabase URLs); a new invite link starts with `https://<host>`;
+   the plaza opens (the hub WebSocket); the response has the HSTS header; the next uptime run passes.
+
+**The old name stops at once.** Caddy serves only `VYBE_PUBLIC_HOST`, so `https://141-144-232-12.sslip.io` then
+fails with a certificate error. Invite links that were shared before and email links that Supabase sent before
+stop working. Before real players this has no effect; after real players, keep the old name with a redirect site
+in the Caddyfile first. The HSTS header has `includeSubDomains`: every subdomain of the host must be on https.
+To go back, copy the `*.before-host` files back on the VM, set the variables and URLs back, and deploy.
 
 ## One-time setup
 
