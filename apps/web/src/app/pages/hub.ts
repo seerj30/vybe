@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from "@angular/cor
 import { RouterLink } from "@angular/router";
 import type { Schemas } from "@vybe/contracts";
 import { API } from "../api/api";
+import { FRIENDS_API } from "../api/friends-api";
 import { errorMessage } from "../api/messages";
 import { EMPTY_OUTFIT, type Outfit, outfitFromEquipped } from "../avatar/avatar-look";
 import { type AvatarPresets, DEFAULT_PRESETS, pickPresets } from "../avatar/presets";
@@ -9,11 +10,13 @@ import { AvatarViewport } from "../avatar-viewport/avatar-viewport";
 import { GAMES } from "../games/games";
 import { GuestExpiryNotice } from "../player/guest-expiry";
 import { PlayerStore } from "../player/player-store";
+import { playerName } from "../profiles/player-name";
 import { QuestsCard } from "../quests/quests-card";
 import { CoinChange } from "../ui/coin-change";
 import { LEDGER_LABELS } from "../ui/labels";
 
 type LedgerEntry = Schemas["LedgerEntry"];
+type Friend = Schemas["FriendEntry"];
 
 /** Wallet changes in the hub wallet card. */
 const RECENT_CHANGES = 3;
@@ -86,6 +89,19 @@ const RECENT_CHANGES = 3;
           </div>
           <div class="card social">
             <h2>Friends and leaderboard</h2>
+            @if (openRooms().length > 0) {
+              <div class="open-rooms" data-testid="open-rooms">
+                <h3>Open rooms</h3>
+                <ul aria-label="Friends with an open room">
+                  @for (f of openRooms(); track f.handle) {
+                    <li>
+                      <span class="open-room-name"><strong>{{ name(f) }}</strong><span class="muted small">has the room open</span></span>
+                      <a class="button" [routerLink]="['/visit', f.handle]" [attr.aria-label]="'Visit the room of ' + name(f)">Visit</a>
+                    </li>
+                  }
+                </ul>
+              </div>
+            }
             <p class="muted">Add friends, challenge them, and compare your best score in each game this week.</p>
             <div class="actions">
               <a class="button secondary" routerLink="/friends">Friends</a>
@@ -120,6 +136,11 @@ const RECENT_CHANGES = 3;
     .recent li + li { border-top: 1px solid var(--color-border); }
     .wallet-links { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); margin-top: auto; }
     .wallet-links .chip { justify-content: center; padding: var(--space-2); font-size: var(--text-sm); }
+    .open-rooms { margin-bottom: var(--space-3); padding: var(--space-3); border-radius: var(--radius-md); background: var(--color-inset); }
+    .open-rooms h3 { margin: 0 0 var(--space-2); font-size: var(--text-sm); }
+    .open-rooms ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+    .open-rooms li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+    .open-room-name { display: grid; min-width: 0; overflow-wrap: anywhere; }
     @media (min-width: 768px) { .grid { grid-template-columns: 2fr 1fr; } .play, .social, .quests { grid-column: 1 / -1; } }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -136,6 +157,10 @@ export class Hub {
   protected readonly recentError = signal(false);
 
   protected readonly outfit = signal<Outfit>(EMPTY_OUTFIT);
+  /** Friends whose room is open now (P2 room visits): only while open, from `GET /me/friends` (API memory). */
+  protected readonly openRooms = signal<Friend[]>([]);
+  protected readonly name = playerName;
+  private readonly friendsApi = inject(FRIENDS_API);
 
   constructor() {
     void this.player.refresh().catch(() => undefined);
@@ -143,6 +168,11 @@ export class Hub {
     this.api.listWalletTransactions({ limit: RECENT_CHANGES }).then(
       (page) => this.recent.set(page.items.slice(0, RECENT_CHANGES)),
       () => this.recentError.set(true),
+    );
+    // Open rooms are a hint: a failed load shows no card (the friend list has the same entries).
+    this.friendsApi.listFriends().then(
+      (list) => this.openRooms.set(list.items.filter((friend) => friend.roomOpen)),
+      () => undefined,
     );
     // The inventory names the equipped items; without it the avatar still shows (no items).
     Promise.all([this.api.getAvatar(), this.api.getInventory().catch(() => null)]).then(
