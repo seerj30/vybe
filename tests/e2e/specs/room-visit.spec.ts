@@ -4,7 +4,7 @@ import { me } from "./social.ts";
 
 /**
  * P2 live friend room visits (docs/design/p2-room-visits.md) against the real hub: the owner opens the room from
- * My Room, friends see "Visit" in the friend list and enter, the owner removes one and closes the room.
+ * My Room, friends see "Visit" in the friend list and on the hub and enter, the owner removes one and closes it.
  */
 
 const UNSAFE = { "content-type": "application/json", "x-requested-with": "vybe-web" };
@@ -58,6 +58,9 @@ test.describe("room visits (real hub)", () => {
       await friend.page.goto("/friends");
       await expect(friend.page.getByRole("list", { name: "Your friends" })).toContainText(owner.handle);
       await expect(friend.page.getByTestId("visit-room")).toHaveCount(0);
+      await second.page.goto("/hub");
+      await expect(second.page.getByRole("heading", { name: "Friends and leaderboard" })).toBeVisible();
+      await expect(second.page.getByTestId("open-rooms")).toHaveCount(0); // no card while no room is open
 
       await openRoom(owner.page);
       await expect(owner.page.getByTestId("instance")).toHaveText("Your room");
@@ -69,7 +72,11 @@ test.describe("room visits (real hub)", () => {
       await expect(friend.page).toHaveURL(new RegExp(`/visit/${owner.handle}$`));
       await expect(space(friend.page)).toHaveAttribute("data-status", "joined", { timeout: 20_000 });
       await expect(friend.page.getByTestId("instance")).toHaveText(`${owner.handle}'s room`);
-      await second.page.goto(`/visit/${owner.handle}`);
+      // The second friend finds the open room on the hub.
+      await second.page.goto("/hub");
+      await expect(second.page.getByTestId("open-rooms")).toContainText(owner.handle);
+      await second.page.getByTestId("open-rooms").getByRole("link", { name: `Visit the room of ${owner.handle}` }).click();
+      await expect(second.page).toHaveURL(new RegExp(`/visit/${owner.handle}$`));
       await expect(space(second.page)).toHaveAttribute("data-status", "joined", { timeout: 20_000 });
 
       // Everyone is in one room: the owner's list has the host tag and Remove on each visitor.
