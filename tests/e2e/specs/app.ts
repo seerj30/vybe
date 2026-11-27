@@ -48,6 +48,9 @@ export async function newPlayer(page: Page): Promise<void> {
   await saveAvatar(page);
   await page.getByRole("link", { name: "Continue to the hub" }).click();
   await expect(page.getByRole("heading", { name: "Hub" })).toBeVisible();
+  // The hub loads the avatar's item models and preloads the page chunks in the background. A test that leaves with
+  // page.goto() while they load cuts them off, and WebKit reports each cut-off fetch as an uncaught page error.
+  await page.waitForLoadState("networkidle");
 }
 
 export function walletBalance(page: Page): Locator {
