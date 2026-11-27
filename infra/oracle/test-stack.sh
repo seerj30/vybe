@@ -93,6 +93,7 @@ check grep -qi "^content-security-policy:.*connect-src 'self' https://example.su
 check grep -qi '^strict-transport-security: max-age=31536000' "$work/h"
 check grep -qi '^referrer-policy: no-referrer' "$work/h"
 check grep -qi '^x-content-type-options: nosniff' "$work/h"
+check grep -qi '^permissions-policy: camera=(), microphone=()' "$work/h"
 check absent '^server:' "$work/h"
 check test "$(get "$origin/runtime-config.json")" = '{"supabaseUrl":"https://example.supabase.co","supabaseAnonKey":"dummy-anon-key-for-tests"}'
 

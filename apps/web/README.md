@@ -71,6 +71,7 @@ pages (a meta element cannot set `frame-ancestors`):
 ```
 Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://<project>.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 Referrer-Policy: no-referrer
+Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()
 ```
 
 The production web image (`infra/web`, ADR 0008) sends these headers and serves `/runtime-config.json`.
