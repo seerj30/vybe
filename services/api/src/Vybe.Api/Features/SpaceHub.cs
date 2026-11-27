@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Vybe.Api.Content;
 using Vybe.Api.Infrastructure;
 using Vybe.Data;
 using Vybe.Data.Entities;
@@ -11,7 +12,7 @@ namespace Vybe.Api.Features;
 /// The plaza hub (protocol doc §4). Thin: every rule lives in <see cref="SpaceManager"/>. The only arguments are
 /// integers and ids from fixed lists; no method takes free text.
 /// </summary>
-public sealed class SpaceHub(SpaceManager spaces, VybeDbContext db, TimeProvider clock) : Hub
+public sealed class SpaceHub(SpaceManager spaces, VybeDbContext db, ContentCatalog content, TimeProvider clock) : Hub
 {
     public const string Path = "/api/v1/spaces/hub";
 
@@ -108,7 +109,7 @@ public sealed class SpaceHub(SpaceManager spaces, VybeDbContext db, TimeProvider
             return AccountUnavailable();
         }
 
-        return spaces.CompleteOpenRoom(Context.ConnectionId, profile, layout);
+        return spaces.CompleteOpenRoom(Context.ConnectionId, profile, layout, RoomCollision.Obstacles(layout, content.RoomItems, content.Room));
     }
 
     /// <summary>

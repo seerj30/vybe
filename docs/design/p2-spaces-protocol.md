@@ -78,7 +78,7 @@ new HubConnectionBuilder()
 | Bounds | square plaza, x and z in **[-1600, 1600] cm** (32 m × 32 m), y = 0; the scene can draw more, avatars stay inside |
 | Spawn | random point within 400 cm of (0, 0), facing +z |
 | Speed | max. **350 cm/s** (*provisional*); no running, no jumping (jump is an emote) |
-| Collision | none between avatars; no static obstacles in P2 (the server clamps to the bounds only) |
+| Collision | none between avatars. Plaza: no static obstacles (the server clamps to the bounds only). Room: furniture blocks ([room visits §4](p2-room-visits.md#4-room-state-api-memory-only)) |
 | Units | position in whole centimeters; heading `h` in 0–255, angle θ = h × 2π / 256, facing vector (sin θ, cos θ) — `object.rotation.y = θ` for a model that faces +z |
 
 **Instance choice on `Join`** (server only; the client cannot pick an instance in P2):
@@ -113,7 +113,8 @@ binding and counts as invalid input (§7). Names are case-insensitive in SignalR
 - The client sends `Move` when the intent changes, and **repeats it every 100 ms while the direction is not zero**.
   It sends `Move(0, 0)` once on stop. A hidden tab (Page Visibility API) sends `Move(0, 0)` and then no input.
 - Each tick the server applies the latest intent: `position += normalize(dx, dz) × speed × min(|d|/127, 1) × 0.1 s`,
-  then clamps to the bounds. A non-zero intent older than **500 ms** counts as stop, so a lost client stops walking.
+  then clamps to the bounds (in a room, furniture also stops it: room visits §4). A non-zero intent older than
+  **500 ms** counts as stop, so a lost client stops walking.
 - Heading follows the direction of movement; a stopped avatar keeps its last heading.
 - The server never accepts a position, a speed, a heading or a time from the client.
 

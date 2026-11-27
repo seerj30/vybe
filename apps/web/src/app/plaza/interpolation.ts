@@ -1,4 +1,5 @@
 import { type AvatarSample, type AvatarState, type Bounds, headingToAngle, TICK_MS } from "./protocol";
+import { moveAround, type Obstacle } from "./room-collision";
 
 /**
  * Motion of the avatars between snapshots (docs/design/p2-spaces-protocol.md §5): other avatars render a fixed
@@ -154,7 +155,10 @@ function poseOf(sample: AvatarSample): Pose {
   return { x: sample.x, z: sample.z, angle: headingToAngle(sample.heading), state: sample.state };
 }
 
-/** Own-avatar prediction: §4 movement rule on the local intent, corrected toward the server position. */
+/**
+ * Own-avatar prediction: §4 movement rule on the local intent, corrected toward the server position. In a room the
+ * furniture blocks as on the server (`room-collision.ts`), so the prediction does not walk through it.
+ */
 export class Predictor {
   x = 0;
   z = 0;
@@ -167,11 +171,13 @@ export class Predictor {
   constructor(
     private bounds: Bounds,
     private speed: number,
+    private obstacles: readonly Obstacle[] = [],
   ) {}
 
-  configure(bounds: Bounds, speed: number): void {
+  configure(bounds: Bounds, speed: number, obstacles: readonly Obstacle[] = []): void {
     this.bounds = bounds;
     this.speed = speed;
+    this.obstacles = obstacles;
   }
 
   get placed(): boolean {
@@ -196,8 +202,7 @@ export class Predictor {
     if (this.moving) {
       const scale = Math.min(length / 127, 1);
       const distance = this.speed * scale * (dt / 1000);
-      this.x = clamp(this.x + (dx / length) * distance, this.bounds.minX, this.bounds.maxX);
-      this.z = clamp(this.z + (dz / length) * distance, this.bounds.minZ, this.bounds.maxZ);
+      [this.x, this.z] = moveAround(this.x, this.z, (dx / length) * distance, (dz / length) * distance, this.obstacles, this.bounds);
       this.angle = Math.atan2(dx, dz);
     }
     this.path.push({ time: now, x: this.x, z: this.z });
@@ -229,8 +234,8 @@ export class Predictor {
     }
     const ex = (sample.x - nearest.x) * blend;
     const ez = (sample.z - nearest.z) * blend;
-    this.x = clamp(this.x + ex, this.bounds.minX, this.bounds.maxX);
-    this.z = clamp(this.z + ez, this.bounds.minZ, this.bounds.maxZ);
+    // The pull is a move too: it cannot push the avatar into furniture (a snap above can, when the server says so).
+    [this.x, this.z] = moveAround(this.x, this.z, ex, ez, this.obstacles, this.bounds);
     for (const point of this.path) {
       point.x += ex;
       point.z += ez;
@@ -245,8 +250,4 @@ export class Predictor {
     this.moving = false;
     this.path.length = 0;
   }
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
 }

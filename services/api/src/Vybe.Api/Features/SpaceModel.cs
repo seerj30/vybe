@@ -341,12 +341,13 @@ internal sealed class SpaceAvatar(Guid playerId, SpaceInstance instance, int slo
 
 internal sealed class SpaceInstance(int id, DateTimeOffset now)
 {
-    /// <summary>An open room (docs/design/p2-room-visits.md §4): 8 slots, the room bounds and speed.</summary>
-    public SpaceInstance(int id, DateTimeOffset now, Guid ownerId, SpaceRoom layout)
+    /// <summary>An open room (docs/design/p2-room-visits.md §4): 8 slots, the room bounds, speed and furniture.</summary>
+    public SpaceInstance(int id, DateTimeOffset now, Guid ownerId, SpaceRoom layout, IReadOnlyList<RoomObstacle> obstacles)
         : this(id, now)
     {
         OwnerId = ownerId;
         Layout = layout;
+        Obstacles = obstacles;
         Slots = new SpaceAvatar?[SpaceRules.RoomCapacity];
         BoundCm = SpaceRules.RoomBoundCm;
         SpeedCmPerS = SpaceRules.RoomSpeedCmPerS;
@@ -365,6 +366,9 @@ internal sealed class SpaceInstance(int id, DateTimeOffset now)
     public SpaceRoom? Layout { get; }
 
     public int BoundCm { get; } = SpaceRules.BoundCm;
+
+    /// <summary>Furniture that avatars cannot walk through (rooms only; the plaza has none).</summary>
+    public IReadOnlyList<RoomObstacle> Obstacles { get; } = [];
 
     public int SpeedCmPerS { get; } = SpaceRules.SpeedCmPerS;
 
