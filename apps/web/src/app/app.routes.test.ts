@@ -24,6 +24,11 @@ describe("route loading", () => {
     }
   });
 
+  it("is injectable (the router asks for the preloader as optional: else preloading is silently off)", () => {
+    // `@Injectable` adds the injectable definition `ɵprov`; without it the injector cannot create the strategy.
+    expect("ɵprov" in PreloadPages).toBe(true);
+  });
+
   it("runs the loader only for a marked route", async () => {
     const strategy = new PreloadPages();
     let loads = 0;
