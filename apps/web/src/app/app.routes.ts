@@ -1,3 +1,4 @@
+import { Injectable } from "@angular/core";
 import type { PreloadingStrategy, Route, Routes } from "@angular/router";
 import { type Observable, of } from "rxjs";
 import { Landing } from "./pages/landing";
@@ -11,8 +12,10 @@ const PRELOAD = { preload: true } as const;
 
 /**
  * Background loading for the routes marked with {@link PRELOAD} only. The 3D routes (games, plaza, My Room) and admin
- * stay on demand: they are large, and many players never open them.
+ * stay on demand: they are large, and many players never open them. It must be injectable: the router asks for the
+ * preloader as optional, so a strategy that the injector cannot create turns preloading off without an error.
  */
+@Injectable({ providedIn: "root" })
 export class PreloadPages implements PreloadingStrategy {
   preload(route: Route, load: () => Observable<unknown>): Observable<unknown> {
     return route.data?.["preload"] === true ? load() : of(null);
