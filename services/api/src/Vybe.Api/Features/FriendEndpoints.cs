@@ -278,7 +278,12 @@ public static class FriendEndpoints
             .Take(MaxFriends)
             .ToListAsync(cancellationToken);
         // Open rooms are in API memory only: a friend sees "open" only while the room is open (no stored presence).
-        var open = spaces.OpenRoomsFor(playerId, rows.Select(r => r.Id));
+        // A room with a member in a block with the caller shows as closed (block privacy): one query, both directions.
+        var blocks = await db.PlayerBlocks.AsNoTracking()
+            .Where(b => b.BlockerPlayerId == playerId || b.BlockedPlayerId == playerId)
+            .Select(b => b.BlockerPlayerId == playerId ? b.BlockedPlayerId : b.BlockerPlayerId)
+            .ToListAsync(cancellationToken);
+        var open = spaces.OpenRoomsFor(playerId, rows.Select(r => r.Id), blocks.ToHashSet());
         return new FriendList(rows
             .Select(r => new FriendEntry(r.Handle, r.DisplayName, r.Level, r.Since, r.ProfileVisibility == ProfileVisibility.Players, open.Contains(r.Id)))
             .ToList());

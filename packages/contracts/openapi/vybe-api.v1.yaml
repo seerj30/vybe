@@ -2753,8 +2753,8 @@ components:
           type: boolean
           description: |
             True while this friend's room is open to the caller (enter it with the hub method
-            `JoinRoom(handle)`, docs/design/p2-room-visits.md). False when the room is closed, or the
-            owner removed the caller in this opening.
+            `JoinRoom(handle)`, docs/design/p2-room-visits.md). False when the room is closed, the
+            owner removed the caller in this opening, or a member inside is in a block with the caller.
     FriendList:
       type: object
       required: [items]

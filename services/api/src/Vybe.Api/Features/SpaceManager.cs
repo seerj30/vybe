@@ -417,13 +417,31 @@ public sealed partial class SpaceManager(
         }
     }
 
-    /// <summary>The owners among <paramref name="friendIds"/> whose room is open to <paramref name="viewer"/> now.</summary>
-    public IReadOnlySet<Guid> OpenRoomsFor(Guid viewer, IEnumerable<Guid> friendIds)
+    /// <summary>
+    /// The owners among <paramref name="friendIds"/> whose room is open to <paramref name="viewer"/> now: not removed,
+    /// and no member in a block with the viewer (either direction). Else a viewer who sees "open" but cannot enter
+    /// could tell that a member blocked them (spec §2 block privacy). <paramref name="viewerBlocks"/>: the viewer's
+    /// blocks from the database, both directions; the live blocks of the manager are added here.
+    /// </summary>
+    public IReadOnlySet<Guid> OpenRoomsFor(Guid viewer, IEnumerable<Guid> friendIds, IReadOnlySet<Guid> viewerBlocks)
     {
         ArgumentNullException.ThrowIfNull(friendIds);
+        ArgumentNullException.ThrowIfNull(viewerBlocks);
+        var now = clock.GetUtcNow();
         lock (_gate)
         {
-            return friendIds.Where(id => _rooms.TryGetValue(id, out var room) && !room.Removed.Contains(viewer)).ToHashSet();
+            var blocks = new HashSet<Guid>(viewerBlocks);
+            foreach (var (blocker, blocked, at) in _liveBlocks)
+            {
+                if (now - at <= LiveBlockLifetime && (blocker == viewer || blocked == viewer))
+                {
+                    blocks.Add(blocker == viewer ? blocked : blocker); // committed after the database read above
+                }
+            }
+
+            return friendIds
+                .Where(id => _rooms.TryGetValue(id, out var room) && !room.Removed.Contains(viewer) && !Conflicts(room, viewer, blocks))
+                .ToHashSet();
         }
     }
 

@@ -79,7 +79,8 @@ A visitor cannot tell a remove from a block by the owner: both are `removed` (sp
 **HTTP changes.**
 
 - `GET /me/friends`: each `FriendEntry` gets `roomOpen` (boolean): true only while that friend's room is open, and
-  never for a visitor that the owner removed in this opening. Computed from API memory at request time.
+  never for a visitor that the owner removed in this opening or a viewer in a block with a member (§5). Computed
+  from API memory at request time.
 - `PUT /me/room`: 409 `room_open` while the caller's room is open (rule 6).
 
 ## 4. Room state (API memory only)
@@ -114,6 +115,9 @@ room) is dropped when the player opens or enters a space.
   - the owner blocks a visitor → the visitor gets `removed`;
   - a visitor blocks the owner or another visitor → the blocker gets `left_room` (the blocker moves, as in the
     plaza); the blocked player sees a normal `left`.
+- **Friend list.** `roomOpen` is false while a member inside has a block with the viewer (either direction; database
+  blocks plus the live blocks of the manager), the same rule as `JoinRoom`. Else a viewer who sees "open" but always
+  gets `room_unavailable` could tell that a member blocked them (spec §2 block privacy).
 - `Report` works as in the plaza (fixed reasons, no text).
 
 ## 6. Limits

@@ -284,6 +284,34 @@ public sealed class RoomVisitTests(SpaceApiFactory api) : IClassFixture<SpaceApi
     }
 
     [Fact]
+    public async Task FriendList_HidesAnOpenRoom_WhileAMemberIsInABlockWithTheViewer()
+    {
+        var owner = await Player.CreateGuestAsync(api);
+        var b = await Player.CreateGuestAsync(api);
+        var c = await Player.CreateGuestAsync(api);
+        await BefriendAsync(owner, b);
+        await BefriendAsync(owner, c);
+        var handle = await HandleAsync(owner);
+        await OpenAsync(owner);
+        Assert.True(await RoomOpenAsync(b, handle));
+
+        // C blocked B (B is not told): while C is inside, B sees the room as closed, the same answer as JoinRoom.
+        Assert.Equal(HttpStatusCode.NoContent, (await c.Http.PostAsJsonAsync("/api/v1/me/blocks", new { handle = await HandleAsync(b) })).StatusCode);
+        var (visitorC, _) = await VisitAsync(c, handle);
+        Assert.False(await RoomOpenAsync(b, handle));
+        Assert.True(await RoomOpenAsync(c, handle)); // the blocker's own view: C is inside anyway
+
+        // The other direction (B blocks a member) hides it too; after C leaves, the room shows as open again.
+        await visitorC.Connection.InvokeAsync("Leave");
+        Assert.True(await RoomOpenAsync(b, handle));
+        var d = await Player.CreateGuestAsync(api);
+        await BefriendAsync(owner, d);
+        await VisitAsync(d, handle);
+        Assert.Equal(HttpStatusCode.NoContent, (await b.Http.PostAsJsonAsync("/api/v1/me/blocks", new { handle = await HandleAsync(d) })).StatusCode);
+        Assert.False(await RoomOpenAsync(b, handle));
+    }
+
+    [Fact]
     public async Task EndedFriendship_RemovesTheVisitor()
     {
         var owner = await Player.CreateGuestAsync(api);
